@@ -1,4 +1,7 @@
-use comrak::nodes::{AstNode, NodeValue};
+use std::collections::HashMap;
+use std::fmt::Write;
+
+use comrak::nodes::{AstNode, ListType, NodeValue, TableAlignment};
 use comrak::Options;
 
 use crate::theme::ResolvedTheme;
@@ -40,24 +43,709 @@ pub fn parse<'a>(arena: &'a comrak::Arena<'a>, input: &str) -> &'a AstNode<'a> {
 
 /// Walk a comrak AST and emit Typst markup.
 ///
-/// This is a stub for Wave 3E, which builds the full Typst emitter.
-/// The signature is final: it takes the root node, resolved theme,
-/// and a warning collector for any rendering-time warnings.
-pub fn emit_typst(
-    _root: &AstNode<'_>,
+/// Traverses every node in the tree, converting each to valid Typst syntax.
+/// Footnote definitions are collected during traversal and inlined at their
+/// reference sites via `#footnote[...]`.
+pub fn emit_typst<'a>(
+    root: &'a AstNode<'a>,
     _theme: &ResolvedTheme,
-    _warnings: &mut WarningCollector,
+    warnings: &mut WarningCollector,
 ) -> String {
-    // Stub -- Wave 3E builds the full emitter
-    String::new()
+    // First pass: collect footnote definitions by name so we can inline them
+    // at the reference site (Typst's #footnote[...] model).
+    let footnotes = collect_footnote_definitions(root, warnings);
+
+    let mut ctx = EmitContext {
+        out: String::with_capacity(8192),
+        indent: 0,
+        footnotes,
+        table_alignments: Vec::new(),
+        table_cell_index: 0,
+        in_table_header: false,
+        in_tight_list: false,
+        warnings,
+    };
+
+    emit_node(root, &mut ctx);
+
+    ctx.out
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Emitter context & recursive walker
+// ═══════════════════════════════════════════════════════════════════
+
+/// Mutable state carried through the recursive tree walk.
+struct EmitContext<'w> {
+    out: String,
+    indent: usize,
+    footnotes: HashMap<String, String>,
+    table_alignments: Vec<TableAlignment>,
+    table_cell_index: usize,
+    in_table_header: bool,
+    in_tight_list: bool,
+    warnings: &'w mut WarningCollector,
+}
+
+impl EmitContext<'_> {
+    fn push(&mut self, s: &str) {
+        self.out.push_str(s);
+    }
+
+    fn push_indent(&mut self) {
+        for _ in 0..self.indent {
+            self.out.push_str("  ");
+        }
+    }
+
+    fn newline(&mut self) {
+        self.out.push('\n');
+    }
+}
+
+/// Extract data we need from a node, cloning what's necessary to avoid
+/// holding the `RefCell` borrow across child traversal.
+///
+/// This enum mirrors `NodeValue` but owns all the data it needs so we can
+/// drop the `Ref` immediately after extraction.
+enum ExtractedNode {
+    Document,
+    FrontMatter,
+    Paragraph,
+    Heading { level: u8 },
+    ThematicBreak,
+    Text(String),
+    SoftBreak,
+    LineBreak,
+    Strong,
+    Emph,
+    Strikethrough,
+    Underline,
+    Superscript,
+    Subscript,
+    Highlight,
+    Code { literal: String, num_backticks: usize },
+    Link { url: String },
+    Image { url: String },
+    WikiLink { url: String },
+    BlockQuote,
+    MultilineBlockQuote,
+    List { is_ordered: bool, tight: bool, start: usize },
+    Item,
+    TaskItem { checked: bool },
+    CodeBlock { info: String, literal: String },
+    HtmlBlock { literal: String },
+    HtmlInline(String),
+    Table { alignments: Vec<TableAlignment>, num_columns: usize },
+    TableRow { is_header: bool },
+    TableCell,
+    FootnoteDefinition,
+    FootnoteReference { name: String },
+    Math { literal: String, display: bool },
+    Alert { title: String, icon: &'static str },
+    DescriptionList,
+    DescriptionItem,
+    DescriptionTerm,
+    DescriptionDetails,
+    ShortCode { emoji: String },
+    Escaped,
+    EscapedTag,
+    SpoileredText,
+    Subtext,
+    Raw(String),
+}
+
+/// Extract all needed data from a node value, cloning strings so we can
+/// drop the `Ref<Ast>` borrow immediately.
+#[allow(clippy::too_many_lines)]
+fn extract_node(node: &AstNode<'_>) -> ExtractedNode {
+    let data = node.data.borrow();
+    match &data.value {
+        NodeValue::Document => ExtractedNode::Document,
+        NodeValue::FrontMatter(_) => ExtractedNode::FrontMatter,
+        NodeValue::Paragraph => ExtractedNode::Paragraph,
+        NodeValue::Heading(h) => ExtractedNode::Heading { level: h.level },
+        NodeValue::ThematicBreak => ExtractedNode::ThematicBreak,
+        NodeValue::Text(t) => ExtractedNode::Text(t.to_string()),
+        NodeValue::SoftBreak => ExtractedNode::SoftBreak,
+        NodeValue::LineBreak => ExtractedNode::LineBreak,
+        NodeValue::Strong => ExtractedNode::Strong,
+        NodeValue::Emph => ExtractedNode::Emph,
+        NodeValue::Strikethrough => ExtractedNode::Strikethrough,
+        NodeValue::Underline => ExtractedNode::Underline,
+        NodeValue::Superscript => ExtractedNode::Superscript,
+        NodeValue::Subscript => ExtractedNode::Subscript,
+        NodeValue::Highlight => ExtractedNode::Highlight,
+        NodeValue::Code(c) => ExtractedNode::Code {
+            literal: c.literal.clone(),
+            num_backticks: c.num_backticks,
+        },
+        NodeValue::Link(l) => ExtractedNode::Link { url: l.url.clone() },
+        NodeValue::Image(l) => ExtractedNode::Image { url: l.url.clone() },
+        NodeValue::WikiLink(w) => ExtractedNode::WikiLink { url: w.url.clone() },
+        NodeValue::BlockQuote => ExtractedNode::BlockQuote,
+        NodeValue::MultilineBlockQuote(_) => ExtractedNode::MultilineBlockQuote,
+        NodeValue::List(list) => ExtractedNode::List {
+            is_ordered: list.list_type == ListType::Ordered,
+            tight: list.tight,
+            start: list.start,
+        },
+        NodeValue::Item(_) => ExtractedNode::Item,
+        NodeValue::TaskItem(t) => ExtractedNode::TaskItem { checked: t.symbol.is_some() },
+        NodeValue::CodeBlock(cb) => ExtractedNode::CodeBlock {
+            info: cb.info.clone(),
+            literal: cb.literal.clone(),
+        },
+        NodeValue::HtmlBlock(h) => ExtractedNode::HtmlBlock { literal: h.literal.clone() },
+        NodeValue::HtmlInline(h) => ExtractedNode::HtmlInline(h.clone()),
+        NodeValue::Table(t) => ExtractedNode::Table {
+            alignments: t.alignments.clone(),
+            num_columns: t.num_columns,
+        },
+        NodeValue::TableRow(is_header) => ExtractedNode::TableRow { is_header: *is_header },
+        NodeValue::TableCell => ExtractedNode::TableCell,
+        NodeValue::FootnoteDefinition(_) => ExtractedNode::FootnoteDefinition,
+        NodeValue::FootnoteReference(f) => ExtractedNode::FootnoteReference { name: f.name.clone() },
+        NodeValue::Math(m) => ExtractedNode::Math {
+            literal: m.literal.clone(),
+            display: m.display_math,
+        },
+        NodeValue::Alert(a) => {
+            let alert_type = a.alert_type;
+            let title = a.title.clone().unwrap_or_else(|| alert_type.default_title().to_string());
+            let (icon, _) = alert_icon_and_color(alert_type);
+            ExtractedNode::Alert { title, icon }
+        }
+        NodeValue::DescriptionList => ExtractedNode::DescriptionList,
+        NodeValue::DescriptionItem(_) => ExtractedNode::DescriptionItem,
+        NodeValue::DescriptionTerm => ExtractedNode::DescriptionTerm,
+        NodeValue::DescriptionDetails => ExtractedNode::DescriptionDetails,
+        NodeValue::ShortCode(s) => ExtractedNode::ShortCode { emoji: s.emoji.clone() },
+        NodeValue::Escaped => ExtractedNode::Escaped,
+        NodeValue::EscapedTag(_) => ExtractedNode::EscapedTag,
+        NodeValue::SpoileredText => ExtractedNode::SpoileredText,
+        NodeValue::Subtext => ExtractedNode::Subtext,
+        NodeValue::Raw(r) => ExtractedNode::Raw(r.clone()),
+    }
+}
+
+/// Emit a single AST node and all its children.
+#[allow(clippy::too_many_lines)]
+fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    // Extract all data we need and drop the borrow immediately.
+    let extracted = extract_node(node);
+
+    match extracted {
+        // ─── Front matter (already extracted, skip) / footnote def ──
+        ExtractedNode::FrontMatter | ExtractedNode::FootnoteDefinition => {}
+
+        // ─── Paragraph ───────────────────────────────────────────
+        ExtractedNode::Paragraph => {
+            if !ctx.in_tight_list {
+                ctx.newline();
+            }
+            emit_children(node, ctx);
+            if !ctx.in_tight_list {
+                ctx.newline();
+            }
+        }
+
+        // ─── Heading ─────────────────────────────────────────────
+        ExtractedNode::Heading { level } => {
+            ctx.newline();
+            for _ in 0..level {
+                ctx.push("=");
+            }
+            ctx.push(" ");
+            emit_children(node, ctx);
+            ctx.newline();
+        }
+
+        // ─── Thematic break (horizontal rule) ────────────────────
+        ExtractedNode::ThematicBreak => {
+            ctx.newline();
+            ctx.push("#line(length: 100%)\n");
+        }
+
+        // ─── Text ────────────────────────────────────────────────
+        ExtractedNode::Text(text) => {
+            let escaped = escape_typst_content(&text);
+            ctx.push(&escaped);
+        }
+
+        // ─── Soft break ──────────────────────────────────────────
+        ExtractedNode::SoftBreak => {
+            ctx.push("\n");
+        }
+
+        // ─── Hard break ──────────────────────────────────────────
+        ExtractedNode::LineBreak => {
+            ctx.push(" \\\n");
+        }
+
+        // ─── Strong (bold) ───────────────────────────────────────
+        ExtractedNode::Strong => {
+            ctx.push("*");
+            emit_children(node, ctx);
+            ctx.push("*");
+        }
+
+        // ─── Emphasis (italic) ───────────────────────────────────
+        ExtractedNode::Emph => {
+            ctx.push("_");
+            emit_children(node, ctx);
+            ctx.push("_");
+        }
+
+        // ─── Strikethrough / spoilered text ────────────────────────
+        ExtractedNode::Strikethrough | ExtractedNode::SpoileredText => {
+            ctx.push("#strike[");
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+
+        // ─── Underline ───────────────────────────────────────────
+        ExtractedNode::Underline => {
+            ctx.push("#underline[");
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+
+        // ─── Superscript ─────────────────────────────────────────
+        ExtractedNode::Superscript => {
+            ctx.push("#super[");
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+
+        // ─── Subscript / subtext ───────────────────────────────────
+        ExtractedNode::Subscript | ExtractedNode::Subtext => {
+            ctx.push("#sub[");
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+
+        // ─── Highlight / mark ────────────────────────────────────
+        ExtractedNode::Highlight => {
+            ctx.push("#highlight[");
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+
+        // ─── Inline code ─────────────────────────────────────────
+        ExtractedNode::Code { literal, num_backticks } => {
+            let ticks_count = num_backticks.max(1);
+            let ticks: String = "`".repeat(ticks_count);
+            if literal.starts_with('`') || literal.ends_with('`') {
+                let _ = write!(ctx.out, "{ticks} {literal} {ticks}");
+            } else {
+                let _ = write!(ctx.out, "{ticks}{literal}{ticks}");
+            }
+        }
+
+        // ─── Link / wikilink ────────────────────────────────────────
+        ExtractedNode::Link { url } | ExtractedNode::WikiLink { url } => {
+            let _ = write!(ctx.out, "#link(\"{}\")[", escape_typst_string(&url));
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+
+        // ─── Image ───────────────────────────────────────────────
+        ExtractedNode::Image { url } => {
+            // Skip remote images (already warned by check_content)
+            if url.starts_with("http://") || url.starts_with("https://") {
+                return;
+            }
+
+            ctx.push("\n#figure(\n");
+            let _ = writeln!(
+                ctx.out,
+                "  image(\"{}\", width: 100%),",
+                escape_typst_string(&url)
+            );
+
+            // Collect alt text from children
+            let mut alt_text = String::new();
+            collect_text(node, &mut alt_text);
+            if !alt_text.is_empty() {
+                let _ = writeln!(
+                    ctx.out,
+                    "  caption: [{}],",
+                    escape_typst_content(&alt_text)
+                );
+            }
+
+            ctx.push(")\n");
+        }
+
+        // ─── Block quote ─────────────────────────────────────────
+        ExtractedNode::BlockQuote | ExtractedNode::MultilineBlockQuote => {
+            ctx.newline();
+            ctx.push("#quote(block: true)[\n");
+            emit_children(node, ctx);
+            ctx.push("]\n");
+        }
+
+        // ─── List ────────────────────────────────────────────────
+        ExtractedNode::List { is_ordered, tight, start } => {
+            let prev_tight = ctx.in_tight_list;
+            ctx.in_tight_list = tight;
+
+            ctx.newline();
+            if is_ordered && start > 1 {
+                let _ = writeln!(ctx.out, "#set enum(start: {start})");
+            }
+
+            for child in node.children() {
+                let child_extracted = extract_node(child);
+                match child_extracted {
+                    ExtractedNode::Item => {
+                        ctx.push_indent();
+                        if is_ordered {
+                            ctx.push("+ ");
+                        } else {
+                            ctx.push("- ");
+                        }
+                        ctx.indent += 1;
+                        emit_list_item_children(child, ctx);
+                        ctx.indent -= 1;
+                        ctx.newline();
+                    }
+                    ExtractedNode::TaskItem { checked } => {
+                        ctx.push_indent();
+                        if checked {
+                            ctx.push("#box[\\u{2611}] ");
+                        } else {
+                            ctx.push("#box[\\u{2610}] ");
+                        }
+                        ctx.indent += 1;
+                        emit_list_item_children(child, ctx);
+                        ctx.indent -= 1;
+                        ctx.newline();
+                    }
+                    _ => {
+                        emit_node(child, ctx);
+                    }
+                }
+            }
+
+            ctx.in_tight_list = prev_tight;
+        }
+
+        // ─── Transparent containers (just emit children) ──────────
+        ExtractedNode::Item
+        | ExtractedNode::TaskItem { .. }
+        | ExtractedNode::Document
+        | ExtractedNode::Escaped
+        | ExtractedNode::EscapedTag => {
+            emit_children(node, ctx);
+        }
+
+        // ─── Code block ──────────────────────────────────────────
+        ExtractedNode::CodeBlock { info, literal } => {
+            let lang = info.split([' ', ',', '\t']).next().unwrap_or("");
+
+            ctx.newline();
+            if lang.is_empty() {
+                ctx.push("```\n");
+            } else {
+                let _ = writeln!(ctx.out, "```{lang}");
+            }
+
+            let content = literal.strip_suffix('\n').unwrap_or(&literal);
+            ctx.push(content);
+            ctx.newline();
+            ctx.push("```\n");
+        }
+
+        // ─── HTML block (pass through as comment) ────────────────
+        ExtractedNode::HtmlBlock { literal } => {
+            for line in literal.lines() {
+                let _ = writeln!(ctx.out, "// HTML: {line}");
+            }
+        }
+
+        // ─── HTML inline (pass through as raw text) ──────────────
+        ExtractedNode::HtmlInline(html_str) => {
+            let decoded = decode_html_entity(&html_str);
+            ctx.push(&decoded);
+        }
+
+        // ─── Table ───────────────────────────────────────────────
+        ExtractedNode::Table { alignments, num_columns } => {
+            ctx.table_alignments.clone_from(&alignments);
+            ctx.newline();
+
+            let align_strs: Vec<&str> = alignments
+                .iter()
+                .map(|a| match a {
+                    TableAlignment::Left => "left",
+                    TableAlignment::Center => "center",
+                    TableAlignment::Right => "right",
+                    TableAlignment::None => "auto",
+                })
+                .collect();
+            let align_list = align_strs.join(", ");
+
+            let _ = writeln!(
+                ctx.out,
+                "#table(\n  columns: {num_columns},\n  align: ({align_list},),"
+            );
+
+            for child in node.children() {
+                emit_node(child, ctx);
+            }
+
+            ctx.push(")\n");
+            ctx.table_alignments.clear();
+        }
+
+        // ─── Table row ───────────────────────────────────────────
+        ExtractedNode::TableRow { is_header } => {
+            ctx.in_table_header = is_header;
+            ctx.table_cell_index = 0;
+            for child in node.children() {
+                emit_node(child, ctx);
+            }
+        }
+
+        // ─── Table cell ──────────────────────────────────────────
+        ExtractedNode::TableCell => {
+            ctx.push("  [");
+            emit_children(node, ctx);
+            ctx.push("],\n");
+            ctx.table_cell_index += 1;
+        }
+
+        // ─── Footnote reference ──────────────────────────────────
+        ExtractedNode::FootnoteReference { name } => {
+            if let Some(content) = ctx.footnotes.get(name.as_str()).cloned() {
+                let _ = write!(ctx.out, "#footnote[{}]", content.trim());
+            } else {
+                let _ = write!(ctx.out, "#super[{}]", escape_typst_content(&name));
+                ctx.warnings.push(SilkprintWarning::ImageNotFound {
+                    path: format!("footnote:{name}"),
+                });
+            }
+        }
+
+        // ─── Math ────────────────────────────────────────────────
+        ExtractedNode::Math { literal, display } => {
+            let trimmed = literal.trim();
+            if display {
+                let _ = write!(ctx.out, "$ {trimmed} $");
+            } else {
+                let _ = write!(ctx.out, "${trimmed}$");
+            }
+        }
+
+        // ─── Alert (GitHub-style) ────────────────────────────────
+        ExtractedNode::Alert { title, icon } => {
+            ctx.newline();
+            ctx.push("#block(\n");
+            ctx.push("  stroke: (left: 3pt + rgb(\"#4a5dbd\")),\n");
+            ctx.push("  radius: (right: 4pt),\n");
+            ctx.push("  inset: 12pt,\n");
+            ctx.push("  width: 100%,\n");
+            ctx.push(")[\n");
+            let _ = writeln!(ctx.out, "  *{icon} {title}* \\");
+            emit_children(node, ctx);
+            ctx.push("]\n");
+        }
+
+        // ─── Description list ────────────────────────────────────
+        ExtractedNode::DescriptionList => {
+            ctx.newline();
+            for child in node.children() {
+                emit_node(child, ctx);
+            }
+        }
+
+        // ─── Description item ────────────────────────────────────
+        ExtractedNode::DescriptionItem => {
+            for child in node.children() {
+                emit_node(child, ctx);
+            }
+        }
+
+        // ─── Description term ────────────────────────────────────
+        ExtractedNode::DescriptionTerm => {
+            ctx.push("\n/ ");
+            emit_children(node, ctx);
+        }
+
+        // ─── Description details ─────────────────────────────────
+        ExtractedNode::DescriptionDetails => {
+            ctx.push(": ");
+            emit_children(node, ctx);
+            ctx.newline();
+        }
+
+        // ─── Emoji shortcode (resolved to unicode by comrak) ─────
+        ExtractedNode::ShortCode { emoji } => {
+            ctx.push(&emoji);
+        }
+
+        // ─── Raw output node (programmatic only) ─────────────────
+        ExtractedNode::Raw(raw_str) => {
+            ctx.push(&raw_str);
+        }
+    }
+}
+
+/// Emit all children of a node.
+fn emit_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    for child in node.children() {
+        emit_node(child, ctx);
+    }
+}
+
+/// Emit list item children, handling tight vs loose lists.
+fn emit_list_item_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    for child in node.children() {
+        let is_paragraph = matches!(extract_node(child), ExtractedNode::Paragraph);
+        if is_paragraph && ctx.in_tight_list {
+            // Tight list: unwrap paragraph, emit content inline
+            emit_children(child, ctx);
+        } else {
+            emit_node(child, ctx);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Footnote collection
+// ═══════════════════════════════════════════════════════════════════
+
+/// First-pass: walk the tree and collect footnote definitions.
+///
+/// Returns a map from footnote name to the Typst-rendered content of
+/// the definition body. These are inlined at `#footnote[...]` reference sites.
+fn collect_footnote_definitions<'a>(
+    root: &'a AstNode<'a>,
+    warnings: &mut WarningCollector,
+) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+
+    for node in root.descendants() {
+        let name = {
+            let data = node.data.borrow();
+            if let NodeValue::FootnoteDefinition(def) = &data.value {
+                Some(def.name.clone())
+            } else {
+                None
+            }
+        };
+
+        if let Some(name) = name {
+            // Render the footnote body into a standalone Typst fragment
+            let mut fn_ctx = EmitContext {
+                out: String::new(),
+                indent: 0,
+                footnotes: HashMap::new(),
+                table_alignments: Vec::new(),
+                table_cell_index: 0,
+                in_table_header: false,
+                in_tight_list: false,
+                warnings,
+            };
+            emit_children(node, &mut fn_ctx);
+            map.insert(name, fn_ctx.out);
+        }
+    }
+
+    map
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════
+
+/// Collect all plain text from a node's descendants into a buffer.
+fn collect_text<'a>(node: &'a AstNode<'a>, buf: &mut String) {
+    for child in node.descendants() {
+        let data = child.data.borrow();
+        if let NodeValue::Text(text) = &data.value {
+            buf.push_str(text);
+        }
+    }
+}
+
+/// Escape special Typst markup characters in content text.
+fn escape_typst_content(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + s.len() / 8);
+    for c in s.chars() {
+        match c {
+            '#' | '*' | '_' | '@' | '<' | '>' | '$' | '\\' | '~' => {
+                out.push('\\');
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Escape special characters in Typst string literals (inside `"`).
+fn escape_typst_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Decode common HTML entities to literal characters.
+fn decode_html_entity(s: &str) -> String {
+    match s {
+        "&amp;" => "&".to_string(),
+        "&lt;" => "<".to_string(),
+        "&gt;" => ">".to_string(),
+        "&quot;" => "\"".to_string(),
+        "&#39;" | "&apos;" => "'".to_string(),
+        "&nbsp;" => "\u{00A0}".to_string(),
+        "&mdash;" => "\u{2014}".to_string(),
+        "&ndash;" => "\u{2013}".to_string(),
+        "&hellip;" => "\u{2026}".to_string(),
+        "&laquo;" => "\u{00AB}".to_string(),
+        "&raquo;" => "\u{00BB}".to_string(),
+        "&copy;" => "\u{00A9}".to_string(),
+        "&reg;" => "\u{00AE}".to_string(),
+        "&trade;" => "\u{2122}".to_string(),
+        "&times;" => "\u{00D7}".to_string(),
+        "&divide;" => "\u{00F7}".to_string(),
+        _ => {
+            // Try numeric entities: &#123; or &#x1F4A9;
+            if let Some(stripped) = s.strip_prefix("&#x").and_then(|s| s.strip_suffix(';')) {
+                if let Ok(code) = u32::from_str_radix(stripped, 16) {
+                    if let Some(c) = char::from_u32(code) {
+                        return c.to_string();
+                    }
+                }
+            }
+            if let Some(stripped) = s.strip_prefix("&#").and_then(|s| s.strip_suffix(';')) {
+                if let Ok(code) = stripped.parse::<u32>() {
+                    if let Some(c) = char::from_u32(code) {
+                        return c.to_string();
+                    }
+                }
+            }
+            escape_typst_content(s)
+        }
+    }
+}
+
+/// Get icon and color field name for an alert type.
+fn alert_icon_and_color(
+    alert_type: comrak::nodes::AlertType,
+) -> (&'static str, &'static str) {
+    use comrak::nodes::AlertType;
+    match alert_type {
+        AlertType::Note => ("\u{2139}\u{FE0F}", "note_color"),
+        AlertType::Tip => ("\u{1F4A1}", "tip_color"),
+        AlertType::Important => ("\u{2757}", "important_color"),
+        AlertType::Warning => ("\u{26A0}\u{FE0F}", "warning_color"),
+        AlertType::Caution => ("\u{1F6D1}", "caution_color"),
+    }
 }
 
 /// Inspect a parsed AST for unusual content patterns and emit relevant warnings.
-///
-/// This performs a single walk of the tree looking for things like:
-/// - Code blocks with unrecognized language identifiers
-/// - Remote images (not supported in v0.1)
-/// - Very deeply nested structures (which may cause layout issues)
 ///
 /// Returns `true` if the document parsed cleanly with no warnings.
 pub fn check_content<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector) -> bool {
@@ -81,79 +769,19 @@ pub fn check_content<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector)
 
 /// Well-known code fence language identifiers that `syntect`/Typst can highlight.
 const KNOWN_LANGUAGES: &[&str] = &[
-    "bash",
-    "c",
-    "clojure",
-    "cpp",
-    "c++",
-    "csharp",
-    "c#",
-    "cs",
-    "css",
-    "dart",
-    "diff",
-    "dockerfile",
-    "elixir",
-    "elm",
-    "erlang",
-    "go",
-    "graphql",
-    "haskell",
-    "html",
-    "java",
-    "javascript",
-    "js",
-    "json",
-    "jsonc",
-    "jsx",
-    "julia",
-    "kotlin",
-    "latex",
-    "tex",
-    "lua",
-    "makefile",
-    "markdown",
-    "md",
-    "nix",
-    "objc",
-    "objective-c",
-    "ocaml",
-    "perl",
-    "php",
-    "plain",
-    "text",
-    "txt",
-    "powershell",
-    "python",
-    "py",
-    "r",
-    "ruby",
-    "rb",
-    "rust",
-    "rs",
-    "scala",
-    "scss",
-    "sh",
-    "shell",
-    "sql",
-    "swift",
-    "toml",
-    "ts",
-    "tsx",
-    "typescript",
-    "typst",
-    "vim",
-    "xml",
-    "yaml",
-    "yml",
-    "zig",
-    "zsh",
+    "bash", "c", "clojure", "cpp", "c++", "csharp", "c#", "cs", "css",
+    "dart", "diff", "dockerfile", "elixir", "elm", "erlang", "go",
+    "graphql", "haskell", "html", "java", "javascript", "js", "json",
+    "jsonc", "jsx", "julia", "kotlin", "latex", "tex", "lua", "makefile",
+    "markdown", "md", "nix", "objc", "objective-c", "ocaml", "perl",
+    "php", "plain", "text", "txt", "powershell", "python", "py", "r",
+    "ruby", "rb", "rust", "rs", "scala", "scss", "sh", "shell", "sql",
+    "swift", "toml", "ts", "tsx", "typescript", "typst", "vim", "xml",
+    "yaml", "yml", "zig", "zsh",
 ];
 
 /// Warn if a code block specifies an unrecognized language identifier.
 fn check_code_block_language(info: &str, warnings: &mut WarningCollector) {
-    // The info string may contain extra metadata after the language (e.g. `rust,linenos`).
-    // We only care about the first word.
     let lang = info.split([' ', ',', '\t']).next().unwrap_or("");
     if lang.is_empty() {
         return;
@@ -207,7 +835,6 @@ mod tests {
     fn parse_produces_ast() {
         let arena = comrak::Arena::new();
         let root = parse(&arena, "# Hello\n\nWorld");
-        // The root is a Document node with children
         let children: Vec<_> = root.children().collect();
         assert!(children.len() >= 2, "expected heading + paragraph");
     }
@@ -249,5 +876,128 @@ mod tests {
         let mut warnings = WarningCollector::new();
         let clean = check_content(root, &mut warnings);
         assert!(clean);
+    }
+
+    // ─── Emitter tests ──────────────────────────────────────────
+
+    fn test_theme() -> ResolvedTheme {
+        ResolvedTheme {
+            tokens: crate::theme::tokens::ThemeTokens::default(),
+            tmtheme_xml: String::new(),
+        }
+    }
+
+    fn emit(markdown: &str) -> String {
+        let arena = comrak::Arena::new();
+        let root = parse(&arena, markdown);
+        let theme = test_theme();
+        let mut warnings = WarningCollector::new();
+        emit_typst(root, &theme, &mut warnings)
+    }
+
+    #[test]
+    fn emit_heading() {
+        let result = emit("# Hello World");
+        assert!(result.contains("= Hello World"));
+    }
+
+    #[test]
+    fn emit_h2() {
+        let result = emit("## Section");
+        assert!(result.contains("== Section"));
+    }
+
+    #[test]
+    fn emit_bold() {
+        let result = emit("**bold text**");
+        assert!(result.contains("*bold text*"));
+    }
+
+    #[test]
+    fn emit_italic() {
+        let result = emit("*italic text*");
+        assert!(result.contains("_italic text_"));
+    }
+
+    #[test]
+    fn emit_strikethrough() {
+        let result = emit("~~struck~~");
+        assert!(result.contains("#strike[struck]"));
+    }
+
+    #[test]
+    fn emit_inline_code() {
+        let result = emit("`code`");
+        assert!(result.contains("`code`"));
+    }
+
+    #[test]
+    fn emit_link() {
+        let result = emit("[Click](https://example.com)");
+        assert!(result.contains("#link(\"https://example.com\")[Click]"));
+    }
+
+    #[test]
+    fn emit_code_block() {
+        let result = emit("```rust\nfn main() {}\n```");
+        assert!(result.contains("```rust"));
+        assert!(result.contains("fn main() {}"));
+    }
+
+    #[test]
+    fn emit_blockquote() {
+        let result = emit("> A quote");
+        assert!(result.contains("#quote(block: true)"));
+    }
+
+    #[test]
+    fn emit_horizontal_rule() {
+        let result = emit("---");
+        assert!(result.contains("#line(length: 100%)"));
+    }
+
+    #[test]
+    fn emit_unordered_list() {
+        let result = emit("- item one\n- item two");
+        assert!(result.contains("- item one"));
+        assert!(result.contains("- item two"));
+    }
+
+    #[test]
+    fn emit_ordered_list() {
+        let result = emit("1. first\n2. second");
+        assert!(result.contains("+ first"));
+        assert!(result.contains("+ second"));
+    }
+
+    #[test]
+    fn emit_inline_math() {
+        let result = emit("$x^2$");
+        assert!(result.contains("$x^2$"));
+    }
+
+    #[test]
+    fn emit_display_math() {
+        let result = emit("$$\nE = mc^2\n$$");
+        assert!(result.contains("$ E = mc^2 $"));
+    }
+
+    #[test]
+    fn emit_table() {
+        let result = emit("| A | B |\n|---|---|\n| 1 | 2 |");
+        assert!(result.contains("#table("));
+        assert!(result.contains("columns: 2"));
+    }
+
+    #[test]
+    fn emit_escapes_special_chars() {
+        let escaped = escape_typst_content("# Hello *world* _foo_");
+        assert_eq!(escaped, "\\# Hello \\*world\\* \\_foo\\_");
+    }
+
+    #[test]
+    fn emit_hard_break() {
+        let result = emit("line one  \nline two");
+        assert!(result.contains("\\\n"));
     }
 }
