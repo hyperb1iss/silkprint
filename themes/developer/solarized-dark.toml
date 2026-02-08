@@ -48,13 +48,13 @@ mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
 [font_sizes]
 body   = "11pt"
 small  = "9pt"
-code   = "10pt"
-h1     = "26pt"
-h2     = "21pt"
-h3     = "17pt"
-h4     = "14pt"
-h5     = "12pt"
-h6     = "11pt"
+code   = "9.5pt"
+h1     = "20pt"
+h2     = "16pt"
+h3     = "14pt"
+h4     = "12pt"
+h5     = "11pt"
+h6     = "10pt"
 
 # ─── Layer 2: Semantic ────────────────────────────────────────
 
@@ -70,8 +70,8 @@ column_gap     = "12mm"
 
 [text]
 color           = "base0"
-line_height     = 1.5
-paragraph_gap   = "0.85em"
+line_height     = 1.4
+paragraph_gap   = "0.65em"
 justification   = "justify"
 spacing_mode    = "gap"
 first_line_indent = "0pt"
@@ -88,41 +88,41 @@ letter_spacing = "-0.015em"
 weight           = 700
 line_height      = 1.1
 border           = true
-above            = "36pt"
-below            = "12pt"
+above            = "24pt"
+below            = "8pt"
 page_break_before = false
 
 [headings.h2]
 weight           = 600
 line_height      = 1.15
 border           = true
-above            = "28pt"
-below            = "8pt"
+above            = "20pt"
+below            = "6pt"
 page_break_before = false
 
 [headings.h3]
 weight         = 600
 line_height    = 1.2
-above          = "22pt"
-below          = "6pt"
+above          = "16pt"
+below          = "4pt"
 
 [headings.h4]
 weight         = 500
 line_height    = 1.2
-above          = "18pt"
-below          = "4pt"
+above          = "14pt"
+below          = "3pt"
 
 [headings.h5]
 weight         = 500
 line_height    = 1.25
-above          = "18pt"
-below          = "4pt"
+above          = "12pt"
+below          = "2pt"
 
 [headings.h6]
 weight         = 600
 line_height    = 1.25
-above          = "18pt"
-below          = "4pt"
+above          = "12pt"
+below          = "2pt"
 uppercase      = true
 letter_spacing = "0.05em"
 
@@ -166,6 +166,8 @@ row_border_width    = "0.5pt"
 stripe_background   = "base02"
 vertical_lines      = false
 cell_padding        = "6pt 10pt"
+font_size           = "9pt"
+header_text_color   = ""
 
 [horizontal_rule]
 color     = "base01"

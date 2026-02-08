@@ -43,15 +43,15 @@ body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
 mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
 
 [font_sizes]
-body   = "12pt"
-small  = "10pt"
-code   = "10.5pt"
-h1     = "28pt"
-h2     = "23pt"
-h3     = "19pt"
+body   = "11.5pt"
+small  = "9.5pt"
+code   = "10pt"
+h1     = "22pt"
+h2     = "18pt"
+h3     = "15pt"
 h4     = "15.5pt"
-h5     = "13pt"
-h6     = "12pt"
+h5     = "11.5pt"
+h6     = "11pt"
 
 # ─── Layer 2: Semantic ────────────────────────────────────────
 
@@ -67,8 +67,8 @@ column_gap     = "12mm"
 
 [text]
 color           = "text_primary"
-line_height     = 1.55
-paragraph_gap   = "0.9em"
+line_height     = 1.45
+paragraph_gap   = "0.7em"
 justification   = "justify"
 spacing_mode    = "gap"
 first_line_indent = "0pt"
@@ -85,41 +85,41 @@ letter_spacing = "-0.01em"
 weight           = 700
 line_height      = 1.1
 border           = true
-above            = "38pt"
-below            = "14pt"
+above            = "26pt"
+below            = "10pt"
 page_break_before = false
 
 [headings.h2]
 weight           = 700
 line_height      = 1.15
 border           = true
-above            = "30pt"
-below            = "10pt"
+above            = "22pt"
+below            = "8pt"
 page_break_before = false
 
 [headings.h3]
 weight         = 700
 line_height    = 1.2
-above          = "24pt"
-below          = "8pt"
+above          = "18pt"
+below          = "5pt"
 
 [headings.h4]
 weight         = 600
 line_height    = 1.2
-above          = "20pt"
-below          = "6pt"
+above          = "16pt"
+below          = "4pt"
 
 [headings.h5]
 weight         = 600
 line_height    = 1.25
-above          = "18pt"
-below          = "4pt"
+above          = "13pt"
+below          = "3pt"
 
 [headings.h6]
 weight         = 700
 line_height    = 1.25
-above          = "18pt"
-below          = "4pt"
+above          = "13pt"
+below          = "3pt"
 uppercase      = true
 letter_spacing = "0.05em"
 
@@ -163,6 +163,8 @@ row_border_width    = "0.5pt"
 stripe_background   = "surface_alt"
 vertical_lines      = false
 cell_padding        = "6pt 10pt"
+font_size           = "9pt"
+header_text_color   = ""
 
 [horizontal_rule]
 color     = "border_light"
