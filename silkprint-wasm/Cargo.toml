@@ -1,0 +1,25 @@
+[package]
+name = "silkprint-wasm"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "SilkPrint WASM bindings — render Markdown to PDF in the browser"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+silkprint = { path = "..", default-features = false }
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

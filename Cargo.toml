@@ -1,3 +1,6 @@
+[workspace]
+members = ["silkprint-wasm"]
+
 [package]
 name = "silkprint"
 version = "0.1.0"
@@ -19,23 +22,36 @@ path = "src/lib.rs"
 [[bin]]
 name = "silkprint"
 path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = [
+    "dep:clap",
+    "dep:directories",
+    "dep:indicatif",
+    "dep:open",
+    "dep:owo-colors",
+    "dep:tracing-subscriber",
+    "miette/fancy",
+]
 
 [dependencies]
-clap = { version = "4.5.57", features = ["derive", "cargo", "env"] }
+clap = { version = "4.5.57", features = ["derive", "cargo", "env"], optional = true }
 mermaid-rs-renderer = { git = "https://github.com/1jehuang/mermaid-rs-renderer", tag = "v0.2.0", default-features = false }
 comrak = { version = "0.50.0", default-features = false, features = ["shortcodes"] }
-directories = "6.0.0"
-indicatif = "0.18.3"
-miette = { version = "7.6.0", features = ["fancy"] }
-open = "5.3.3"
-owo-colors = "4.2.3"
+directories = { version = "6.0.0", optional = true }
+indicatif = { version = "0.18.3", optional = true }
+miette = "7.6.0"
+open = { version = "5.3.3", optional = true }
+owo-colors = { version = "4.2.3", optional = true }
 rust-embed = { version = "8.11.0", features = ["compression"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml_ng = "0.10.0"
 thiserror = "2.0.18"
 toml = "0.9.11"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"], optional = true }
 typst = "0.14"
 typst-pdf = "0.14"
 scraper = { version = "0.25.0", default-features = false }

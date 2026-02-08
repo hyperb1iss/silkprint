@@ -122,15 +122,24 @@ impl World for SilkWorld {
             ));
         }
 
-        // Resolve relative to the document root directory (input file's parent)
-        let resolved = vpath.resolve(&self.root).ok_or_else(|| {
-            typst::diag::FileError::NotFound(vpath.as_rooted_path().to_path_buf())
-        })?;
+        // Resolve relative to the document root directory (input file's parent).
+        // On WASM there is no local filesystem, so non-virtual files are not found.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let resolved = vpath.resolve(&self.root).ok_or_else(|| {
+                typst::diag::FileError::NotFound(vpath.as_rooted_path().to_path_buf())
+            })?;
 
-        let data = std::fs::read(&resolved)
-            .map_err(|err| typst::diag::FileError::from_io(err, &resolved))?;
+            let data = std::fs::read(&resolved)
+                .map_err(|err| typst::diag::FileError::from_io(err, &resolved))?;
 
-        Ok(Bytes::new(data))
+            return Ok(Bytes::new(data));
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        Err(typst::diag::FileError::NotFound(
+            vpath.as_rooted_path().to_path_buf(),
+        ))
     }
 
     fn font(&self, index: usize) -> Option<Font> {
@@ -138,17 +147,22 @@ impl World for SilkWorld {
     }
 
     fn today(&self, offset: Option<i64>) -> Option<Datetime> {
-        // Use std::time to get the current UTC timestamp, then compute date components.
-        // This avoids depending on the `time` or `chrono` crates directly.
-        let now = std::time::SystemTime::now();
-        let secs = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+        // SystemTime::now() panics on wasm32-unknown-unknown — return None gracefully.
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = offset;
+            return None;
+        }
 
-        // Apply UTC offset in hours if requested
-        let offset_secs = offset.unwrap_or(0) * 3600;
-        let adjusted = i64::try_from(secs).ok()?.checked_add(offset_secs)?;
-
-        let (year, month, day, hour, minute, second) = unix_to_ymd_hms(adjusted);
-        Datetime::from_ymd_hms(year, month, day, hour, minute, second)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let now = std::time::SystemTime::now();
+            let secs = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+            let offset_secs = offset.unwrap_or(0) * 3600;
+            let adjusted = i64::try_from(secs).ok()?.checked_add(offset_secs)?;
+            let (year, month, day, hour, minute, second) = unix_to_ymd_hms(adjusted);
+            Datetime::from_ymd_hms(year, month, day, hour, minute, second)
+        }
     }
 }
 
@@ -206,7 +220,8 @@ pub fn compile_to_pdf(
     let mut font_data = crate::fonts::load_bundled_fonts();
     tracing::debug!(font_files = font_data.len(), "loaded bundled font files");
 
-    // Load fonts from user-specified directories
+    // Load fonts from user-specified directories (not available on WASM)
+    #[cfg(not(target_arch = "wasm32"))]
     for dir in font_dirs {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
@@ -225,6 +240,9 @@ pub fn compile_to_pdf(
             tracing::warn!(dir = %dir.display(), "font directory not found");
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    let _ = font_dirs;
 
     // Build the world
     let world = SilkWorld::new(typst_source, theme, root_dir, font_data, mermaid_svgs.clone());
@@ -293,11 +311,21 @@ pub fn compile_to_pdf(
 }
 
 /// Build a UTC timestamp for PDF metadata from the current system time.
+///
+/// Returns `None` on WASM where `SystemTime::now()` is unavailable.
 fn build_utc_timestamp() -> Option<typst_pdf::Timestamp> {
-    let now = std::time::SystemTime::now();
-    let secs = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
-    let secs_i64 = i64::try_from(secs).ok()?;
-    let (year, month, day, hour, minute, second) = unix_to_ymd_hms(secs_i64);
-    let dt = Datetime::from_ymd_hms(year, month, day, hour, minute, second)?;
-    Some(typst_pdf::Timestamp::new_utc(dt))
+    #[cfg(target_arch = "wasm32")]
+    {
+        return None;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let now = std::time::SystemTime::now();
+        let secs = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+        let secs_i64 = i64::try_from(secs).ok()?;
+        let (year, month, day, hour, minute, second) = unix_to_ymd_hms(secs_i64);
+        let dt = Datetime::from_ymd_hms(year, month, day, hour, minute, second)?;
+        Some(typst_pdf::Timestamp::new_utc(dt))
+    }
 }
