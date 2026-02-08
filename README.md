@@ -30,10 +30,6 @@
 
 ---
 
-<p align="center">
-  <img src="docs/screenshots/hero-silkcircuit-neon.png" width="600" alt="SilkPrint rendering with SilkCircuit Neon theme">
-</p>
-
 ## ⚡ Quick Start
 
 ```bash
@@ -74,8 +70,8 @@ SilkPrint ships with **40 themes** across 8 families. Every theme controls typog
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/theme-silk-light.png" alt="Silk Light"></td>
-<td width="50%"><img src="docs/screenshots/theme-sakura.png" alt="Sakura"></td>
+<td width="50%"><img src="docs/screenshots/theme-silk-light.png" width="220" alt="Silk Light"></td>
+<td width="50%"><img src="docs/screenshots/theme-sakura.png" width="220" alt="Sakura"></td>
 </tr>
 <tr>
 <td align="center"><strong>silk-light</strong> — Clean serif elegance</td>
@@ -87,16 +83,16 @@ SilkPrint ships with **40 themes** across 8 families. Every theme controls typog
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/hero-silkcircuit-neon.png" alt="SilkCircuit Neon"></td>
-<td width="50%"><img src="docs/screenshots/theme-nord.png" alt="Nord"></td>
+<td width="50%"><img src="docs/screenshots/hero-silkcircuit-neon.png" width="220" alt="SilkCircuit Neon"></td>
+<td width="50%"><img src="docs/screenshots/theme-nord.png" width="220" alt="Nord"></td>
 </tr>
 <tr>
 <td align="center"><strong>silkcircuit-neon</strong> — Electric purple + cyan</td>
 <td align="center"><strong>nord</strong> — Arctic blue-grey calm</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/theme-dracula.png" alt="Dracula"></td>
-<td width="50%"><img src="docs/screenshots/theme-catppuccin-mocha.png" alt="Catppuccin Mocha"></td>
+<td width="50%"><img src="docs/screenshots/theme-dracula.png" width="220" alt="Dracula"></td>
+<td width="50%"><img src="docs/screenshots/theme-catppuccin-mocha.png" width="220" alt="Catppuccin Mocha"></td>
 </tr>
 <tr>
 <td align="center"><strong>dracula</strong> — Dark purple elegance</td>
