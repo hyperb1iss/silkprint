@@ -101,25 +101,25 @@ page_break_before = false
 weight         = 700
 line_height    = 1.2
 above          = "18pt"
-below          = "5pt"
+below          = "6pt"
 
 [headings.h4]
 weight         = 600
 line_height    = 1.2
 above          = "16pt"
-below          = "4pt"
+below          = "5pt"
 
 [headings.h5]
 weight         = 600
 line_height    = 1.25
 above          = "13pt"
-below          = "3pt"
+below          = "4pt"
 
 [headings.h6]
 weight         = 700
 line_height    = 1.25
 above          = "13pt"
-below          = "3pt"
+below          = "4pt"
 uppercase      = true
 letter_spacing = "0.05em"
 
