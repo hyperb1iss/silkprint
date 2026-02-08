@@ -3,26 +3,55 @@ import type { InitOutput } from './wasm/silkprint_wasm';
 let wasmModule: InitOutput | null = null;
 let initPromise: Promise<InitOutput> | null = null;
 
-// Start downloading the WASM binary as soon as this module loads.
-// The dynamic import of this file is triggered on component mount,
-// so the ~41MB fetch races with Typst compiler initialization.
+const FONT_FILES = [
+  'inter/Inter-Regular.ttf',
+  'inter/Inter-Medium.ttf',
+  'inter/Inter-SemiBold.ttf',
+  'inter/Inter-Bold.ttf',
+  'source-serif/SourceSerif4-Regular.ttf',
+  'source-serif/SourceSerif4-Italic.ttf',
+  'source-serif/SourceSerif4-SemiBold.ttf',
+  'source-serif/SourceSerif4-Bold.ttf',
+  'jetbrains-mono/JetBrainsMono-Regular.ttf',
+  'jetbrains-mono/JetBrainsMono-Italic.ttf',
+  'jetbrains-mono/JetBrainsMono-Bold.ttf',
+  'jetbrains-mono/JetBrainsMono-BoldItalic.ttf',
+];
+
+// Pre-warm: start all fetches immediately on module load.
+// WASM + 12 fonts download in parallel over HTTP/2.
 const wasmFetchPromise: Promise<Response> | null =
   typeof window !== 'undefined' ? fetch('/wasm/silkprint_wasm_bg.wasm') : null;
 
+const fontFetchPromises: Promise<ArrayBuffer>[] =
+  typeof window !== 'undefined'
+    ? FONT_FILES.map(f => fetch(`/fonts/${f}`).then(r => r.arrayBuffer()))
+    : [];
+
 /**
- * Lazily initialize the SilkPrint WASM module.
+ * Lazily initialize the SilkPrint WASM module and register fonts.
  *
- * Uses the module-level preloaded fetch if available, giving
- * streaming WASM compilation a head start on the binary download.
+ * Uses module-level preloaded fetches so WASM compilation and font
+ * downloads race in parallel from first import.
  */
 async function ensureInit(): Promise<InitOutput> {
   if (wasmModule) return wasmModule;
 
   if (!initPromise) {
     initPromise = (async () => {
-      const wasm = await import('./wasm/silkprint_wasm');
+      const [wasm, fontBuffers] = await Promise.all([
+        import('./wasm/silkprint_wasm'),
+        Promise.all(fontFetchPromises),
+      ]);
+
       const source = wasmFetchPromise ?? fetch('/wasm/silkprint_wasm_bg.wasm');
       const output = await wasm.default(await source);
+
+      // Register all fonts before first render
+      for (const buf of fontBuffers) {
+        wasm.register_font(new Uint8Array(buf));
+      }
+
       wasmModule = output;
       return output;
     })();

@@ -121,6 +121,15 @@ jobs:
           mkdir -p wasm-out
           wasm-bindgen --out-dir wasm-out --target web \
             target/wasm32-unknown-unknown/release/silkprint_wasm.wasm
+          # Patch import.meta.url so Turbopack doesn't resolve it statically
+          sed -i "s|new URL('silkprint_wasm_bg.wasm', import.meta.url)|'/wasm/silkprint_wasm_bg.wasm'|" \
+            wasm-out/silkprint_wasm.js
+      - name: Optimize WASM
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq binaryen > /dev/null 2>&1 || true
+          if command -v wasm-opt >/dev/null 2>&1; then
+            wasm-opt -Oz --enable-bulk-memory wasm-out/silkprint_wasm_bg.wasm -o wasm-out/silkprint_wasm_bg.wasm
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: wasm
@@ -142,12 +151,13 @@ jobs:
         with:
           name: wasm
           path: wasm-out/
-      - name: Install WASM artifacts
+      - name: Install WASM artifacts and fonts
         working-directory: .
         run: |
-          mkdir -p web/src/lib/wasm web/public/wasm
+          mkdir -p web/src/lib/wasm web/public/wasm web/public/fonts
           cp wasm-out/silkprint_wasm.js wasm-out/silkprint_wasm.d.ts web/src/lib/wasm/
           cp wasm-out/silkprint_wasm_bg.wasm web/public/wasm/
+          cp -r fonts/core/* web/public/fonts/
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

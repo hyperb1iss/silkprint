@@ -1,5 +1,15 @@
 use silkprint::error::SilkprintError;
+use silkprint::fonts::add_external_font;
 use wasm_bindgen::prelude::*;
+
+/// Register a font file for use by the renderer.
+///
+/// Call once per font file after WASM init, before the first render.
+/// Accepts raw TTF/OTF bytes.
+#[wasm_bindgen]
+pub fn register_font(data: &[u8]) {
+    add_external_font(data.to_vec());
+}
 
 /// Format a SilkprintError with full diagnostics for display in the browser.
 fn format_error(e: &SilkprintError) -> String {

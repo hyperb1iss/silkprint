@@ -40,6 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# WASM build artifacts (41MB binary, auto-generated JS glue + types)
+# Build artifacts (WASM binary, JS glue, fonts copied from fonts/core/)
 /public/wasm/
+/public/fonts/
 /src/lib/wasm/

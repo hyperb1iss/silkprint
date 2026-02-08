@@ -42,10 +42,23 @@ run *ARGS:
 # Build WASM module and install bindings into web/
 wasm:
     cargo build --release --locked -p silkprint-wasm --target wasm32-unknown-unknown
-    mkdir -p web/src/lib/wasm web/public/wasm
+    mkdir -p web/src/lib/wasm web/public/wasm web/public/fonts
     wasm-bindgen --out-dir web/src/lib/wasm --target web \
         target/wasm32-unknown-unknown/release/silkprint_wasm.wasm
-    mv web/src/lib/wasm/silkprint_wasm_bg.wasm web/public/wasm/
+    # Patch import.meta.url reference so Turbopack doesn't try to resolve it statically
+    sed -i "s|new URL('silkprint_wasm_bg.wasm', import.meta.url)|'/wasm/silkprint_wasm_bg.wasm'|" \
+        web/src/lib/wasm/silkprint_wasm.js
+    # Optimize WASM binary if wasm-opt is available, otherwise just move it
+    if command -v wasm-opt >/dev/null 2>&1; then \
+        wasm-opt -Oz --enable-bulk-memory \
+            web/src/lib/wasm/silkprint_wasm_bg.wasm \
+            -o web/public/wasm/silkprint_wasm_bg.wasm && \
+        rm web/src/lib/wasm/silkprint_wasm_bg.wasm; \
+    else \
+        mv web/src/lib/wasm/silkprint_wasm_bg.wasm web/public/wasm/; \
+    fi
+    # Copy core fonts for parallel loading (no emoji — browser handles that)
+    cp -r fonts/core/* web/public/fonts/
 
 # ── Web ───────────────────────────────────────────────────────
 
