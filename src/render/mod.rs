@@ -7,10 +7,10 @@ pub mod typst;
 
 use std::path::Path;
 
+use crate::RenderOptions;
 use crate::error::SilkprintError;
 use crate::theme::ResolvedTheme;
 use crate::warnings::WarningCollector;
-use crate::RenderOptions;
 
 use self::frontmatter::FrontMatter;
 

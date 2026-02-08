@@ -61,10 +61,7 @@ impl SilkWorld {
             }
         }
 
-        tracing::debug!(
-            font_count = fonts.len(),
-            "loaded fonts into SilkWorld"
-        );
+        tracing::debug!(font_count = fonts.len(), "loaded fonts into SilkWorld");
 
         Self {
             library: LazyHash::new(Library::default()),
@@ -129,10 +126,7 @@ impl World for SilkWorld {
         // Use std::time to get the current UTC timestamp, then compute date components.
         // This avoids depending on the `time` or `chrono` crates directly.
         let now = std::time::SystemTime::now();
-        let secs = now
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_secs();
+        let secs = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
 
         // Apply UTC offset in hours if requested
         let offset_secs = offset.unwrap_or(0) * 3600;
@@ -147,7 +141,11 @@ impl World for SilkWorld {
 ///
 /// Civil-time algorithm from Howard Hinnant's date library — handles all valid
 /// Unix timestamps without external dependencies.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions
+)]
 fn unix_to_ymd_hms(secs: i64) -> (i32, u8, u8, u8, u8, u8) {
     let day_secs = secs.rem_euclid(86400);
     let hour = (day_secs / 3600) as u8;
@@ -241,10 +239,7 @@ pub fn compile_to_pdf(
             })
             .collect();
 
-        tracing::error!(
-            count = messages.len(),
-            "Typst compilation failed"
-        );
+        tracing::error!(count = messages.len(), "Typst compilation failed");
         for msg in &messages {
             tracing::error!("{msg}");
         }
@@ -265,25 +260,16 @@ pub fn compile_to_pdf(
 
     // Export to PDF
     let pdf_bytes = typst_pdf::pdf(&document, &pdf_options).map_err(|diagnostics| {
-        let messages: Vec<String> = diagnostics
-            .iter()
-            .map(|d| d.message.to_string())
-            .collect();
+        let messages: Vec<String> = diagnostics.iter().map(|d| d.message.to_string()).collect();
 
-        tracing::error!(
-            count = messages.len(),
-            "PDF export failed"
-        );
+        tracing::error!(count = messages.len(), "PDF export failed");
 
         SilkprintError::TypstCompilation {
             diagnostics: messages,
         }
     })?;
 
-    tracing::info!(
-        bytes = pdf_bytes.len(),
-        "PDF export complete"
-    );
+    tracing::info!(bytes = pdf_bytes.len(), "PDF export complete");
 
     Ok(pdf_bytes)
 }
@@ -291,10 +277,7 @@ pub fn compile_to_pdf(
 /// Build a UTC timestamp for PDF metadata from the current system time.
 fn build_utc_timestamp() -> Option<typst_pdf::Timestamp> {
     let now = std::time::SystemTime::now();
-    let secs = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs();
+    let secs = now.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
     let secs_i64 = i64::try_from(secs).ok()?;
     let (year, month, day, hour, minute, second) = unix_to_ymd_hms(secs_i64);
     let dt = Datetime::from_ymd_hms(year, month, day, hour, minute, second)?;

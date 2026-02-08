@@ -6,12 +6,27 @@ use std::fmt;
 /// Suppressed by `--quiet`. Never cause non-zero exit codes.
 #[derive(Debug, Clone)]
 pub enum SilkprintWarning {
-    ImageNotFound { path: String },
-    FontNotAvailable { name: String, fallback: String },
-    UnknownLanguage { lang: String },
-    UnrecognizedFrontMatter { field: String },
-    ContrastRatio { element: String, ratio: f64, minimum: f64 },
-    RemoteImageSkipped { url: String },
+    ImageNotFound {
+        path: String,
+    },
+    FontNotAvailable {
+        name: String,
+        fallback: String,
+    },
+    UnknownLanguage {
+        lang: String,
+    },
+    UnrecognizedFrontMatter {
+        field: String,
+    },
+    ContrastRatio {
+        element: String,
+        ratio: f64,
+        minimum: f64,
+    },
+    RemoteImageSkipped {
+        url: String,
+    },
 }
 
 impl fmt::Display for SilkprintWarning {
@@ -21,10 +36,16 @@ impl fmt::Display for SilkprintWarning {
                 write!(f, "image '{path}' not found, skipping")
             }
             Self::FontNotAvailable { name, fallback } => {
-                write!(f, "font '{name}' not available, falling back to '{fallback}'")
+                write!(
+                    f,
+                    "font '{name}' not available, falling back to '{fallback}'"
+                )
             }
             Self::UnknownLanguage { lang } => {
-                write!(f, "code block language '{lang}' not recognized for highlighting")
+                write!(
+                    f,
+                    "code block language '{lang}' not recognized for highlighting"
+                )
             }
             Self::UnrecognizedFrontMatter { field } => {
                 write!(f, "unrecognized front matter field: '{field}'")

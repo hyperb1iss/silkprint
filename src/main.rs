@@ -421,7 +421,8 @@ fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
     //   --theme NAME, --theme=NAME, -t NAME, -tNAME
     let theme_explicit = {
         let args: Vec<String> = std::env::args().collect();
-        args.iter().any(|a| a == "--theme" || a.starts_with("--theme="))
+        args.iter()
+            .any(|a| a == "--theme" || a.starts_with("--theme="))
             || args.windows(2).any(|w| w[0] == "-t")
             || args.iter().any(|a| a.starts_with("-t") && a.len() > 2)
     };

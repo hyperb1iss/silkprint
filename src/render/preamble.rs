@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
+use crate::RenderOptions;
 use crate::render::frontmatter::FrontMatter;
 use crate::theme::ResolvedTheme;
-use crate::RenderOptions;
 
 /// Generate the Typst preamble (set/show rules) from theme + front matter + options.
 ///
@@ -66,7 +66,11 @@ pub fn generate(
         .or_else(|| front_matter.and_then(|fm| fm.toc))
         .unwrap_or(false);
     if show_toc {
-        let theme_depth = if t.toc.max_depth > 0 { t.toc.max_depth } else { 3 };
+        let theme_depth = if t.toc.max_depth > 0 {
+            t.toc.max_depth
+        } else {
+            3
+        };
         let depth = front_matter
             .and_then(|fm| fm.toc_depth)
             .unwrap_or(theme_depth);
@@ -281,11 +285,7 @@ fn emit_heading_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
             },
         );
 
-        let _ = writeln!(
-            out,
-            "#show heading.where(level: {}): it => {{",
-            hl.level
-        );
+        let _ = writeln!(out, "#show heading.where(level: {}): it => {{", hl.level);
 
         // Page break before if requested
         if hl.tokens.page_break_before == Some(true) {
@@ -296,8 +296,10 @@ fn emit_heading_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
         let _ = writeln!(out, "  block(below: {below})[");
 
         // Per-level line_height override
-        let level_lh = hl.tokens.line_height.unwrap_or(
-            if t.headings.line_height > 0.0 {
+        let level_lh = hl
+            .tokens
+            .line_height
+            .unwrap_or(if t.headings.line_height > 0.0 {
                 t.headings.line_height
             } else {
                 match hl.level {
@@ -306,8 +308,7 @@ fn emit_heading_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
                     3 | 4 => 1.2,
                     _ => 1.25,
                 }
-            },
-        );
+            });
         let heading_leading = level_lh - 1.0;
 
         // Letter spacing
@@ -447,10 +448,7 @@ fn emit_blockquote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens)
         out,
         "    stroke: (left: {border_width} + rgb(\"{border_color}\")),"
     );
-    let _ = writeln!(
-        out,
-        "    inset: (left: {left_pad}, y: 8pt, right: 8pt),"
-    );
+    let _ = writeln!(out, "    inset: (left: {left_pad}, y: 8pt, right: 8pt),");
     out.push_str("    width: 100%,\n");
     out.push_str("  )[\n");
     let _ = writeln!(out, "    #set text(fill: rgb(\"{text_color}\"))");

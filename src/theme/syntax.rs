@@ -13,20 +13,32 @@ use super::tokens::{SyntaxStyleTokens, SyntaxTokens};
 /// which Typst uses for syntax highlighting.
 pub const TOKEN_SCOPE_MAP: &[(&str, &[&str])] = &[
     ("text", &["source"]),
-    ("keyword", &["keyword", "keyword.control", "keyword.operator.word"]),
+    (
+        "keyword",
+        &["keyword", "keyword.control", "keyword.operator.word"],
+    ),
     ("string", &["string", "string.quoted"]),
     ("number", &["constant.numeric"]),
     ("function", &["entity.name.function", "support.function"]),
-    ("type", &["entity.name.type", "support.type", "storage.type"]),
+    (
+        "type",
+        &["entity.name.type", "support.type", "storage.type"],
+    ),
     ("comment", &["comment", "comment.line", "comment.block"]),
     ("constant", &["constant", "constant.language"]),
     ("boolean", &["constant.language.boolean"]),
     ("operator", &["keyword.operator"]),
-    ("property", &["variable.other.property", "entity.other.attribute-name"]),
+    (
+        "property",
+        &["variable.other.property", "entity.other.attribute-name"],
+    ),
     ("tag", &["entity.name.tag"]),
     ("attribute", &["entity.other.attribute-name"]),
     ("variable", &["variable", "variable.other"]),
-    ("builtin", &["support.function.builtin", "support.class.builtin"]),
+    (
+        "builtin",
+        &["support.function.builtin", "support.class.builtin"],
+    ),
     ("punctuation", &["punctuation"]),
     ("escape", &["constant.character.escape"]),
 ];
@@ -54,7 +66,10 @@ fn resolve_color(value: &str, colors: &HashMap<String, String>) -> String {
     if value.starts_with('#') {
         return value.to_string();
     }
-    colors.get(value).cloned().unwrap_or_else(|| value.to_string())
+    colors
+        .get(value)
+        .cloned()
+        .unwrap_or_else(|| value.to_string())
 }
 
 /// Get a `SyntaxStyleTokens` from the `SyntaxTokens` struct by token name.

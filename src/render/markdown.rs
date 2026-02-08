@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use comrak::nodes::{AstNode, ListType, NodeValue, TableAlignment};
 use comrak::Options;
+use comrak::nodes::{AstNode, ListType, NodeValue, TableAlignment};
 
 use crate::theme::ResolvedTheme;
 use crate::warnings::{SilkprintWarning, WarningCollector};
@@ -112,7 +112,9 @@ enum ExtractedNode {
     Document,
     FrontMatter,
     Paragraph,
-    Heading { level: u8 },
+    Heading {
+        level: u8,
+    },
     ThematicBreak,
     Text(String),
     SoftBreak,
@@ -124,30 +126,65 @@ enum ExtractedNode {
     Superscript,
     Subscript,
     Highlight,
-    Code { literal: String, num_backticks: usize },
-    Link { url: String },
-    Image { url: String },
-    WikiLink { url: String },
+    Code {
+        literal: String,
+        num_backticks: usize,
+    },
+    Link {
+        url: String,
+    },
+    Image {
+        url: String,
+    },
+    WikiLink {
+        url: String,
+    },
     BlockQuote,
     MultilineBlockQuote,
-    List { is_ordered: bool, tight: bool, start: usize },
+    List {
+        is_ordered: bool,
+        tight: bool,
+        start: usize,
+    },
     Item,
-    TaskItem { checked: bool },
-    CodeBlock { info: String, literal: String },
-    HtmlBlock { literal: String },
+    TaskItem {
+        checked: bool,
+    },
+    CodeBlock {
+        info: String,
+        literal: String,
+    },
+    HtmlBlock {
+        literal: String,
+    },
     HtmlInline(String),
-    Table { alignments: Vec<TableAlignment>, num_columns: usize },
-    TableRow { is_header: bool },
+    Table {
+        alignments: Vec<TableAlignment>,
+        num_columns: usize,
+    },
+    TableRow {
+        is_header: bool,
+    },
     TableCell,
     FootnoteDefinition,
-    FootnoteReference { name: String },
-    Math { literal: String, display: bool },
-    Alert { title: String, icon: &'static str },
+    FootnoteReference {
+        name: String,
+    },
+    Math {
+        literal: String,
+        display: bool,
+    },
+    Alert {
+        title: String,
+        icon: &'static str,
+    },
     DescriptionList,
     DescriptionItem,
     DescriptionTerm,
     DescriptionDetails,
-    ShortCode { emoji: String },
+    ShortCode {
+        emoji: String,
+    },
     Escaped,
     EscapedTag,
     SpoileredText,
@@ -191,28 +228,39 @@ fn extract_node(node: &AstNode<'_>) -> ExtractedNode {
             start: list.start,
         },
         NodeValue::Item(_) => ExtractedNode::Item,
-        NodeValue::TaskItem(t) => ExtractedNode::TaskItem { checked: t.symbol.is_some() },
+        NodeValue::TaskItem(t) => ExtractedNode::TaskItem {
+            checked: t.symbol.is_some(),
+        },
         NodeValue::CodeBlock(cb) => ExtractedNode::CodeBlock {
             info: cb.info.clone(),
             literal: cb.literal.clone(),
         },
-        NodeValue::HtmlBlock(h) => ExtractedNode::HtmlBlock { literal: h.literal.clone() },
+        NodeValue::HtmlBlock(h) => ExtractedNode::HtmlBlock {
+            literal: h.literal.clone(),
+        },
         NodeValue::HtmlInline(h) => ExtractedNode::HtmlInline(h.clone()),
         NodeValue::Table(t) => ExtractedNode::Table {
             alignments: t.alignments.clone(),
             num_columns: t.num_columns,
         },
-        NodeValue::TableRow(is_header) => ExtractedNode::TableRow { is_header: *is_header },
+        NodeValue::TableRow(is_header) => ExtractedNode::TableRow {
+            is_header: *is_header,
+        },
         NodeValue::TableCell => ExtractedNode::TableCell,
         NodeValue::FootnoteDefinition(_) => ExtractedNode::FootnoteDefinition,
-        NodeValue::FootnoteReference(f) => ExtractedNode::FootnoteReference { name: f.name.clone() },
+        NodeValue::FootnoteReference(f) => ExtractedNode::FootnoteReference {
+            name: f.name.clone(),
+        },
         NodeValue::Math(m) => ExtractedNode::Math {
             literal: m.literal.clone(),
             display: m.display_math,
         },
         NodeValue::Alert(a) => {
             let alert_type = a.alert_type;
-            let title = a.title.clone().unwrap_or_else(|| alert_type.default_title().to_string());
+            let title = a
+                .title
+                .clone()
+                .unwrap_or_else(|| alert_type.default_title().to_string());
             let (icon, _) = alert_icon_and_color(alert_type);
             ExtractedNode::Alert { title, icon }
         }
@@ -220,7 +268,9 @@ fn extract_node(node: &AstNode<'_>) -> ExtractedNode {
         NodeValue::DescriptionItem(_) => ExtractedNode::DescriptionItem,
         NodeValue::DescriptionTerm => ExtractedNode::DescriptionTerm,
         NodeValue::DescriptionDetails => ExtractedNode::DescriptionDetails,
-        NodeValue::ShortCode(s) => ExtractedNode::ShortCode { emoji: s.emoji.clone() },
+        NodeValue::ShortCode(s) => ExtractedNode::ShortCode {
+            emoji: s.emoji.clone(),
+        },
         NodeValue::Escaped => ExtractedNode::Escaped,
         NodeValue::EscapedTag(_) => ExtractedNode::EscapedTag,
         NodeValue::SpoileredText => ExtractedNode::SpoileredText,
@@ -333,7 +383,10 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── Inline code ─────────────────────────────────────────
-        ExtractedNode::Code { literal, num_backticks } => {
+        ExtractedNode::Code {
+            literal,
+            num_backticks,
+        } => {
             let ticks_count = num_backticks.max(1);
             let ticks: String = "`".repeat(ticks_count);
             if literal.starts_with('`') || literal.ends_with('`') {
@@ -368,11 +421,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
             let mut alt_text = String::new();
             collect_text(node, &mut alt_text);
             if !alt_text.is_empty() {
-                let _ = writeln!(
-                    ctx.out,
-                    "  caption: [{}],",
-                    escape_typst_content(&alt_text)
-                );
+                let _ = writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&alt_text));
             }
 
             ctx.push(")\n");
@@ -387,7 +436,11 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── List ────────────────────────────────────────────────
-        ExtractedNode::List { is_ordered, tight, start } => {
+        ExtractedNode::List {
+            is_ordered,
+            tight,
+            start,
+        } => {
             let prev_tight = ctx.in_tight_list;
             ctx.in_tight_list = tight;
 
@@ -472,7 +525,10 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── Table ───────────────────────────────────────────────
-        ExtractedNode::Table { alignments, num_columns } => {
+        ExtractedNode::Table {
+            alignments,
+            num_columns,
+        } => {
             ctx.table_alignments.clone_from(&alignments);
             ctx.newline();
 
@@ -732,9 +788,7 @@ fn decode_html_entity(s: &str) -> String {
 }
 
 /// Get icon and color field name for an alert type.
-fn alert_icon_and_color(
-    alert_type: comrak::nodes::AlertType,
-) -> (&'static str, &'static str) {
+fn alert_icon_and_color(alert_type: comrak::nodes::AlertType) -> (&'static str, &'static str) {
     use comrak::nodes::AlertType;
     match alert_type {
         AlertType::Note => ("\u{2139}\u{FE0F}", "note_color"),
@@ -769,15 +823,73 @@ pub fn check_content<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector)
 
 /// Well-known code fence language identifiers that `syntect`/Typst can highlight.
 const KNOWN_LANGUAGES: &[&str] = &[
-    "bash", "c", "clojure", "cpp", "c++", "csharp", "c#", "cs", "css",
-    "dart", "diff", "dockerfile", "elixir", "elm", "erlang", "go",
-    "graphql", "haskell", "html", "java", "javascript", "js", "json",
-    "jsonc", "jsx", "julia", "kotlin", "latex", "tex", "lua", "makefile",
-    "markdown", "md", "nix", "objc", "objective-c", "ocaml", "perl",
-    "php", "plain", "text", "txt", "powershell", "python", "py", "r",
-    "ruby", "rb", "rust", "rs", "scala", "scss", "sh", "shell", "sql",
-    "swift", "toml", "ts", "tsx", "typescript", "typst", "vim", "xml",
-    "yaml", "yml", "zig", "zsh",
+    "bash",
+    "c",
+    "clojure",
+    "cpp",
+    "c++",
+    "csharp",
+    "c#",
+    "cs",
+    "css",
+    "dart",
+    "diff",
+    "dockerfile",
+    "elixir",
+    "elm",
+    "erlang",
+    "go",
+    "graphql",
+    "haskell",
+    "html",
+    "java",
+    "javascript",
+    "js",
+    "json",
+    "jsonc",
+    "jsx",
+    "julia",
+    "kotlin",
+    "latex",
+    "tex",
+    "lua",
+    "makefile",
+    "markdown",
+    "md",
+    "nix",
+    "objc",
+    "objective-c",
+    "ocaml",
+    "perl",
+    "php",
+    "plain",
+    "text",
+    "txt",
+    "powershell",
+    "python",
+    "py",
+    "r",
+    "ruby",
+    "rb",
+    "rust",
+    "rs",
+    "scala",
+    "scss",
+    "sh",
+    "shell",
+    "sql",
+    "swift",
+    "toml",
+    "ts",
+    "tsx",
+    "typescript",
+    "typst",
+    "vim",
+    "xml",
+    "yaml",
+    "yml",
+    "zig",
+    "zsh",
 ];
 
 /// Warn if a code block specifies an unrecognized language identifier.

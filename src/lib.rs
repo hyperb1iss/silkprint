@@ -136,7 +136,10 @@ pub fn render_to_typst(
 ///
 /// If the CLI theme is the built-in default ("silk-light") and front matter
 /// specifies a different theme, the front matter theme wins.
-fn resolve_effective_theme(options: &RenderOptions, front_matter: Option<&render::frontmatter::FrontMatter>) -> ThemeSource {
+fn resolve_effective_theme(
+    options: &RenderOptions,
+    front_matter: Option<&render::frontmatter::FrontMatter>,
+) -> ThemeSource {
     // CLI explicit theme always wins (CLI > front matter > default)
     if options.theme_explicit {
         return options.theme.clone();

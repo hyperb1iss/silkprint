@@ -12,9 +12,9 @@ pub mod tokens;
 
 use std::collections::{HashMap, HashSet};
 
+use crate::ThemeSource;
 use crate::error::SilkprintError;
 use crate::warnings::WarningCollector;
-use crate::ThemeSource;
 
 use self::tokens::{SyntaxTokens, ThemeTokens};
 
@@ -87,12 +87,12 @@ fn load_toml_source(source: &ThemeSource) -> Result<String, SilkprintError> {
                     suggestions,
                 }
             }),
-        ThemeSource::Custom(path) => std::fs::read_to_string(path).map_err(|e| {
-            SilkprintError::InputRead {
+        ThemeSource::Custom(path) => {
+            std::fs::read_to_string(path).map_err(|e| SilkprintError::InputRead {
                 path: path.display().to_string(),
                 source: e,
-            }
-        }),
+            })
+        }
         ThemeSource::Inline(toml_str) => Ok(toml_str.clone()),
     }
 }
@@ -169,12 +169,11 @@ fn resolve_inheritance(
 
         // Load the parent theme
         let parent_source = ThemeSource::BuiltIn(parent_name.clone());
-        let parent_toml = load_toml_source(&parent_source).map_err(|_| {
-            SilkprintError::ThemeNotFound {
+        let parent_toml =
+            load_toml_source(&parent_source).map_err(|_| SilkprintError::ThemeNotFound {
                 name: parent_name.clone(),
                 suggestions: find_suggestions(&parent_name, &builtin::list_themes()),
-            }
-        })?;
+            })?;
         let parent_tokens = parse_theme_toml(&parent_toml, source)?;
 
         seen_names.insert(parent_name);
@@ -495,12 +494,7 @@ fn run_contrast_checks(tokens: &ThemeTokens, warnings: &mut WarningCollector) {
             4.5,
         ),
         // Caption/footnote text vs page background (4.5:1)
-        (
-            "caption text",
-            &tokens.images.caption_color,
-            page_bg,
-            4.5,
-        ),
+        ("caption text", &tokens.images.caption_color, page_bg, 4.5),
         (
             "footnote numbers",
             &tokens.footnotes.number_color,

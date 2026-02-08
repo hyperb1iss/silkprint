@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+use crate::PaperSize;
 use crate::error::SilkprintError;
 use crate::warnings::{SilkprintWarning, WarningCollector};
-use crate::PaperSize;
 
 /// Parsed YAML front matter from a Markdown document.
 ///
@@ -57,10 +57,7 @@ impl<'de> Deserialize<'de> for FlexibleDate {
                 serde_yaml_ng::to_writer(&mut buf, other)
                     .ok()
                     .and_then(|()| String::from_utf8(buf).ok())
-                    .map_or_else(
-                        || format!("{other:?}"),
-                        |s| s.trim().to_string(),
-                    )
+                    .map_or_else(|| format!("{other:?}"), |s| s.trim().to_string())
             }
         };
         Ok(FlexibleDate(s))
@@ -163,10 +160,8 @@ fn strip_newline_prefix(s: &str) -> &str {
 /// If the error includes location info, we construct a span pointing there.
 /// Otherwise we fall back to spanning the entire YAML block.
 fn yaml_error_span(err: &serde_yaml_ng::Error, yaml_len: usize) -> miette::SourceSpan {
-    err.location().map_or_else(
-        || (0, yaml_len).into(),
-        |loc| (loc.index(), 1).into(),
-    )
+    err.location()
+        .map_or_else(|| (0, yaml_len).into(), |loc| (loc.index(), 1).into())
 }
 
 /// Emit warnings for any unrecognized fields captured in `extras`.
@@ -364,8 +359,11 @@ mod tests {
 
     #[test]
     fn merge_falls_through_to_defaults() {
-        let merged =
-            merge_options(&CliOptionOverrides::default(), None, &ThemeDefaults::default());
+        let merged = merge_options(
+            &CliOptionOverrides::default(),
+            None,
+            &ThemeDefaults::default(),
+        );
         assert_eq!(merged.lang, "en");
         assert_eq!(merged.theme, "silk-light");
         assert!(matches!(merged.paper, PaperSize::A4));
