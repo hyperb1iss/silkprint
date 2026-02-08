@@ -34,6 +34,9 @@ pub enum SilkprintWarning {
     UnsupportedHtmlTag {
         tag: String,
     },
+    FootnoteNotFound {
+        name: String,
+    },
 }
 
 impl fmt::Display for SilkprintWarning {
@@ -75,6 +78,9 @@ impl fmt::Display for SilkprintWarning {
             }
             Self::UnsupportedHtmlTag { tag } => {
                 write!(f, "unsupported HTML tag <{tag}>, content may be lost")
+            }
+            Self::FootnoteNotFound { name } => {
+                write!(f, "footnote '{name}' referenced but not defined")
             }
         }
     }

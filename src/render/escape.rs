@@ -1,12 +1,12 @@
 /// Escape special Typst markup characters in content text.
 ///
 /// Characters that have special meaning in Typst body content (`#`, `*`, `_`,
-/// `@`, `<`, `>`, `$`, `\`, `~`) are prefixed with a backslash.
+/// `@`, `<`, `>`, `$`, `\`, `~`, `[`, `]`) are prefixed with a backslash.
 pub(crate) fn escape_typst_content(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + s.len() / 8);
     for c in s.chars() {
         match c {
-            '#' | '*' | '_' | '@' | '<' | '>' | '$' | '\\' | '~' => {
+            '#' | '*' | '_' | '@' | '<' | '>' | '$' | '\\' | '~' | '[' | ']' => {
                 out.push('\\');
                 out.push(c);
             }
@@ -29,6 +29,12 @@ mod tests {
     fn escape_content_special_chars() {
         let result = escape_typst_content("# Hello *world* _foo_");
         assert_eq!(result, "\\# Hello \\*world\\* \\_foo\\_");
+    }
+
+    #[test]
+    fn escape_content_brackets() {
+        let result = escape_typst_content("array[0] and [link]");
+        assert_eq!(result, "array\\[0\\] and \\[link\\]");
     }
 
     #[test]

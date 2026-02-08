@@ -212,8 +212,6 @@ fn merge_tokens(base: ThemeTokens, child: ThemeTokens) -> ThemeTokens {
 
 /// Deep-merge TOML values. `overlay` values override `base` values.
 /// Tables are merged recursively. All other types: overlay replaces base.
-/// Empty strings and zero numbers in the overlay are treated as "unset"
-/// and do NOT override the base.
 fn deep_merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
     match (base, overlay) {
         (toml::Value::Table(base_table), toml::Value::Table(overlay_table)) => {
@@ -222,33 +220,18 @@ fn deep_merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
                     // Recursive merge for nested tables
                     if base_val.is_table() && overlay_val.is_table() {
                         deep_merge_toml(base_val, overlay_val);
-                    } else if !is_default_value(overlay_val) {
-                        // Non-default overlay replaces base
+                    } else {
+                        // Overlay always wins for non-table values
                         *base_val = overlay_val.clone();
                     }
-                } else if !is_default_value(overlay_val) {
+                } else {
                     base_table.insert(key.clone(), overlay_val.clone());
                 }
             }
         }
         (base, overlay) => {
-            if !is_default_value(overlay) {
-                *base = overlay.clone();
-            }
+            *base = overlay.clone();
         }
-    }
-}
-
-/// Check if a TOML value is a "default" (empty string, zero number, false bool).
-fn is_default_value(val: &toml::Value) -> bool {
-    match val {
-        toml::Value::String(s) => s.is_empty(),
-        toml::Value::Integer(n) => *n == 0,
-        toml::Value::Float(f) => *f == 0.0,
-        toml::Value::Boolean(b) => !b,
-        toml::Value::Array(a) => a.is_empty(),
-        toml::Value::Table(t) => t.is_empty(),
-        toml::Value::Datetime(_) => false,
     }
 }
 
@@ -519,7 +502,13 @@ fn run_contrast_checks(tokens: &ThemeTokens, warnings: &mut WarningCollector) {
         }
     }
 
-    // Syntax token colors vs code block background (4.5:1 each)
+    // Syntax token colors vs syntax background (4.5:1 each)
+    // Prefer syntax.background when set, fall back to code_block.background
+    let syntax_bg = if tokens.syntax.background.is_empty() {
+        code_bg
+    } else {
+        &tokens.syntax.background
+    };
     let syntax_checks: &[(&str, &str)] = &[
         ("syntax: text", &tokens.syntax.text.color),
         ("syntax: keyword", &tokens.syntax.keyword.color),
@@ -541,10 +530,10 @@ fn run_contrast_checks(tokens: &ThemeTokens, warnings: &mut WarningCollector) {
     ];
 
     for (element, fg) in syntax_checks {
-        if fg.is_empty() || code_bg.is_empty() {
+        if fg.is_empty() || syntax_bg.is_empty() {
             continue;
         }
-        if let Some(warning) = contrast::check_contrast(element, fg, code_bg, 4.5) {
+        if let Some(warning) = contrast::check_contrast(element, fg, syntax_bg, 4.5) {
             warnings.push(warning);
         }
     }

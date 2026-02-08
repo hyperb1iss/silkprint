@@ -517,17 +517,20 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 let vpath = super::mermaid::MERMAID_VPATH_PREFIX;
                 let _ = writeln!(ctx.out, "#align(center)[#image(\"{vpath}{idx}.svg\")]");
             } else {
+                // Use enough backticks to avoid collision with content
+                let fence = backtick_fence(&literal);
+
                 ctx.newline();
                 if lang.is_empty() {
-                    ctx.push("```\n");
+                    let _ = writeln!(ctx.out, "{fence}");
                 } else {
-                    let _ = writeln!(ctx.out, "```{lang}");
+                    let _ = writeln!(ctx.out, "{fence}{lang}");
                 }
 
                 let content = literal.strip_suffix('\n').unwrap_or(&literal);
                 ctx.push(content);
                 ctx.newline();
-                ctx.push("```\n");
+                let _ = writeln!(ctx.out, "{fence}");
             }
         }
 
@@ -629,8 +632,8 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 let _ = write!(ctx.out, "#footnote[{}]", content.trim());
             } else {
                 let _ = write!(ctx.out, "#super[{}]", escape_typst_content(&name));
-                ctx.warnings.push(SilkprintWarning::ImageNotFound {
-                    path: format!("footnote:{name}"),
+                ctx.warnings.push(SilkprintWarning::FootnoteNotFound {
+                    name: name.clone(),
                 });
             }
         }
@@ -804,11 +807,12 @@ fn collect_footnote_definitions<'a>(
         };
 
         if let Some(name) = name {
-            // Render the footnote body into a standalone Typst fragment
+            // Render the footnote body into a standalone Typst fragment.
+            // Pass already-collected footnotes so nested refs can resolve.
             let mut fn_ctx = EmitContext {
                 out: String::new(),
                 indent: 0,
-                footnotes: HashMap::new(),
+                footnotes: map.clone(),
                 table_alignments: Vec::new(),
                 table_cell_index: 0,
                 in_table_header: false,
@@ -861,6 +865,24 @@ fn collect_text<'a>(node: &'a AstNode<'a>, buf: &mut String) {
     }
 }
 
+
+/// Return a backtick fence long enough to not collide with `content`.
+///
+/// Scans for the longest run of backticks in the content and returns one more.
+fn backtick_fence(content: &str) -> String {
+    let mut max_run = 0_usize;
+    let mut current_run = 0_usize;
+    for c in content.chars() {
+        if c == '`' {
+            current_run += 1;
+            max_run = max_run.max(current_run);
+        } else {
+            current_run = 0;
+        }
+    }
+    let count = max_run.max(2) + 1; // minimum 3 backticks
+    "`".repeat(count)
+}
 
 /// Decode common HTML entities to literal characters.
 fn decode_html_entity(s: &str) -> String {
