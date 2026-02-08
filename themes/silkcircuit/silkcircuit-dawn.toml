@@ -22,12 +22,12 @@ border_light   = "#d8d0ea"
 border_strong  = "#c0b6d6"
 text_primary   = "#2b2540"
 text_secondary = "#544c6e"
-text_muted     = "#8e84a8"
-accent_purple  = "#7e2bd5"
-accent_teal    = "#007f8e"
-accent_green   = "#2d8659"
-accent_amber   = "#a88600"
-accent_red     = "#c1272d"
+text_muted     = "#6b6085"
+accent_purple  = "#6b20b8"
+accent_teal    = "#006874"
+accent_green   = "#256f4a"
+accent_amber   = "#7a6200"
+accent_red     = "#a8222a"
 
 [fonts]
 heading          = "Inter"
@@ -232,7 +232,7 @@ first_page = false
 [title_page]
 enabled          = true
 title_font       = "heading"
-title_size       = "42pt"
+title_size       = "32pt"
 title_color      = "accent_teal"
 subtitle_color   = "text_secondary"
 author_color     = "text_secondary"
@@ -276,22 +276,22 @@ color  = "#9c4a88"
 italic = true
 
 [syntax.number]
-color = "#c74a8c"
+color = "#a03570"
 
 [syntax.function]
-color  = "#007f8e"
+color  = "#006874"
 bold   = true
 italic = true
 
 [syntax.type]
-color = "#a88600"
+color = "#7a6200"
 
 [syntax.comment]
-color  = "#8e84a8"
+color  = "#6b6085"
 italic = true
 
 [syntax.constant]
-color = "#c74a8c"
+color = "#a03570"
 
 [syntax.boolean]
 color = "#7e2bd5"
@@ -301,25 +301,25 @@ bold  = true
 color = "text_primary"
 
 [syntax.property]
-color = "#007f8e"
+color = "#006874"
 
 [syntax.tag]
 color = "#7e2bd5"
 bold  = true
 
 [syntax.attribute]
-color = "#a88600"
+color = "#7a6200"
 
 [syntax.variable]
-color = "#c74a8c"
+color = "#a03570"
 
 [syntax.builtin]
-color  = "#007f8e"
+color  = "#006874"
 bold   = true
 
 [syntax.punctuation]
 color = "text_muted"
 
 [syntax.escape]
-color = "#a88600"
+color = "#7a6200"
 bold  = true

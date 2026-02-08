@@ -230,7 +230,7 @@ first_page = false
 [title_page]
 enabled          = true
 title_font       = "heading"
-title_size       = "42pt"
+title_size       = "32pt"
 title_color      = "accent_white"
 subtitle_color   = "accent_blue"
 author_color     = "text_secondary"

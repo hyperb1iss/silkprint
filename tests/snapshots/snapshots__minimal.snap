@@ -111,13 +111,13 @@ expression: typst
 }
 
 #show link: it => {
-  set text(fill: rgb("#4a5dbd"), ligatures: false)
+  set text(fill: rgb("#3d4fa8"), ligatures: false)
   underline(it)
 }
 
 #show quote.where(block: true): it => {
   block(
-    stroke: (left: 2.5pt + rgb("#4a5dbd")),
+    stroke: (left: 2.5pt + rgb("#3d4fa8")),
     inset: (left: 14pt, y: 8pt, right: 8pt),
     width: 100%,
   )[
@@ -137,7 +137,7 @@ expression: typst
   line(length: 33%, stroke: 0.5pt + rgb("#e2e2e8"))
   v(4pt)
   set text(size: 9pt)
-  [#text(fill: rgb("#4a5dbd"))[#it.note.counter.display()] #it.note.body]
+  [#text(fill: rgb("#3d4fa8"))[#it.note.counter.display()] #it.note.body]
 }
 
 

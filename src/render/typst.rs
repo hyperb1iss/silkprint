@@ -183,7 +183,7 @@ pub fn compile_to_pdf(
     theme: &ResolvedTheme,
     root_dir: &Path,
     font_dirs: &[PathBuf],
-    warnings: &mut WarningCollector,
+    _warnings: &mut WarningCollector,
 ) -> Result<Vec<u8>, SilkprintError> {
     // Load bundled fonts (Inter, Source Serif 4, JetBrains Mono)
     let mut font_data = crate::fonts::load_bundled_fonts();
@@ -215,15 +215,16 @@ pub fn compile_to_pdf(
     // Compile to a paged document
     let result = typst::compile::<PagedDocument>(&world);
 
-    // Collect compilation warnings
+    // Collect compilation warnings — font fallback misses are expected (debug level),
+    // everything else gets warn level
     for diag in &result.warnings {
-        tracing::warn!(
-            message = %diag.message,
-            severity = ?diag.severity,
-            "Typst compilation warning"
-        );
+        let msg = diag.message.to_string();
+        if msg.contains("unknown font family") {
+            tracing::debug!(message = %msg, "Typst font fallback miss (expected)");
+        } else {
+            tracing::warn!(message = %msg, severity = ?diag.severity, "Typst compilation warning");
+        }
     }
-    let _ = warnings; // Warnings logged via tracing — no SilkprintWarning variant for Typst warnings yet
 
     // Handle compilation errors
     let document = result.output.map_err(|diagnostics| {

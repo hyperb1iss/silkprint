@@ -22,11 +22,11 @@ border_light   = "#e2e2e8"
 border_strong  = "#c8c8d4"
 text_primary   = "#1a1a2e"
 text_secondary = "#555570"
-text_muted     = "#8888a0"
-accent_blue    = "#4a5dbd"
-accent_green   = "#2d8659"
-accent_amber   = "#a07c30"
-accent_red     = "#c44d56"
+text_muted     = "#6a6a80"
+accent_blue    = "#3d4fa8"
+accent_green   = "#256f4a"
+accent_amber   = "#8a6a25"
+accent_red     = "#b0404a"
 
 [fonts]
 heading          = "Inter"
@@ -231,7 +231,7 @@ first_page = false
 [title_page]
 enabled          = true
 title_font       = "heading"
-title_size       = "42pt"
+title_size       = "32pt"
 title_color      = "text_primary"
 subtitle_color   = "text_secondary"
 author_color     = "text_secondary"
@@ -271,54 +271,54 @@ color  = "#a626a4"
 bold   = true
 
 [syntax.string]
-color  = "#50a14f"
+color  = "#3a7a3a"
 italic = true
 
 [syntax.number]
-color = "#986801"
+color = "#7a5400"
 
 [syntax.function]
-color  = "#4078f2"
+color  = "#2b56b2"
 bold   = true
 italic = true
 
 [syntax.type]
-color = "#c18401"
+color = "#8a5f00"
 
 [syntax.comment]
-color  = "#a0a1a7"
+color  = "#6b6c72"
 italic = true
 
 [syntax.constant]
-color = "#e45649"
+color = "#b83030"
 
 [syntax.boolean]
-color = "#e45649"
+color = "#b83030"
 bold  = true
 
 [syntax.operator]
 color = "text_primary"
 
 [syntax.property]
-color = "#4078f2"
+color = "#2b56b2"
 
 [syntax.tag]
-color = "#e45649"
+color = "#b83030"
 bold  = true
 
 [syntax.attribute]
-color = "#986801"
+color = "#7a5400"
 
 [syntax.variable]
-color = "#e45649"
+color = "#b83030"
 
 [syntax.builtin]
-color  = "#4078f2"
+color  = "#2b56b2"
 bold   = true
 
 [syntax.punctuation]
 color = "text_muted"
 
 [syntax.escape]
-color = "#986801"
+color = "#7a5400"
 bold  = true

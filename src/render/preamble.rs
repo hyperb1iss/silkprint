@@ -548,7 +548,7 @@ fn emit_title_page(
     }
 
     let title_font_raw = default_if_empty(&t.title_page.title_font, &t.fonts.heading);
-    let title_font = default_if_empty(title_font_raw, "Inter");
+    let title_font = resolve_font_name(default_if_empty(title_font_raw, "Inter"), t);
     let title_size = default_if_empty(&t.title_page.title_size, "28pt");
     let title_color = default_if_empty(&t.title_page.title_color, &t.headings.color);
     let subtitle_color = default_if_empty(&t.title_page.subtitle_color, &t.text.color);
