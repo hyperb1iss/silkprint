@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use clap::Parser;
+use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use tracing::debug;
 
@@ -246,11 +247,35 @@ fn handle_dump_typst(
     Ok(())
 }
 
+/// Create a spinner with `SilkCircuit` styling.
+fn make_spinner(message: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    let style = if color_enabled() {
+        ProgressStyle::default_spinner()
+            .tick_strings(&[
+                "\u{2801}", "\u{2809}", "\u{2819}", "\u{281b}", "\u{2813}", "\u{2816}",
+                "\u{2826}", "\u{2834}", "\u{2830}", "\u{2820}", "\u{2800}", "\u{2801}",
+            ])
+            .template("  \x1b[38;2;225;53;255m{spinner}\x1b[0m {msg}")
+    } else {
+        ProgressStyle::default_spinner()
+            .tick_strings(&["|", "/", "-", "\\", "|"])
+            .template("  {spinner} {msg}")
+    };
+    if let Ok(s) = style {
+        pb.set_style(s);
+    }
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb
+}
+
 /// Handle normal render mode: Markdown -> PDF.
 #[allow(clippy::too_many_lines)]
 fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> miette::Result<()> {
     let start = Instant::now();
     let verbose = cli.verbose > 0;
+    let use_spinner = !cli.quiet && !verbose && io::stderr().is_terminal();
 
     if verbose {
         let version = env!("CARGO_PKG_VERSION");
@@ -264,8 +289,21 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
         eprintln!("  {} Parsing markdown", cyan("\u{26a1}"));
     }
 
+    let spinner = if use_spinner {
+        Some(make_spinner(&format!(
+            "Rendering {} with {}",
+            input_path.file_name().map_or("input", |n| n.to_str().unwrap_or("input")),
+            &cli.theme,
+        )))
+    } else {
+        None
+    };
+
     debug!("reading input: {}", input_path.display());
     let input = std::fs::read_to_string(input_path).map_err(|e| {
+        if let Some(ref sp) = spinner {
+            sp.finish_and_clear();
+        }
         silkprint::error::SilkprintError::InputRead {
             path: input_path.display().to_string(),
             source: e,
@@ -281,13 +319,15 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
     }
 
     debug!("rendering with theme: {}", cli.theme);
-    let (pdf_bytes, warnings) = silkprint::render(&input, Some(input_path.as_path()), options)?;
+    let render_result = silkprint::render(&input, Some(input_path.as_path()), options);
 
+    // Clear spinner before any output
+    if let Some(ref sp) = spinner {
+        sp.finish_and_clear();
+    }
+
+    let (pdf_bytes, warnings) = render_result?;
     let output_path = cli.resolve_output_path(input_path);
-
-    // Calculate page count -- rough heuristic from PDF bytes
-    // (the real page count comes from the Typst compilation, but for now
-    // we estimate from the rendered output)
     let page_count = estimate_page_count(&pdf_bytes);
 
     if verbose {
@@ -348,7 +388,8 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
             .as_ref()
             .map_or("<stdout>".to_string(), |p| p.display().to_string());
         eprintln!(
-            "silkprint: {} ({} pages, {:.0?})",
+            "  {} {} ({} pages, {:.0?})",
+            green("\u{2713}"),
             cyan(&display_path),
             page_count,
             elapsed,

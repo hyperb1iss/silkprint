@@ -1,3 +1,7 @@
+// thiserror/miette derive macros generate code that triggers false-positive
+// "value assigned is never read" warnings on Edition 2024.
+#![allow(unused_assignments)]
+
 use std::io;
 
 /// All errors that can occur during `SilkPrint` operation.
