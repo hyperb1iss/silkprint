@@ -1,7 +1,7 @@
 //! Built-in theme registry.
 //!
 //! All built-in themes are embedded as TOML strings at compile time.
-//! The default theme is `silk-light`.
+//! The default theme is `silkcircuit-dawn`.
 
 /// Theme metadata for `--list-themes`.
 #[derive(Debug, Clone)]
@@ -145,7 +145,7 @@ pub fn list_themes() -> Vec<ThemeInfo> {
         ThemeInfo {
             name: "silk-light",
             variant: "light",
-            description: "Clean, warm, professional — the default",
+            description: "Clean, warm, professional — signature serif elegance",
             print_safe: true,
             family: "signature",
         },
@@ -202,7 +202,7 @@ pub fn list_themes() -> Vec<ThemeInfo> {
         ThemeInfo {
             name: "silkcircuit-dawn",
             variant: "light",
-            description: "Dawn — deep purples and teals on warm cream",
+            description: "Electric blue & magenta on warm cream — the default",
             print_safe: true,
             family: "silkcircuit",
         },

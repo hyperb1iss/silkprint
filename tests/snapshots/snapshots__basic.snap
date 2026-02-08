@@ -9,8 +9,8 @@ expression: typst
 
 #set page(
   paper: "a4",
-  margin: (top: 25mm, bottom: 30mm, left: 25mm, right: 25mm),
-  fill: rgb("#ffffff"),
+  margin: (top: 25mm, bottom: 30mm, left: 20mm, right: 20mm),
+  fill: rgb("#faf8ff"),
   numbering: "1",
   number-align: center + bottom,
 )
@@ -18,9 +18,9 @@ expression: typst
 #set raw(theme: "/__silkprint_theme.tmTheme")
 
 #set text(
-  font: ("Source Serif 4", "Source Serif 4", "Georgia", "Times New Roman"),
-  size: 11pt,
-  fill: rgb("#1a1a2e"),
+  font: ("JetBrains Mono", "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"),
+  size: 10.5pt,
+  fill: rgb("#2b2540"),
   lang: "en",
   hyphenate: true,
   ligatures: true,
@@ -35,27 +35,27 @@ expression: typst
 #show heading.where(level: 1): it => {
   v(36pt)
   block(below: 12pt)[
-    #set text(font: "Inter", size: 26pt, weight: 700, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 24pt, weight: 700, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.10em)
     #it.body
   ]
-  line(length: 100%, stroke: 0.5pt + rgb("#e2e2e8"))
+  line(length: 100%, stroke: 0.5pt + rgb("#d8d0ea"))
 }
 
 #show heading.where(level: 2): it => {
   v(28pt)
   block(below: 8pt)[
-    #set text(font: "Inter", size: 21pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 19pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.15em)
     #it.body
   ]
-  line(length: 100%, stroke: 0.5pt + rgb("#e2e2e8"))
+  line(length: 100%, stroke: 0.5pt + rgb("#d8d0ea"))
 }
 
 #show heading.where(level: 3): it => {
   v(22pt)
   block(below: 6pt)[
-    #set text(font: "Inter", size: 17pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 16pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #it.body
   ]
@@ -64,7 +64,7 @@ expression: typst
 #show heading.where(level: 4): it => {
   v(18pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 14pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 13pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #it.body
   ]
@@ -73,7 +73,7 @@ expression: typst
 #show heading.where(level: 5): it => {
   v(18pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 12pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 11.5pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.25em)
     #it.body
   ]
@@ -82,7 +82,7 @@ expression: typst
 #show heading.where(level: 6): it => {
   v(18pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 11pt, weight: 600, fill: rgb("#1a1a2e"), tracking: 0.05em)
+    #set text(font: "Inter", size: 10.5pt, weight: 600, fill: rgb("#1565c0"), tracking: 0.05em)
     #set par(leading: 0.25em)
     #upper(it.body)
   ]
@@ -90,14 +90,14 @@ expression: typst
 
 #show raw.where(block: true): it => {
   block(
-    fill: rgb("#f4f4f8"),
-    stroke: 0.5pt + rgb("#e2e2e8"),
+    fill: rgb("#f1ecff"),
+    stroke: 0.5pt + rgb("#d8d0ea"),
     radius: 6pt,
     inset: (x: 14pt, y: 12pt),
     width: 100%,
     breakable: true,
   )[
-    #set text(font: "JetBrains Mono", size: 10pt, ligatures: false)
+    #set text(font: "JetBrains Mono", size: 9.5pt, ligatures: false)
     #set par(justify: false, leading: 0.45em)
     #it
   ]
@@ -105,28 +105,28 @@ expression: typst
 
 #show raw.where(block: false): it => {
   box(
-    fill: rgb("#f4f4f8"),
-    stroke: 0.5pt + rgb("#e2e2e8"),
+    fill: rgb("#f1ecff"),
+    stroke: 0.5pt + rgb("#d8d0ea"),
     radius: 3pt,
     inset: (x: 3pt, y: 1.5pt),
   )[
-    #set text(font: "JetBrains Mono", size: 10pt, ligatures: false)
+    #set text(font: "JetBrains Mono", size: 9.5pt, ligatures: false)
     #it
   ]
 }
 
 #show link: it => {
-  set text(fill: rgb("#3d4fa8"), ligatures: false)
+  set text(fill: rgb("#1565c0"), ligatures: false)
   underline(it)
 }
 
 #show quote.where(block: true): it => {
   block(
-    stroke: (left: 2.5pt + rgb("#3d4fa8")),
+    stroke: (left: 2.5pt + rgb("#a82890")),
     inset: (left: 14pt, y: 8pt, right: 8pt),
     width: 100%,
   )[
-    #set text(fill: rgb("#555570"))
+    #set text(fill: rgb("#544c6e"))
     #emph(it.body)
   ]
 }
@@ -135,23 +135,23 @@ expression: typst
   stroke: none,
   inset: (x: 10pt, y: 6pt),
 )
-#show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#1a1a2e"))
-#show table.cell.where(y: 0): set table.cell(fill: rgb("#f4f4f8"), stroke: (bottom: 1.5pt + rgb("#c8c8d4")))
+#show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#1565c0"))
+#show table.cell.where(y: 0): set table.cell(fill: rgb("#f1ecff"), stroke: (bottom: 1.5pt + rgb("#c0b6d6")))
 
 #show footnote.entry: it => {
-  line(length: 33%, stroke: 0.5pt + rgb("#e2e2e8"))
+  line(length: 33%, stroke: 0.5pt + rgb("#d8d0ea"))
   v(4pt)
   set text(size: 9pt)
-  [#text(fill: rgb("#3d4fa8"))[#it.note.counter.display()] #it.note.body]
+  [#text(fill: rgb("#1565c0"))[#it.note.counter.display()] #it.note.body]
 }
 #page[
   #v(1fr)
   #align(center)[
-    #text(font: "Inter", size: 32pt, weight: 700, fill: rgb("#1a1a2e"))[Basic Test Document]
+    #text(font: "Inter", size: 32pt, weight: 700, fill: rgb("#a82890"))[Basic Test Document]
     #v(16pt)
-    #line(length: 40%, stroke: 0.5pt + rgb("#3d4fa8"))
+    #line(length: 40%, stroke: 0.5pt + rgb("#1565c0"))
     #v(16pt)
-    #text(size: 14pt, fill: rgb("#555570"))[SilkPrint Test Suite]
+    #text(size: 14pt, fill: rgb("#544c6e"))[SilkPrint Test Suite]
   ]
   #v(1fr)
 ]

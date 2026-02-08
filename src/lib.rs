@@ -70,7 +70,7 @@ pub struct RenderOptions {
 impl Default for RenderOptions {
     fn default() -> Self {
         Self {
-            theme: ThemeSource::BuiltIn("silk-light".to_string()),
+            theme: ThemeSource::BuiltIn("silkcircuit-dawn".to_string()),
             theme_explicit: false,
             paper: PaperSize::A4,
             font_dirs: Vec::new(),
@@ -134,7 +134,7 @@ pub fn render_to_typst(
 /// Determine the effective theme source, respecting precedence:
 /// CLI > front matter > default.
 ///
-/// If the CLI theme is the built-in default ("silk-light") and front matter
+/// If the CLI theme is the built-in default ("silkcircuit-dawn") and front matter
 /// specifies a different theme, the front matter theme wins.
 fn resolve_effective_theme(
     options: &RenderOptions,

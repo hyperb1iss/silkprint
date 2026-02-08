@@ -253,7 +253,7 @@ pub fn merge_options(
             .theme
             .clone()
             .or(fm_theme)
-            .unwrap_or_else(|| "silk-light".to_string()),
+            .unwrap_or_else(|| "silkcircuit-dawn".to_string()),
         paper: cli
             .paper
             .or(fm_paper)
@@ -365,7 +365,7 @@ mod tests {
             &ThemeDefaults::default(),
         );
         assert_eq!(merged.lang, "en");
-        assert_eq!(merged.theme, "silk-light");
+        assert_eq!(merged.theme, "silkcircuit-dawn");
         assert!(matches!(merged.paper, PaperSize::A4));
         assert!(!merged.toc);
         assert_eq!(merged.toc_depth, 3);
