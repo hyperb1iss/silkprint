@@ -52,6 +52,6 @@
     }
   },
   "files": {
-    "includes": ["src/**", "*.ts", "*.mjs", "!next-env.d.ts"]
+    "includes": ["src/**", "*.ts", "*.mjs", "!next-env.d.ts", "!src/lib/wasm"]
   }
 }

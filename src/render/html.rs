@@ -287,7 +287,8 @@ fn emit_image(
     el: &Element,
     out: &mut String,
     warnings: &mut WarningCollector,
-    ctx: Context,
+    #[cfg(not(target_arch = "wasm32"))] ctx: Context,
+    #[cfg(target_arch = "wasm32")] _ctx: Context,
 ) {
     let src = el.attr("src").unwrap_or("");
     let alt = el.attr("alt").unwrap_or("");
@@ -303,14 +304,27 @@ fn emit_image(
         return;
     }
 
-    let width = parse_image_width(el);
-    let escaped_src = escape_typst_string(src);
+    // In WASM there's no filesystem — emit a placeholder for local images
+    #[cfg(target_arch = "wasm32")]
+    {
+        let label = if alt.is_empty() { src } else { alt };
+        let escaped = escape_typst_content(label);
+        let _ = write!(
+            out,
+            "#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {escaped}\\]]]]"
+        );
+    }
 
-    if ctx == Context::TableCell {
-        // Bare #image() inside table cell — no figure wrapper to avoid spacing overhead
-        let _ = write!(out, "#image(\"{escaped_src}\", width: {width})");
-    } else {
-        let _ = write!(out, "#figure(image(\"{escaped_src}\", width: {width}))");
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let width = parse_image_width(el);
+        let escaped_src = escape_typst_string(src);
+
+        if ctx == Context::TableCell {
+            let _ = write!(out, "#image(\"{escaped_src}\", width: {width})");
+        } else {
+            let _ = write!(out, "#figure(image(\"{escaped_src}\", width: {width}))");
+        }
     }
 }
 
@@ -501,6 +515,7 @@ fn heading_level(tag: &str) -> usize {
 ///
 /// A4 text area with 25mm margins is ~160mm = ~454pt. Values above this
 /// would overflow the page, so we clamp them to `100%` instead.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_IMAGE_PT: f64 = 454.0;
 
 /// Parse the `width` attribute of an `<img>` into a Typst width expression.
@@ -508,6 +523,7 @@ const MAX_IMAGE_PT: f64 = 454.0;
 /// - `"50%"` -> `"50%"`
 /// - `"200"` or `"200px"` -> `"200pt"` (capped at page width)
 /// - absent -> `"100%"`
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_image_width(el: &Element) -> String {
     let Some(raw) = el.attr("width") else {
         return "100%".to_string();

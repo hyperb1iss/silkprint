@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { PdfPreview } from './pdf-preview';
 
 const SAMPLE_MARKDOWN = `# Welcome to SilkPrint
 
@@ -39,20 +41,108 @@ fn main() {
 *Beautiful documents, effortlessly.*
 `;
 
+const THEMES = [
+  { id: 'silk-light', name: 'Silk Light', variant: 'light' },
+  { id: 'silk-dark', name: 'Silk Dark', variant: 'dark' },
+  { id: 'silkcircuit-neon', name: 'SilkCircuit Neon', variant: 'dark' },
+  { id: 'manuscript', name: 'Manuscript', variant: 'light' },
+  { id: 'nord', name: 'Nord', variant: 'dark' },
+  { id: 'dracula', name: 'Dracula', variant: 'dark' },
+  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', variant: 'dark' },
+  { id: 'tokyo-night', name: 'Tokyo Night', variant: 'dark' },
+];
+
+type EngineState =
+  | { status: 'idle' }
+  | { status: 'loading'; progress: string }
+  | { status: 'ready' }
+  | { status: 'rendering' }
+  | { status: 'error'; message: string };
+
 export function Editor() {
   const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN);
   const [activeTheme, setActiveTheme] = useState('silk-light');
+  const [engineState, setEngineState] = useState<EngineState>({ status: 'idle' });
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const silkprintRef = useRef<typeof import('@/lib/silkprint') | null>(null);
 
-  const themes = [
-    { id: 'silk-light', name: 'Silk Light', variant: 'light' },
-    { id: 'silk-dark', name: 'Silk Dark', variant: 'dark' },
-    { id: 'silkcircuit-neon', name: 'SilkCircuit Neon', variant: 'dark' },
-    { id: 'manuscript', name: 'Manuscript', variant: 'light' },
-    { id: 'nord', name: 'Nord', variant: 'dark' },
-    { id: 'dracula', name: 'Dracula', variant: 'dark' },
-    { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', variant: 'dark' },
-    { id: 'tokyo-night', name: 'Tokyo Night', variant: 'dark' },
-  ];
+  // Load the WASM engine lazily
+  const loadEngine = useCallback(async () => {
+    if (engineState.status === 'loading' || engineState.status === 'ready') return;
+
+    setEngineState({ status: 'loading', progress: 'Downloading SilkPrint engine...' });
+
+    try {
+      const silkprint = await import('@/lib/silkprint');
+      setEngineState({ status: 'loading', progress: 'Initializing Typst compiler...' });
+
+      // Trigger WASM initialization by listing themes (lightweight call)
+      await silkprint.listThemes();
+      silkprintRef.current = silkprint;
+      setEngineState({ status: 'ready' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load engine';
+      setEngineState({ status: 'error', message: msg });
+    }
+  }, [engineState.status]);
+
+  // Render PDF when markdown or theme changes (debounced)
+  const triggerRender = useCallback(async (md: string, theme: string) => {
+    const silkprint = silkprintRef.current;
+    if (!silkprint) return;
+
+    setEngineState({ status: 'rendering' });
+    setRenderError(null);
+
+    try {
+      const bytes = await silkprint.renderPdf(md, theme);
+      // Copy out of WASM linear memory — the backing ArrayBuffer gets
+      // detached on subsequent renders, so we need an independent copy.
+      setPdfBytes(new Uint8Array(bytes));
+      setEngineState({ status: 'ready' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Render failed';
+      setRenderError(msg);
+      setEngineState({ status: 'ready' });
+    }
+  }, []);
+
+  // Debounced render effect
+  useEffect(() => {
+    if (engineState.status !== 'ready' && engineState.status !== 'rendering') return;
+
+    if (renderTimeoutRef.current) {
+      clearTimeout(renderTimeoutRef.current);
+    }
+
+    renderTimeoutRef.current = setTimeout(() => {
+      triggerRender(markdown, activeTheme);
+    }, 500);
+
+    return () => {
+      if (renderTimeoutRef.current) {
+        clearTimeout(renderTimeoutRef.current);
+      }
+    };
+  }, [markdown, activeTheme, engineState.status, triggerRender]);
+
+  // Download PDF
+  const handleDownload = useCallback(() => {
+    if (!pdfBytes) return;
+    // Uint8Array is a valid BlobPart at runtime; the TS generic mismatch
+    // (ArrayBufferLike vs ArrayBuffer) is a strict-mode false positive.
+    const blob = new Blob([pdfBytes as unknown as Uint8Array<ArrayBuffer>], {
+      type: 'application/pdf',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'silkprint-document.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [pdfBytes]);
 
   return (
     <section id="editor" className="mx-auto max-w-7xl px-6 py-20">
@@ -60,12 +150,14 @@ export function Editor() {
         <h2 className="mb-3 text-3xl font-bold tracking-tight md:text-4xl">
           <span className="gradient-text">Live Editor</span>
         </h2>
-        <p className="text-sc-fg-muted">Paste your Markdown, pick a theme, download your PDF.</p>
+        <p className="text-sc-fg-muted">
+          Paste your Markdown, pick a theme, get a real PDF — rendered entirely in your browser.
+        </p>
       </div>
 
       {/* Theme selector */}
       <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-        {themes.map(theme => (
+        {THEMES.map(theme => (
           <button
             type="button"
             key={theme.id}
@@ -118,10 +210,17 @@ export function Editor() {
               <span className="rounded bg-sc-purple/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sc-purple">
                 {activeTheme}
               </span>
+              {engineState.status === 'rendering' && (
+                <span className="animate-pulse rounded bg-sc-cyan/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sc-cyan">
+                  Rendering...
+                </span>
+              )}
             </div>
             <button
               type="button"
-              className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sc-purple to-sc-coral px-3 py-1.5 text-xs font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_15px_rgba(225,53,255,0.3)]"
+              onClick={handleDownload}
+              disabled={!pdfBytes}
+              className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sc-purple to-sc-coral px-3 py-1.5 text-xs font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_15px_rgba(225,53,255,0.3)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             >
               <svg
                 aria-hidden="true"
@@ -141,9 +240,67 @@ export function Editor() {
             </button>
           </div>
 
-          {/* Mock PDF preview */}
-          <div className="editor-scrollbar h-[500px] overflow-y-auto p-6">
-            <PreviewPane markdown={markdown} theme={activeTheme} />
+          {/* Preview content */}
+          <div className="editor-scrollbar h-[500px] overflow-y-auto">
+            {engineState.status === 'idle' && (
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+                <div className="text-center">
+                  <p className="mb-4 text-sm text-sc-fg-muted">
+                    Real PDF rendering powered by SilkPrint + Typst, running entirely in your
+                    browser via WebAssembly.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={loadEngine}
+                    className="group relative rounded-xl bg-gradient-to-r from-sc-purple to-sc-coral px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(225,53,255,0.3)]"
+                  >
+                    Load SilkPrint Engine
+                    <span className="ml-2 text-xs opacity-70">(~22 MB)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {engineState.status === 'loading' && (
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+                <LoadingSpinner />
+                <p className="text-sm text-sc-fg-muted">{engineState.progress}</p>
+              </div>
+            )}
+
+            {engineState.status === 'error' && (
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
+                <p className="text-sm text-sc-error">Failed to load engine</p>
+                <p className="max-w-sm text-center text-xs text-sc-fg-dim">{engineState.message}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEngineState({ status: 'idle' });
+                    silkprintRef.current = null;
+                  }}
+                  className="rounded-lg bg-sc-bg-highlight px-4 py-2 text-xs text-sc-fg-muted hover:text-sc-fg"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {(engineState.status === 'ready' || engineState.status === 'rendering') && (
+              <>
+                {renderError && (
+                  <div className="border-b border-sc-error/20 bg-sc-error/10 px-4 py-2 text-xs text-sc-error">
+                    {renderError}
+                  </div>
+                )}
+                {pdfBytes ? (
+                  <PdfPreview pdfBytes={pdfBytes} className="p-4" />
+                ) : (
+                  <div className="flex h-full items-center justify-center p-8">
+                    <LoadingSpinner />
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -151,130 +308,10 @@ export function Editor() {
   );
 }
 
-function PreviewPane({ markdown, theme }: { markdown: string; theme: string }) {
-  const isLight = theme === 'silk-light' || theme === 'manuscript';
-
+function LoadingSpinner() {
   return (
-    <div
-      className={`mx-auto min-h-full max-w-md rounded-lg p-8 shadow-2xl transition-colors ${
-        isLight ? 'bg-white text-gray-900' : 'bg-[#1e1e2e] text-gray-100'
-      }`}
-      style={{
-        fontFamily: "Georgia, 'Times New Roman', serif",
-        fontSize: '11px',
-        lineHeight: '1.6',
-      }}
-    >
-      {markdown.split('\n').map((line, i) => {
-        if (line.startsWith('# ')) {
-          return (
-            <h1
-              key={i}
-              className={`mb-3 text-xl font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}
-              style={{ fontFamily: 'Inter, sans-serif' }}
-            >
-              {line.slice(2)}
-            </h1>
-          );
-        }
-        if (line.startsWith('## ')) {
-          return (
-            <h2
-              key={i}
-              className={`mb-2 mt-4 text-base font-bold ${
-                isLight ? 'text-gray-800' : 'text-gray-100'
-              }`}
-              style={{ fontFamily: 'Inter, sans-serif' }}
-            >
-              {line.slice(3)}
-            </h2>
-          );
-        }
-        if (line.startsWith('- ')) {
-          return (
-            <div key={i} className="mb-1 flex gap-2 pl-3">
-              <span className="text-sc-purple">&#x2022;</span>
-              <span>{renderInline(line.slice(2), isLight)}</span>
-            </div>
-          );
-        }
-        if (line.startsWith('```')) {
-          return null;
-        }
-        if (line.startsWith('|')) {
-          return (
-            <div
-              key={i}
-              className={`font-mono text-[10px] ${
-                isLight ? 'text-gray-600 even:bg-gray-50' : 'text-gray-400 even:bg-white/5'
-              }`}
-            >
-              {line}
-            </div>
-          );
-        }
-        if (line.startsWith('---')) {
-          return (
-            <hr
-              key={i}
-              className={`my-4 border-t ${isLight ? 'border-gray-200' : 'border-gray-700'}`}
-            />
-          );
-        }
-        if (line.startsWith('> ')) {
-          return (
-            <div
-              key={i}
-              className={`my-1 border-l-2 pl-3 text-[10px] italic ${
-                isLight ? 'border-blue-300 text-gray-600' : 'border-blue-400 text-gray-400'
-              }`}
-            >
-              {line.slice(2)}
-            </div>
-          );
-        }
-        if (line.trim() === '') {
-          return <div key={i} className="h-2" />;
-        }
-        return (
-          <p key={i} className="mb-1">
-            {renderInline(line, isLight)}
-          </p>
-        );
-      })}
+    <div className="relative h-8 w-8">
+      <div className="absolute inset-0 animate-spin rounded-full border-2 border-sc-purple/20 border-t-sc-purple" />
     </div>
   );
-}
-
-function renderInline(text: string, isLight: boolean) {
-  const parts = text.split(/(\*\*.*?\*\*|_.*?_|`.*?`)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return (
-        <strong key={i} className="font-bold">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    if (part.startsWith('_') && part.endsWith('_')) {
-      return (
-        <em key={i} className="italic">
-          {part.slice(1, -1)}
-        </em>
-      );
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return (
-        <code
-          key={i}
-          className={`rounded px-1 py-0.5 font-mono text-[10px] ${
-            isLight ? 'bg-gray-100 text-pink-600' : 'bg-white/10 text-pink-300'
-          }`}
-        >
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    return <span key={i}>{part}</span>;
-  });
 }

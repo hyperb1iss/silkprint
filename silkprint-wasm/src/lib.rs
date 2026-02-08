@@ -1,4 +1,21 @@
+use silkprint::error::SilkprintError;
 use wasm_bindgen::prelude::*;
+
+/// Format a SilkprintError with full diagnostics for display in the browser.
+fn format_error(e: &SilkprintError) -> String {
+    match e {
+        SilkprintError::TypstCompilation { diagnostics } => {
+            let mut msg = String::from("Typst compilation failed:\n");
+            for d in diagnostics {
+                msg.push_str("  - ");
+                msg.push_str(d);
+                msg.push('\n');
+            }
+            msg
+        }
+        other => other.to_string(),
+    }
+}
 
 /// Render markdown to PDF bytes using a built-in theme.
 ///
@@ -12,7 +29,7 @@ pub fn render_pdf(markdown: &str, theme_name: &str) -> Result<Vec<u8>, JsError> 
     };
 
     let (pdf_bytes, _warnings) = silkprint::render(markdown, None, &options)
-        .map_err(|e| JsError::new(&e.to_string()))?;
+        .map_err(|e| JsError::new(&format_error(&e)))?;
 
     Ok(pdf_bytes)
 }
@@ -37,7 +54,7 @@ pub fn render_pdf_with_options(
     };
 
     let (pdf_bytes, _warnings) = silkprint::render(markdown, None, &options)
-        .map_err(|e| JsError::new(&e.to_string()))?;
+        .map_err(|e| JsError::new(&format_error(&e)))?;
 
     Ok(pdf_bytes)
 }
@@ -52,7 +69,7 @@ pub fn render_to_typst(markdown: &str, theme_name: &str) -> Result<String, JsErr
     };
 
     let (typst_source, _warnings) = silkprint::render_to_typst(markdown, &options)
-        .map_err(|e| JsError::new(&e.to_string()))?;
+        .map_err(|e| JsError::new(&format_error(&e)))?;
 
     Ok(typst_source)
 }

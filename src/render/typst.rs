@@ -34,6 +34,7 @@ struct SilkWorld {
     fonts: Vec<Font>,
     main_source: Source,
     main_id: FileId,
+    #[cfg(not(target_arch = "wasm32"))]
     root: PathBuf,
     tmtheme_data: Vec<u8>,
     /// Virtual mermaid SVG files keyed by path (e.g., `/__mermaid_0.svg`).
@@ -45,7 +46,8 @@ impl SilkWorld {
     fn new(
         typst_source: &str,
         theme: &ResolvedTheme,
-        root_dir: &Path,
+        #[cfg(not(target_arch = "wasm32"))] root_dir: &Path,
+        #[cfg(target_arch = "wasm32")] _root_dir: &Path,
         font_data: Vec<Vec<u8>>,
         mermaid_svgs: HashMap<String, Vec<u8>>,
     ) -> Self {
@@ -73,6 +75,7 @@ impl SilkWorld {
             fonts,
             main_source,
             main_id,
+            #[cfg(not(target_arch = "wasm32"))]
             root: root_dir.to_path_buf(),
             tmtheme_data: theme.tmtheme_xml.as_bytes().to_vec(),
             mermaid_svgs,
@@ -133,7 +136,7 @@ impl World for SilkWorld {
             let data = std::fs::read(&resolved)
                 .map_err(|err| typst::diag::FileError::from_io(err, &resolved))?;
 
-            return Ok(Bytes::new(data));
+            Ok(Bytes::new(data))
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -151,7 +154,7 @@ impl World for SilkWorld {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = offset;
-            return None;
+            None
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -170,6 +173,7 @@ impl World for SilkWorld {
 ///
 /// Civil-time algorithm from Howard Hinnant's date library — handles all valid
 /// Unix timestamps without external dependencies.
+#[cfg(not(target_arch = "wasm32"))]
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -217,6 +221,8 @@ pub fn compile_to_pdf(
     _warnings: &mut WarningCollector,
 ) -> Result<Vec<u8>, SilkprintError> {
     // Load bundled fonts (Inter, Source Serif 4, JetBrains Mono)
+    // `mut` needed on native to extend with user font directories.
+    #[allow(unused_mut)]
     let mut font_data = crate::fonts::load_bundled_fonts();
     tracing::debug!(font_files = font_data.len(), "loaded bundled font files");
 
@@ -316,7 +322,7 @@ pub fn compile_to_pdf(
 fn build_utc_timestamp() -> Option<typst_pdf::Timestamp> {
     #[cfg(target_arch = "wasm32")]
     {
-        return None;
+        None
     }
 
     #[cfg(not(target_arch = "wasm32"))]

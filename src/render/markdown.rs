@@ -420,21 +420,42 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 return;
             }
 
-            ctx.push("\n#figure(\n");
-            let _ = writeln!(
-                ctx.out,
-                "  image(\"{}\", width: 100%),",
-                escape_typst_string(&url)
-            );
-
-            // Collect alt text from children
-            let mut alt_text = String::new();
-            collect_text(node, &mut alt_text);
-            if !alt_text.is_empty() {
-                let _ = writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&alt_text));
+            // In WASM there's no filesystem — emit a placeholder instead of
+            // a broken #image() that would crash Typst compilation.
+            #[cfg(target_arch = "wasm32")]
+            {
+                let mut alt_text = String::new();
+                collect_text(node, &mut alt_text);
+                let label = if alt_text.is_empty() {
+                    escape_typst_content(&url)
+                } else {
+                    escape_typst_content(&alt_text)
+                };
+                ctx.push("\n#align(center)[\n");
+                ctx.push("#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[\n");
+                let _ = writeln!(ctx.out, "#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {label}\\]]]");
+                ctx.push("]\n]\n");
             }
 
-            ctx.push(")\n");
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ctx.push("\n#figure(\n");
+                let _ = writeln!(
+                    ctx.out,
+                    "  image(\"{}\", width: 100%),",
+                    escape_typst_string(&url)
+                );
+
+                // Collect alt text from children
+                let mut alt_text = String::new();
+                collect_text(node, &mut alt_text);
+                if !alt_text.is_empty() {
+                    let _ =
+                        writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&alt_text));
+                }
+
+                ctx.push(")\n");
+            }
         }
 
         // ─── Block quote ─────────────────────────────────────────

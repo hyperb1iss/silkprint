@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# WASM build artifacts (41MB binary, auto-generated JS glue + types)
+/public/wasm/
+/src/lib/wasm/
