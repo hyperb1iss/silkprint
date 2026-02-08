@@ -496,11 +496,17 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
 
     let _ = writeln!(out, "  inset: (x: {x_pad}, y: {y_pad}),");
 
-    // Alternating row stripes
+    // Row fill: header background + alternating stripes
+    let header_bg = default_if_empty(&t.table.header_background, "#f4f4f8");
     if !stripe_bg.is_empty() {
         let _ = writeln!(
             out,
-            "  fill: (_, y) => if y > 0 and calc.even(y) {{ rgb(\"{stripe_bg}\") }},"
+            "  fill: (_, y) => if y == 0 {{ rgb(\"{header_bg}\") }} else if calc.even(y) {{ rgb(\"{stripe_bg}\") }},"
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            "  fill: (_, y) => if y == 0 {{ rgb(\"{header_bg}\") }},"
         );
     }
 
@@ -537,12 +543,11 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
         "#show table.cell.where(y: 0): set text(font: \"{header_font}\", weight: {header_weight}, fill: rgb(\"{header_color}\"))"
     );
 
-    let header_bg = default_if_empty(&t.table.header_background, "#f4f4f8");
     let header_border_color = default_if_empty(&t.table.header_border_color, "#c8c8d4");
     let header_border_width = default_if_empty(&t.table.header_border_width, "1.5pt");
     let _ = writeln!(
         out,
-        "#show table.cell.where(y: 0): set table.cell(fill: rgb(\"{header_bg}\"), stroke: (bottom: {header_border_width} + rgb(\"{header_border_color}\")))"
+        "#show table.cell.where(y: 0): set table.cell(stroke: (bottom: {header_border_width} + rgb(\"{header_border_color}\")))"
     );
 
     out.push('\n');

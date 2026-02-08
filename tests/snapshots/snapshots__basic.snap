@@ -18,8 +18,8 @@ expression: typst
 #set raw(theme: "/__silkprint_theme.tmTheme")
 
 #set text(
-  font: ("JetBrains Mono", "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"),
-  size: 9pt,
+  font: ("Inter", "Inter", "Helvetica Neue", "Arial"),
+  size: 9.5pt,
   fill: rgb("#2b2540"),
   lang: "en",
   hyphenate: true,
@@ -34,7 +34,7 @@ expression: typst
 
 #show heading.where(level: 1): it => {
   v(20pt)
-  block(below: 8pt)[
+  block(below: 10pt)[
     #set text(font: "Inter", size: 16pt, weight: 700, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.10em)
     #show raw.where(block: false): r => r
@@ -45,7 +45,7 @@ expression: typst
 
 #show heading.where(level: 2): it => {
   v(16pt)
-  block(below: 5pt)[
+  block(below: 8pt)[
     #set text(font: "Inter", size: 13pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.15em)
     #show raw.where(block: false): r => r
@@ -56,7 +56,7 @@ expression: typst
 
 #show heading.where(level: 3): it => {
   v(14pt)
-  block(below: 4pt)[
+  block(below: 6pt)[
     #set text(font: "Inter", size: 11pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #show raw.where(block: false): r => r
@@ -66,7 +66,7 @@ expression: typst
 
 #show heading.where(level: 4): it => {
   v(12pt)
-  block(below: 3pt)[
+  block(below: 5pt)[
     #set text(font: "Inter", size: 10pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #show raw.where(block: false): r => r
@@ -76,7 +76,7 @@ expression: typst
 
 #show heading.where(level: 5): it => {
   v(10pt)
-  block(below: 2pt)[
+  block(below: 4pt)[
     #set text(font: "Inter", size: 9pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.25em)
     #show raw.where(block: false): r => r
@@ -86,7 +86,7 @@ expression: typst
 
 #show heading.where(level: 6): it => {
   v(10pt)
-  block(below: 2pt)[
+  block(below: 4pt)[
     #set text(font: "Inter", size: 8.5pt, weight: 600, fill: rgb("#1565c0"), tracking: 0.05em)
     #set par(leading: 0.25em)
     #show raw.where(block: false): r => r
@@ -140,11 +140,11 @@ expression: typst
 #set table(
   stroke: (x: none, y: 0.5pt + rgb("#d8d0ea")),
   inset: (x: 8pt, y: 5pt),
-  fill: (_, y) => if y > 0 and calc.even(y) { rgb("#e8e2f5") },
+  fill: (_, y) => if y == 0 { rgb("#1565c0") } else if calc.even(y) { rgb("#e8e2f5") },
 )
 #show table: set text(size: 7.5pt)
 #show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#ffffff"))
-#show table.cell.where(y: 0): set table.cell(fill: rgb("#1565c0"), stroke: (bottom: 1.5pt + rgb("#1565c0")))
+#show table.cell.where(y: 0): set table.cell(stroke: (bottom: 1.5pt + rgb("#1565c0")))
 
 #show footnote.entry: it => {
   line(length: 33%, stroke: 0.5pt + rgb("#d8d0ea"))
