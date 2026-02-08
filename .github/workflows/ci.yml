@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Change detection ────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**'
+              - 'silkprint-wasm/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'themes/**'
+              - 'fonts/**'
+              - 'tests/**'
+              - 'deny.toml'
+              - 'rust-toolchain.toml'
+            web:
+              - 'web/**'
+
+  # ── Rust format + clippy ────────────────────────────────────
+  check:
+    name: Format & Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # ── Tests ───────────────────────────────────────────────────
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Tests
+        run: cargo nextest run --workspace --locked
+      - name: Doc tests
+        run: cargo test --doc --workspace --locked
+
+  # ── Supply-chain security audit ─────────────────────────────
+  deny:
+    name: Deny
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # ── WASM build ──────────────────────────────────────────────
+  wasm:
+    name: WASM
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Get wasm-bindgen version
+        id: wb-version
+        run: |
+          version=$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
+            | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version' 2>/dev/null \
+            || grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ steps.wb-version.outputs.version }}
+      - name: Build WASM
+        run: cargo build --release --locked -p silkprint-wasm --target wasm32-unknown-unknown
+      - name: Generate bindings
+        run: |
+          mkdir -p wasm-out
+          wasm-bindgen --out-dir wasm-out --target web \
+            target/wasm32-unknown-unknown/release/silkprint_wasm.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: wasm-out/
+          retention-days: 1
+
+  # ── Web app ─────────────────────────────────────────────────
+  web:
+    name: Web
+    needs: [changes, wasm]
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: wasm-out/
+      - name: Install WASM artifacts
+        working-directory: .
+        run: |
+          mkdir -p web/src/lib/wasm web/public/wasm
+          cp wasm-out/silkprint_wasm.js wasm-out/silkprint_wasm.d.ts web/src/lib/wasm/
+          cp wasm-out/silkprint_wasm_bg.wasm web/public/wasm/
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
