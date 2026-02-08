@@ -226,27 +226,27 @@ fn emit_heading_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let levels = [
         HeadingLevel {
             level: 1,
-            size: default_if_empty(&t.font_sizes.h1, "33.5pt"),
+            size: default_if_empty(&t.font_sizes.h1, "26pt"),
             tokens: &t.headings.h1,
         },
         HeadingLevel {
             level: 2,
-            size: default_if_empty(&t.font_sizes.h2, "27pt"),
+            size: default_if_empty(&t.font_sizes.h2, "21pt"),
             tokens: &t.headings.h2,
         },
         HeadingLevel {
             level: 3,
-            size: default_if_empty(&t.font_sizes.h3, "21.5pt"),
+            size: default_if_empty(&t.font_sizes.h3, "17pt"),
             tokens: &t.headings.h3,
         },
         HeadingLevel {
             level: 4,
-            size: default_if_empty(&t.font_sizes.h4, "17pt"),
+            size: default_if_empty(&t.font_sizes.h4, "14pt"),
             tokens: &t.headings.h4,
         },
         HeadingLevel {
             level: 5,
-            size: default_if_empty(&t.font_sizes.h5, "14pt"),
+            size: default_if_empty(&t.font_sizes.h5, "12pt"),
             tokens: &t.headings.h5,
         },
         HeadingLevel {

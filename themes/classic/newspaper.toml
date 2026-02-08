@@ -46,11 +46,11 @@ mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
 body   = "10.5pt"
 small  = "8.5pt"
 code   = "9.5pt"
-h1     = "36pt"
-h2     = "28pt"
-h3     = "22pt"
-h4     = "17pt"
-h5     = "14pt"
+h1     = "30pt"
+h2     = "24pt"
+h3     = "19pt"
+h4     = "15pt"
+h5     = "12.5pt"
 h6     = "10.5pt"
 
 # ─── Layer 2: Semantic ────────────────────────────────────────

@@ -35,7 +35,7 @@ expression: typst
 #show heading.where(level: 1): it => {
   v(36pt)
   block(below: 12pt)[
-    #set text(font: "Inter", size: 33.5pt, weight: 700, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 26pt, weight: 700, fill: rgb("#1a1a2e"), tracking: -0.015em)
     #set par(leading: 0.10em)
     #it.body
   ]
@@ -45,7 +45,7 @@ expression: typst
 #show heading.where(level: 2): it => {
   v(28pt)
   block(below: 8pt)[
-    #set text(font: "Inter", size: 27pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 21pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
     #set par(leading: 0.15em)
     #it.body
   ]
@@ -55,7 +55,7 @@ expression: typst
 #show heading.where(level: 3): it => {
   v(22pt)
   block(below: 6pt)[
-    #set text(font: "Inter", size: 21.5pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 17pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #it.body
   ]
@@ -64,7 +64,7 @@ expression: typst
 #show heading.where(level: 4): it => {
   v(18pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 17pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 14pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #it.body
   ]
@@ -73,7 +73,7 @@ expression: typst
 #show heading.where(level: 5): it => {
   v(18pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 14pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set text(font: "Inter", size: 12pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
     #set par(leading: 0.25em)
     #it.body
   ]
