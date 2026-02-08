@@ -41,7 +41,7 @@ fn main() {
 *Beautiful documents, effortlessly.*
 `;
 
-const THEMES = [
+const DEFAULT_THEMES = [
   { id: 'silk-light', name: 'Silk Light', variant: 'light' },
   { id: 'silk-dark', name: 'Silk Dark', variant: 'dark' },
   { id: 'silkcircuit-neon', name: 'SilkCircuit Neon', variant: 'dark' },
@@ -53,7 +53,6 @@ const THEMES = [
 ];
 
 type EngineState =
-  | { status: 'idle' }
   | { status: 'loading'; progress: string }
   | { status: 'ready' }
   | { status: 'rendering' }
@@ -62,87 +61,130 @@ type EngineState =
 export function Editor() {
   const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN);
   const [activeTheme, setActiveTheme] = useState('silk-light');
-  const [engineState, setEngineState] = useState<EngineState>({ status: 'idle' });
+  const [engineState, setEngineState] = useState<EngineState>({
+    status: 'loading',
+    progress: 'Downloading SilkPrint engine...',
+  });
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const silkprintRef = useRef<typeof import('@/lib/silkprint') | null>(null);
+  const [engineReady, setEngineReady] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // Load the WASM engine lazily
-  const loadEngine = useCallback(async () => {
-    if (engineState.status === 'loading' || engineState.status === 'ready') return;
+  const silkprintRef = useRef<typeof import('@/lib/silkprint') | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const renderGenRef = useRef(0);
+  const hasRendered = useRef(false);
+  // Latest pdfBytes synced from effect — event handlers read from this ref
+  // to avoid stale closures from React's async rendering pipeline.
+  const pdfBytesRef = useRef<Uint8Array | null>(null);
+
+  // Keep ref in sync with state (useEffect captures committed state correctly)
+  useEffect(() => {
+    pdfBytesRef.current = pdfBytes;
+  }, [pdfBytes]);
+
+  // Auto-load engine on mount (re-runs on retry via loadAttempt)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadAttempt triggers retry
+  useEffect(() => {
+    let cancelled = false;
+    setEngineReady(false);
+    hasRendered.current = false;
 
     setEngineState({ status: 'loading', progress: 'Downloading SilkPrint engine...' });
 
-    try {
-      const silkprint = await import('@/lib/silkprint');
-      setEngineState({ status: 'loading', progress: 'Initializing Typst compiler...' });
+    (async () => {
+      try {
+        const silkprint = await import('@/lib/silkprint');
 
-      // Trigger WASM initialization by listing themes (lightweight call)
-      await silkprint.listThemes();
-      silkprintRef.current = silkprint;
-      setEngineState({ status: 'ready' });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load engine';
-      setEngineState({ status: 'error', message: msg });
-    }
-  }, [engineState.status]);
+        if (cancelled) return;
+        setEngineState({ status: 'loading', progress: 'Initializing Typst compiler...' });
 
-  // Render PDF when markdown or theme changes (debounced)
-  const triggerRender = useCallback(async (md: string, theme: string) => {
-    const silkprint = silkprintRef.current;
-    if (!silkprint) return;
+        // Triggers WASM init (uses the module-level preloaded fetch)
+        await silkprint.listThemes();
+        if (cancelled) return;
 
-    setEngineState({ status: 'rendering' });
-    setRenderError(null);
-
-    try {
-      const bytes = await silkprint.renderPdf(md, theme);
-      // Copy out of WASM linear memory — the backing ArrayBuffer gets
-      // detached on subsequent renders, so we need an independent copy.
-      setPdfBytes(new Uint8Array(bytes));
-      setEngineState({ status: 'ready' });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Render failed';
-      setRenderError(msg);
-      setEngineState({ status: 'ready' });
-    }
-  }, []);
-
-  // Debounced render effect
-  useEffect(() => {
-    if (engineState.status !== 'ready' && engineState.status !== 'rendering') return;
-
-    if (renderTimeoutRef.current) {
-      clearTimeout(renderTimeoutRef.current);
-    }
-
-    renderTimeoutRef.current = setTimeout(() => {
-      triggerRender(markdown, activeTheme);
-    }, 500);
+        silkprintRef.current = silkprint;
+        setEngineState({ status: 'ready' });
+        setEngineReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Failed to load engine';
+        setEngineState({ status: 'error', message: msg });
+      }
+    })();
 
     return () => {
-      if (renderTimeoutRef.current) {
-        clearTimeout(renderTimeoutRef.current);
-      }
+      cancelled = true;
     };
-  }, [markdown, activeTheme, engineState.status, triggerRender]);
+  }, [loadAttempt]);
 
-  // Download PDF
+  // Render effect — fires on engine ready and input changes.
+  // Uses a generation counter to discard stale results from superseded renders.
+  useEffect(() => {
+    if (!engineReady) return;
+
+    const gen = ++renderGenRef.current;
+    const delay = hasRendered.current ? 500 : 0;
+    hasRendered.current = true;
+
+    const timeout = setTimeout(async () => {
+      const silkprint = silkprintRef.current;
+      if (!silkprint) return;
+
+      setEngineState({ status: 'rendering' });
+      setRenderError(null);
+
+      try {
+        const bytes = await silkprint.renderPdf(markdown, activeTheme);
+        if (renderGenRef.current !== gen) return;
+        setPdfBytes(new Uint8Array(bytes));
+      } catch (err) {
+        if (renderGenRef.current !== gen) return;
+        const msg = err instanceof Error ? err.message : 'Render failed';
+        setRenderError(msg);
+      }
+
+      if (renderGenRef.current === gen) {
+        setEngineState({ status: 'ready' });
+      }
+    }, delay);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [engineReady, markdown, activeTheme]);
+
+  // Download reads from ref (synced via useEffect) to dodge stale closures
   const handleDownload = useCallback(() => {
-    if (!pdfBytes) return;
-    // Uint8Array is a valid BlobPart at runtime; the TS generic mismatch
-    // (ArrayBufferLike vs ArrayBuffer) is a strict-mode false positive.
-    const blob = new Blob([pdfBytes as unknown as Uint8Array<ArrayBuffer>], {
-      type: 'application/pdf',
-    });
+    const bytes = pdfBytesRef.current;
+    if (!bytes || bytes.length === 0) return;
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'silkprint-document.pdf';
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
-  }, [pdfBytes]);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }, []);
+
+  // File upload handler
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setMarkdown(reader.result);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }, []);
 
   return (
     <section id="editor" className="mx-auto max-w-7xl px-6 py-20">
@@ -157,7 +199,7 @@ export function Editor() {
 
       {/* Theme selector */}
       <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-        {THEMES.map(theme => (
+        {DEFAULT_THEMES.map(theme => (
           <button
             type="button"
             key={theme.id}
@@ -191,7 +233,37 @@ export function Editor() {
               </div>
               <span className="text-xs font-medium text-sc-fg-dim">document.md</span>
             </div>
-            <span className="font-mono text-xs text-sc-fg-dim">Markdown</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1 rounded-md bg-sc-bg-highlight px-2 py-1 text-xs text-sc-fg-muted transition-colors hover:bg-sc-bg-surface hover:text-sc-fg"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+                Upload
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".md,.markdown,.txt,.mdx"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <span className="font-mono text-xs text-sc-fg-dim">Markdown</span>
+            </div>
           </div>
           <textarea
             value={markdown}
@@ -219,7 +291,7 @@ export function Editor() {
             <button
               type="button"
               onClick={handleDownload}
-              disabled={!pdfBytes}
+              disabled={!pdfBytes || pdfBytes.length === 0}
               className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sc-purple to-sc-coral px-3 py-1.5 text-xs font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_15px_rgba(225,53,255,0.3)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             >
               <svg
@@ -242,25 +314,6 @@ export function Editor() {
 
           {/* Preview content */}
           <div className="editor-scrollbar h-[500px] overflow-y-auto">
-            {engineState.status === 'idle' && (
-              <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-                <div className="text-center">
-                  <p className="mb-4 text-sm text-sc-fg-muted">
-                    Real PDF rendering powered by SilkPrint + Typst, running entirely in your
-                    browser via WebAssembly.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={loadEngine}
-                    className="group relative rounded-xl bg-gradient-to-r from-sc-purple to-sc-coral px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(225,53,255,0.3)]"
-                  >
-                    Load SilkPrint Engine
-                    <span className="ml-2 text-xs opacity-70">(~22 MB)</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
             {engineState.status === 'loading' && (
               <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
                 <LoadingSpinner />
@@ -274,10 +327,7 @@ export function Editor() {
                 <p className="max-w-sm text-center text-xs text-sc-fg-dim">{engineState.message}</p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setEngineState({ status: 'idle' });
-                    silkprintRef.current = null;
-                  }}
+                  onClick={() => setLoadAttempt(n => n + 1)}
                   className="rounded-lg bg-sc-bg-highlight px-4 py-2 text-xs text-sc-fg-muted hover:text-sc-fg"
                 >
                   Retry
@@ -292,7 +342,7 @@ export function Editor() {
                     {renderError}
                   </div>
                 )}
-                {pdfBytes ? (
+                {pdfBytes && pdfBytes.length > 0 ? (
                   <PdfPreview pdfBytes={pdfBytes} className="p-4" />
                 ) : (
                   <div className="flex h-full items-center justify-center p-8">

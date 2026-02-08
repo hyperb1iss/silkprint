@@ -28,7 +28,9 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
         import.meta.url
       ).toString();
 
-      const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+      // Pass a copy — pdf.js transfers the buffer to its worker, which
+      // detaches the original ArrayBuffer and zeroes out .length.
+      const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
       const canvases: HTMLCanvasElement[] = [];
 
       const containerWidth = containerRef.current?.clientWidth ?? 600;

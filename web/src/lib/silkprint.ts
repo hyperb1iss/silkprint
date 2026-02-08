@@ -3,11 +3,17 @@ import type { InitOutput } from './wasm/silkprint_wasm';
 let wasmModule: InitOutput | null = null;
 let initPromise: Promise<InitOutput> | null = null;
 
+// Start downloading the WASM binary as soon as this module loads.
+// The dynamic import of this file is triggered on component mount,
+// so the ~41MB fetch races with Typst compiler initialization.
+const wasmFetchPromise: Promise<Response> | null =
+  typeof window !== 'undefined' ? fetch('/wasm/silkprint_wasm_bg.wasm') : null;
+
 /**
  * Lazily initialize the SilkPrint WASM module.
  *
- * Fetches the ~41MB WASM binary from /wasm/ on first call,
- * then reuses the cached module for subsequent calls.
+ * Uses the module-level preloaded fetch if available, giving
+ * streaming WASM compilation a head start on the binary download.
  */
 async function ensureInit(): Promise<InitOutput> {
   if (wasmModule) return wasmModule;
@@ -15,7 +21,8 @@ async function ensureInit(): Promise<InitOutput> {
   if (!initPromise) {
     initPromise = (async () => {
       const wasm = await import('./wasm/silkprint_wasm');
-      const output = await wasm.default('/wasm/silkprint_wasm_bg.wasm');
+      const source = wasmFetchPromise ?? fetch('/wasm/silkprint_wasm_bg.wasm');
+      const output = await wasm.default(await source);
       wasmModule = output;
       return output;
     })();
@@ -59,7 +66,7 @@ export interface ThemeInfo {
   name: string;
   variant: string;
   description: string;
-  printSafe: boolean;
+  print_safe: boolean;
 }
 
 /**
