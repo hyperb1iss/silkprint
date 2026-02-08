@@ -437,9 +437,17 @@ fn emit_blockquote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens)
 fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let cell_padding = default_if_empty(&t.table.cell_padding, "10pt");
 
+    // Parse "Ypt Xpt" format → (x: X, y: Y), or single value → (x: val, y: val)
+    let parts: Vec<&str> = cell_padding.split_whitespace().collect();
+    let (x_pad, y_pad) = match parts.as_slice() {
+        [y, x] => (*x, *y),
+        [val] => (*val, *val),
+        _ => ("10pt", "6pt"),
+    };
+
     out.push_str("#set table(\n");
     out.push_str("  stroke: none,\n");
-    let _ = writeln!(out, "  inset: (x: {cell_padding}, y: 6pt),");
+    let _ = writeln!(out, "  inset: (x: {x_pad}, y: {y_pad}),");
     out.push_str(")\n");
 
     // Header cell styling
@@ -448,13 +456,15 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     } else {
         600
     };
-    let header_font = if !t.table.header_font.is_empty() {
+    let header_font_raw = if !t.table.header_font.is_empty() {
         &t.table.header_font
     } else if !t.fonts.heading.is_empty() {
         &t.fonts.heading
     } else {
         "Inter"
     };
+    // Resolve semantic font names: "heading" → fonts.heading, "body" → fonts.body
+    let header_font = resolve_font_name(header_font_raw, t);
     let header_color = default_if_empty(&t.headings.color, &t.text.color);
     let _ = writeln!(
         out,
@@ -466,7 +476,7 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let header_border_width = default_if_empty(&t.table.header_border_width, "1.5pt");
     let _ = writeln!(
         out,
-        "#show table.cell.where(y: 0): set cell(fill: rgb(\"{header_bg}\"), stroke: (bottom: {header_border_width} + rgb(\"{header_border_color}\")))"
+        "#show table.cell.where(y: 0): set table.cell(fill: rgb(\"{header_bg}\"), stroke: (bottom: {header_border_width} + rgb(\"{header_border_color}\")))"
     );
 
     out.push('\n');
@@ -475,7 +485,14 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
 fn emit_footnote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let sep_color = default_if_empty(&t.footnotes.separator_color, "#e2e2e8");
     let sep_width = default_if_empty(&t.footnotes.separator_width, "33%");
-    let text_size = default_if_empty(&t.footnotes.text_size, "9pt");
+    let text_size_raw = default_if_empty(&t.footnotes.text_size, "9pt");
+    // Convert CSS-like size names to Typst sizes
+    let text_size = match text_size_raw {
+        "small" | "smaller" => "9pt",
+        "x-small" => "8pt",
+        "large" | "larger" => "13pt",
+        other => other,
+    };
     let num_color = default_if_empty(&t.footnotes.number_color, "#4a5dbd");
 
     out.push_str("#show footnote.entry: it => {\n");
@@ -499,6 +516,16 @@ fn emit_footnote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
 /// Return `value` if non-empty, otherwise `fallback`.
 fn default_if_empty<'a>(value: &'a str, fallback: &'a str) -> &'a str {
     if value.is_empty() { fallback } else { value }
+}
+
+/// Resolve semantic font names like "heading", "body", "mono" to actual font names.
+fn resolve_font_name<'a>(name: &'a str, t: &'a crate::theme::tokens::ThemeTokens) -> &'a str {
+    match name {
+        "heading" if !t.fonts.heading.is_empty() => &t.fonts.heading,
+        "body" if !t.fonts.body.is_empty() => &t.fonts.body,
+        "mono" if !t.fonts.mono.is_empty() => &t.fonts.mono,
+        other => other,
+    }
 }
 
 /// Escape characters that are special in Typst string literals (inside `"`).
