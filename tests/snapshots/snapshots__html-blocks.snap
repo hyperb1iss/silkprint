@@ -155,10 +155,56 @@ expression: typst
 
 
 
-= Hello World
+= HTML Block Tests
 
-This is a simple test.
+== Centered Heading
+#align(center)[= Centered Title]
 
-- One
-- Two
-- Three
+
+== Centered Paragraph
+#align(center)[This text should be centered in the output.]
+
+
+== HTML Table
+#table(
+  columns: 2,
+  [*Feature*],
+  [*Status*],
+  [Parsing],
+  [Done],
+  [Rendering],
+  [In Progress],
+)
+
+
+== Links and Inline Formatting
+Visit #link("https://example.com")[our site] for details.
+
+This has *bold* and _italic_ text.
+
+
+== Line Break and Horizontal Rule
+Line one\
+Line two
+
+#line(length: 100%)
+
+
+== Subscript and Superscript
+H#sub[2]O is water. E=mc#super[2] is famous.
+
+
+== Remote Image (should show placeholder)
+Build Status
+
+== Inline Code
+Use the `silkprint` command to render.
+
+
+== Nested Structure
+#align(center)[
+*Important Notice*
+
+Please read carefully.
+
+]

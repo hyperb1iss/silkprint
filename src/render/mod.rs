@@ -1,5 +1,7 @@
 pub mod emoji;
+pub mod escape;
 pub mod frontmatter;
+pub mod html;
 pub mod image;
 pub mod markdown;
 pub mod mermaid;

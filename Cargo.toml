@@ -38,6 +38,8 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 typst = "0.14"
 typst-pdf = "0.14"
+scraper = { version = "0.25.0", default-features = false }
+ego-tree = "0.10.0"
 
 [dev-dependencies]
 assert_cmd = "2.1.2"

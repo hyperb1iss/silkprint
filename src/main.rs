@@ -146,7 +146,7 @@ fn handle_list_themes() {
     let mut themes = silkprint::theme::builtin::list_themes();
     // Print-safe first, then the rest — alphabetical within each group
     themes.sort_by(|a, b| {
-        b.print_safe.cmp(&a.print_safe).then(a.name.cmp(&b.name))
+        b.print_safe.cmp(&a.print_safe).then(a.name.cmp(b.name))
     });
 
     // Column widths (plain text, before colorization)

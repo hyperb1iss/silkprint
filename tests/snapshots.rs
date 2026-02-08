@@ -27,3 +27,9 @@ fn test_snapshot_minimal() {
     let typst = render_fixture("minimal.md");
     insta::assert_snapshot!("minimal", typst);
 }
+
+#[test]
+fn test_snapshot_html_blocks() {
+    let typst = render_fixture("html-blocks.md");
+    insta::assert_snapshot!("html-blocks", typst);
+}

@@ -7,6 +7,8 @@ use comrak::nodes::{AstNode, ListType, NodeValue, TableAlignment};
 use crate::theme::ResolvedTheme;
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
+use super::escape::{escape_typst_content, escape_typst_string};
+
 /// Configure comrak with all extensions enabled per SPEC Section 8.2.
 pub fn comrak_options() -> Options<'static> {
     let mut options = Options::default();
@@ -288,7 +290,7 @@ fn extract_node(node: &AstNode<'_>) -> ExtractedNode {
 }
 
 /// Emit a single AST node and all its children.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
     // Extract all data we need and drop the borrow immediately.
     let extracted = extract_node(node);
@@ -529,17 +531,21 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
             }
         }
 
-        // ─── HTML block (pass through as comment) ────────────────
+        // ─── HTML block → convert to Typst ──────────────────────
         ExtractedNode::HtmlBlock { literal } => {
-            for line in literal.lines() {
-                let _ = writeln!(ctx.out, "// HTML: {line}");
-            }
+            let typst = super::html::emit_html_block(&literal, ctx.warnings);
+            ctx.push(&typst);
         }
 
-        // ─── HTML inline (pass through as raw text) ──────────────
+        // ─── HTML inline → entity decode or convert ─────────────
         ExtractedNode::HtmlInline(html_str) => {
-            let decoded = decode_html_entity(&html_str);
-            ctx.push(&decoded);
+            if html_str.starts_with('<') && html_str.len() > 1 {
+                let typst = super::html::emit_html_inline(&html_str, ctx.warnings);
+                ctx.push(&typst);
+            } else {
+                let decoded = decode_html_entity(&html_str);
+                ctx.push(&decoded);
+            }
         }
 
         // ─── Table ───────────────────────────────────────────────
@@ -693,11 +699,71 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
     }
 }
 
-/// Emit all children of a node.
+/// Emit all children of a node, with inline HTML accumulation.
+///
+/// When an opening `HtmlInline` tag is encountered, adjacent `HtmlInline` and
+/// `Text` siblings are accumulated until the tag stack balances. The combined
+/// HTML fragment is then passed to `html::emit_html_inline` for conversion.
 fn emit_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
-    for child in node.children() {
-        emit_node(child, ctx);
+    let children: Vec<_> = node.children().collect();
+    let mut i = 0;
+
+    while i < children.len() {
+        let extracted = extract_node(children[i]);
+
+        // Check if this is an opening HTML inline tag (not a self-closing or entity)
+        if let ExtractedNode::HtmlInline(ref html_str) = extracted {
+            if is_opening_html_tag(html_str) {
+                // Accumulate siblings until tags balance
+                let mut buf = html_str.clone();
+                let mut depth: usize = 1;
+                i += 1;
+
+                while i < children.len() && depth > 0 {
+                    match extract_node(children[i]) {
+                        ExtractedNode::HtmlInline(ref s) => {
+                            buf.push_str(s);
+                            if is_opening_html_tag(s) {
+                                depth += 1;
+                            } else if is_closing_html_tag(s) {
+                                depth = depth.saturating_sub(1);
+                            }
+                            // Self-closing tags don't change depth
+                        }
+                        ExtractedNode::Text(ref t) => {
+                            buf.push_str(t);
+                        }
+                        _ => {
+                            // Non-HTML/text node breaks accumulation
+                            break;
+                        }
+                    }
+                    i += 1;
+                }
+
+                let typst = super::html::emit_html_inline(&buf, ctx.warnings);
+                ctx.push(&typst);
+                continue;
+            }
+        }
+
+        emit_node(children[i], ctx);
+        i += 1;
     }
+}
+
+/// Check if a string looks like an opening HTML tag (e.g., `<strong>`).
+fn is_opening_html_tag(s: &str) -> bool {
+    s.starts_with('<')
+        && !s.starts_with("</")
+        && !s.ends_with("/>")
+        && s.len() > 2
+        && s.ends_with('>')
+}
+
+/// Check if a string looks like a closing HTML tag (e.g., `</strong>`).
+fn is_closing_html_tag(s: &str) -> bool {
+    s.starts_with("</") && s.ends_with('>')
 }
 
 /// Emit list item children, handling tight vs loose lists.
@@ -795,25 +861,6 @@ fn collect_text<'a>(node: &'a AstNode<'a>, buf: &mut String) {
     }
 }
 
-/// Escape special Typst markup characters in content text.
-fn escape_typst_content(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + s.len() / 8);
-    for c in s.chars() {
-        match c {
-            '#' | '*' | '_' | '@' | '<' | '>' | '$' | '\\' | '~' => {
-                out.push('\\');
-                out.push(c);
-            }
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-/// Escape special characters in Typst string literals (inside `"`).
-fn escape_typst_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
 
 /// Decode common HTML entities to literal characters.
 fn decode_html_entity(s: &str) -> String {

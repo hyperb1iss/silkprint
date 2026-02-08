@@ -45,6 +45,9 @@ pub fn generate(
     // ─── Links ───────────────────────────────────────────────────
     emit_link_rule(&mut out, t);
 
+    // ─── Images ─────────────────────────────────────────────────
+    emit_image_rules(&mut out, t);
+
     // ─── Blockquotes ─────────────────────────────────────────────
     emit_blockquote_rule(&mut out, t);
 
@@ -439,6 +442,62 @@ fn emit_link_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     out.push_str("}\n\n");
 }
 
+fn emit_image_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
+    let alignment = default_if_empty(&t.images.alignment, "center");
+    let caption_size_raw = default_if_empty(&t.images.caption_size, "10pt");
+    // Convert CSS-like size names to Typst sizes (same as footnotes)
+    let caption_size = match caption_size_raw {
+        "small" | "smaller" => "9pt",
+        "x-small" => "8pt",
+        "large" | "larger" => "13pt",
+        other => other,
+    };
+    let caption_color = default_if_empty(&t.images.caption_color, &t.text.color);
+    let caption_font_raw = default_if_empty(&t.images.caption_font, &t.fonts.body);
+    let caption_font = resolve_font_name(default_if_empty(caption_font_raw, "Source Serif 4"), t);
+    let max_width = default_if_empty(&t.images.max_width, "100%");
+    let border_radius = default_if_empty(&t.images.border_radius, "0pt");
+
+    // Figure alignment
+    let _ = writeln!(out, "#show figure: set align({alignment})");
+
+    // Figure caption styling
+    let style = if t.images.caption_italic {
+        "\"italic\""
+    } else {
+        "\"normal\""
+    };
+    let _ = writeln!(
+        out,
+        "#show figure.caption: set text(font: \"{caption_font}\", size: {caption_size}, style: {style}, fill: rgb(\"{caption_color}\"))"
+    );
+
+    // Caption position (above or below)
+    let caption_position = default_if_empty(&t.images.caption_position, "bottom");
+    if caption_position != "bottom" {
+        let _ = writeln!(out, "#show figure: set figure(placement: none)");
+        let _ = writeln!(
+            out,
+            "#show figure.caption: set align({alignment})"
+        );
+    }
+
+    // Image max width and optional border
+    if t.images.border {
+        let _ = writeln!(
+            out,
+            "#show figure.where(kind: image): it => block(clip: true, radius: {border_radius}, stroke: 0.5pt + rgb(\"#e2e2e8\"), width: {max_width})[#it]"
+        );
+    } else if max_width != "100%" {
+        let _ = writeln!(
+            out,
+            "#show figure.where(kind: image): set block(width: {max_width})"
+        );
+    }
+
+    out.push('\n');
+}
+
 fn emit_blockquote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let border_color = default_if_empty(&t.blockquote.border_color, "#4a5dbd");
     let border_width = default_if_empty(&t.blockquote.border_width, "2.5pt");
@@ -498,15 +557,15 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
 
     // Row fill: header background + alternating stripes
     let header_bg = default_if_empty(&t.table.header_background, "#f4f4f8");
-    if !stripe_bg.is_empty() {
+    if stripe_bg.is_empty() {
         let _ = writeln!(
             out,
-            "  fill: (_, y) => if y == 0 {{ rgb(\"{header_bg}\") }} else if calc.even(y) {{ rgb(\"{stripe_bg}\") }},"
+            "  fill: (_, y) => if y == 0 {{ rgb(\"{header_bg}\") }},"
         );
     } else {
         let _ = writeln!(
             out,
-            "  fill: (_, y) => if y == 0 {{ rgb(\"{header_bg}\") }},"
+            "  fill: (_, y) => if y == 0 {{ rgb(\"{header_bg}\") }} else if calc.even(y) {{ rgb(\"{stripe_bg}\") }},"
         );
     }
 

@@ -31,6 +31,9 @@ pub enum SilkprintWarning {
         index: usize,
         message: String,
     },
+    UnsupportedHtmlTag {
+        tag: String,
+    },
 }
 
 impl fmt::Display for SilkprintWarning {
@@ -69,6 +72,9 @@ impl fmt::Display for SilkprintWarning {
             }
             Self::MermaidRenderFailed { index, message } => {
                 write!(f, "mermaid diagram {index} failed to render: {message}")
+            }
+            Self::UnsupportedHtmlTag { tag } => {
+                write!(f, "unsupported HTML tag <{tag}>, content may be lost")
             }
         }
     }
