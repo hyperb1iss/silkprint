@@ -1,0 +1,221 @@
+---
+source: tests/snapshots.rs
+expression: typst
+---
+#set document(
+  title: "Basic Test Document",
+  author: ("SilkPrint Test Suite",),
+)
+
+#set page(
+  paper: "a4",
+  margin: (top: 25mm, bottom: 30mm, left: 25mm, right: 25mm),
+  fill: rgb("#ffffff"),
+  numbering: "1",
+  number-align: center + bottom,
+)
+
+#set raw(theme: "/__silkprint_theme.tmTheme")
+
+#set text(
+  font: ("Source Serif 4", "Source Serif 4", "Georgia", "Times New Roman"),
+  size: 11pt,
+  fill: rgb("#1a1a2e"),
+  lang: "en",
+  hyphenate: true,
+  ligatures: true,
+)
+
+#set par(
+  justify: true,
+  leading: 0.50em,
+  spacing: 0.85em,
+)
+
+#show heading.where(level: 1): it => {
+  v(36pt)
+  block(below: 12pt)[
+    #set text(font: "Inter", size: 33.5pt, weight: 700, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set par(leading: 0.10em)
+    #it.body
+  ]
+  line(length: 100%, stroke: 0.5pt + rgb("#e2e2e8"))
+}
+
+#show heading.where(level: 2): it => {
+  v(28pt)
+  block(below: 8pt)[
+    #set text(font: "Inter", size: 27pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set par(leading: 0.15em)
+    #it.body
+  ]
+  line(length: 100%, stroke: 0.5pt + rgb("#e2e2e8"))
+}
+
+#show heading.where(level: 3): it => {
+  v(22pt)
+  block(below: 6pt)[
+    #set text(font: "Inter", size: 21.5pt, weight: 600, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set par(leading: 0.20em)
+    #it.body
+  ]
+}
+
+#show heading.where(level: 4): it => {
+  v(18pt)
+  block(below: 4pt)[
+    #set text(font: "Inter", size: 17pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set par(leading: 0.20em)
+    #it.body
+  ]
+}
+
+#show heading.where(level: 5): it => {
+  v(18pt)
+  block(below: 4pt)[
+    #set text(font: "Inter", size: 14pt, weight: 500, fill: rgb("#1a1a2e"), tracking: -0.015em)
+    #set par(leading: 0.25em)
+    #it.body
+  ]
+}
+
+#show heading.where(level: 6): it => {
+  v(18pt)
+  block(below: 4pt)[
+    #set text(font: "Inter", size: 11pt, weight: 600, fill: rgb("#1a1a2e"), tracking: 0.05em)
+    #set par(leading: 0.25em)
+    #upper(it.body)
+  ]
+}
+
+#show raw.where(block: true): it => {
+  block(
+    fill: rgb("#f4f4f8"),
+    stroke: 0.5pt + rgb("#e2e2e8"),
+    radius: 6pt,
+    inset: (x: 14pt, y: 12pt),
+    width: 100%,
+    breakable: true,
+  )[
+    #set text(font: "JetBrains Mono", size: 10pt, ligatures: false)
+    #set par(justify: false, leading: 0.45em)
+    #it
+  ]
+}
+
+#show raw.where(block: false): it => {
+  box(
+    fill: rgb("#f4f4f8"),
+    stroke: 0.5pt + rgb("#e2e2e8"),
+    radius: 3pt,
+    inset: (x: 3pt, y: 1.5pt),
+  )[
+    #set text(font: "JetBrains Mono", size: 10pt, ligatures: false)
+    #it
+  ]
+}
+
+#show link: it => {
+  set text(fill: rgb("#4a5dbd"), ligatures: false)
+  underline(it)
+}
+
+#show quote.where(block: true): it => {
+  block(
+    stroke: (left: 2.5pt + rgb("#4a5dbd")),
+    inset: (left: 14pt, y: 8pt, right: 8pt),
+    width: 100%,
+  )[
+    #set text(fill: rgb("#555570"))
+    #emph(it.body)
+  ]
+}
+
+#set table(
+  stroke: none,
+  inset: (x: 10pt, y: 6pt),
+)
+#show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#1a1a2e"))
+#show table.cell.where(y: 0): set table.cell(fill: rgb("#f4f4f8"), stroke: (bottom: 1.5pt + rgb("#c8c8d4")))
+
+#show footnote.entry: it => {
+  line(length: 33%, stroke: 0.5pt + rgb("#e2e2e8"))
+  v(4pt)
+  set text(size: 9pt)
+  [#text(fill: rgb("#4a5dbd"))[#it.note.counter.display()] #it.note.body]
+}
+#page[
+  #v(1fr)
+  #align(center)[
+    #text(font: "heading", size: 42pt, weight: 700, fill: rgb("#1a1a2e"))[Basic Test Document]
+    #v(16pt)
+    #line(length: 40%, stroke: 0.5pt + rgb("#4a5dbd"))
+    #v(16pt)
+    #text(size: 14pt, fill: rgb("#555570"))[SilkPrint Test Suite]
+  ]
+  #v(1fr)
+]
+
+
+
+
+= Hello, SilkPrint!
+
+This is a *basic* test document that exercises the core rendering pipeline.
+
+== Text Formatting
+
+Here's some _italic_, *bold*, and _*bold italic*_ text.
+You can also use #strike[strikethrough] and `inline code`.
+
+== Lists
+
+- First item
+- Second item
+  - Nested item
+  - Another nested
+
+- Third item
+
++ Ordered first
++ Ordered second
++ Ordered third
+
+== Code Block
+
+```rust
+fn main() {
+    println!("Hello from SilkPrint!");
+}
+```
+
+== Blockquote
+
+#quote(block: true)[
+
+This is a blockquote.
+It can span multiple lines.
+]
+
+== Links
+
+Visit #link("https://github.com/example/silkprint")[SilkPrint] for more.
+
+== Table
+
+#table(
+  columns: 2,
+  align: (auto, auto,),
+  [Feature],
+  [Status],
+  [Markdown],
+  [Done],
+  [Themes],
+  [Done],
+  [PDF Export],
+  [Done],
+)
+
+#line(length: 100%)
+
+_That's all for the basic test!_

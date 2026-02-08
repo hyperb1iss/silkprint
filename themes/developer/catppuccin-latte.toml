@@ -1,0 +1,335 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint Theme — Catppuccin Latte
+# Soothing pastels on creamy white — the lightest flavor
+# ═══════════════════════════════════════════════════════════════
+
+[meta]
+name        = "Catppuccin Latte"
+version     = "1"
+variant     = "light"
+description = "Soothing pastels on creamy white — the lightest flavor"
+print_safe  = true
+extends     = ""
+
+# ─── Layer 1: Primitives ──────────────────────────────────────
+
+[colors]
+crust          = "#DCE0E8"
+mantle         = "#E6E9EF"
+base           = "#EFF1F5"
+surface0       = "#CCD0DA"
+surface1       = "#BCC0CC"
+surface2       = "#ACB0BE"
+overlay0       = "#9CA0B0"
+overlay1       = "#8C8FA1"
+overlay2       = "#7C7F93"
+subtext0       = "#6C6F85"
+subtext1       = "#5C5F77"
+text           = "#4C4F69"
+rosewater      = "#DC8A78"
+flamingo       = "#DD7878"
+pink           = "#EA76CB"
+mauve          = "#8839EF"
+red            = "#D20F39"
+maroon         = "#E64553"
+peach          = "#FE640B"
+yellow         = "#DF8E1D"
+green          = "#40A02B"
+teal           = "#179299"
+blue           = "#1E66F5"
+lavender       = "#7287FD"
+
+[fonts]
+heading          = "Inter"
+heading_weight   = 600
+heading_italic   = false
+body             = "Source Serif 4"
+body_weight      = 400
+body_italic      = false
+mono             = "JetBrains Mono"
+mono_weight      = 400
+mono_ligatures   = false
+heading_fallback = ["Inter", "Helvetica Neue", "Arial"]
+body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
+mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
+
+[font_sizes]
+body   = "11pt"
+small  = "9pt"
+code   = "10pt"
+h1     = "33.5pt"
+h2     = "27pt"
+h3     = "21.5pt"
+h4     = "17pt"
+h5     = "14pt"
+h6     = "11pt"
+
+# ─── Layer 2: Semantic ────────────────────────────────────────
+
+[page]
+background     = "base"
+margin_top     = "25mm"
+margin_bottom  = "30mm"
+margin_left    = "25mm"
+margin_right   = "25mm"
+paper          = "a4"
+columns        = 1
+column_gap     = "12mm"
+
+[text]
+color           = "text"
+line_height     = 1.5
+paragraph_gap   = "0.85em"
+justification   = "justify"
+spacing_mode    = "gap"
+first_line_indent = "0pt"
+orphan_lines    = 2
+widow_lines     = 2
+
+[headings]
+color          = "mauve"
+font           = "heading"
+line_height    = 1.2
+letter_spacing = "-0.015em"
+
+[headings.h1]
+weight           = 700
+line_height      = 1.1
+border           = true
+above            = "36pt"
+below            = "12pt"
+page_break_before = false
+
+[headings.h2]
+weight           = 600
+line_height      = 1.15
+border           = true
+above            = "28pt"
+below            = "8pt"
+page_break_before = false
+
+[headings.h3]
+weight         = 600
+line_height    = 1.2
+above          = "22pt"
+below          = "6pt"
+
+[headings.h4]
+weight         = 500
+line_height    = 1.2
+above          = "18pt"
+below          = "4pt"
+
+[headings.h5]
+weight         = 500
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+
+[headings.h6]
+weight         = 600
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+uppercase      = true
+letter_spacing = "0.05em"
+
+[code_block]
+background        = "crust"
+border_color      = "surface1"
+border_radius     = "6pt"
+padding_vertical  = "12pt"
+padding_horizontal = "14pt"
+line_height       = 1.45
+left_accent       = false
+left_accent_color = "blue"
+line_numbers      = false
+language_label    = true
+language_label_color = "overlay0"
+language_label_size  = "8pt"
+wrap              = true
+
+[code_inline]
+background     = "crust"
+border_color   = "surface1"
+border_radius  = "3pt"
+
+[blockquote]
+border_color      = "blue"
+border_width      = "2.5pt"
+background        = "blue"
+background_opacity = 0.0
+text_color        = "subtext0"
+italic            = true
+left_padding      = "14pt"
+
+[table]
+header_background   = "crust"
+header_border_color = "surface1"
+header_border_width = "1.5pt"
+header_font         = "heading"
+header_weight       = 600
+row_border_color    = "surface0"
+row_border_width    = "0.5pt"
+stripe_background   = "mantle"
+vertical_lines      = false
+cell_padding        = "6pt 10pt"
+
+[horizontal_rule]
+color     = "surface1"
+width     = "60%"
+thickness = "0.5pt"
+style     = "line"
+
+[links]
+color     = "blue"
+underline = true
+
+[images]
+max_width        = "100%"
+alignment        = "center"
+border           = false
+border_radius    = "4pt"
+caption_font     = "body"
+caption_size     = "small"
+caption_color    = "overlay0"
+caption_italic   = true
+caption_position = "below"
+
+[list]
+bullet_color       = "subtext0"
+indent             = "20pt"
+nested_indent      = "20pt"
+task_checked_color = "green"
+task_unchecked_color = "overlay0"
+
+[footnotes]
+separator_color   = "surface1"
+separator_width   = "33%"
+text_size         = "small"
+number_color      = "blue"
+backref_color     = "blue"
+
+[alerts]
+note_color          = "blue"
+tip_color           = "green"
+important_color     = "mauve"
+warning_color       = "yellow"
+caution_color       = "red"
+border_width        = "3pt"
+background_opacity  = 0.08
+show_icon           = true
+show_label          = true
+
+[toc]
+title             = "Contents"
+title_size        = "h2"
+entry_color       = "text"
+page_number_color = "overlay0"
+leader_style      = "dots"
+indent            = "1.5em"
+max_depth         = 3
+
+[page_numbers]
+enabled    = true
+position   = "bottom-center"
+format     = "1"
+font       = "body"
+size       = "small"
+color      = "overlay0"
+first_page = false
+
+[title_page]
+enabled          = true
+title_font       = "heading"
+title_size       = "42pt"
+title_color      = "mauve"
+subtitle_color   = "text"
+author_color     = "subtext0"
+date_color       = "overlay0"
+separator_color  = "blue"
+
+[emphasis]
+strikethrough_color = "overlay0"
+
+[math]
+color = "text"
+
+[highlight]
+fill         = "yellow"
+fill_opacity = 0.25
+text_color   = ""
+border_radius = "2pt"
+
+[description_list]
+term_font       = "heading"
+term_weight     = 600
+term_color      = "mauve"
+definition_indent = "20pt"
+term_spacing    = "4pt"
+item_spacing    = "12pt"
+
+# ─── Syntax Highlighting ──────────────────────────────────────
+
+[syntax]
+background = "crust"
+
+[syntax.text]
+color = "#4C4F69"
+
+[syntax.keyword]
+color  = "#8839EF"
+bold   = true
+
+[syntax.string]
+color  = "#40A02B"
+italic = true
+
+[syntax.number]
+color = "#FE640B"
+
+[syntax.function]
+color  = "#1E66F5"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#DF8E1D"
+
+[syntax.comment]
+color  = "#9CA0B0"
+italic = true
+
+[syntax.constant]
+color = "#FE640B"
+
+[syntax.boolean]
+color = "#FE640B"
+bold  = true
+
+[syntax.operator]
+color = "#179299"
+
+[syntax.property]
+color = "#1E66F5"
+
+[syntax.tag]
+color = "#8839EF"
+bold  = true
+
+[syntax.attribute]
+color = "#DF8E1D"
+
+[syntax.variable]
+color = "#DC8A78"
+
+[syntax.builtin]
+color  = "#D20F39"
+bold   = true
+
+[syntax.punctuation]
+color = "#7C7F93"
+
+[syntax.escape]
+color = "#EA76CB"
+bold  = true

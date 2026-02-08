@@ -1,0 +1,330 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint Theme — Gruvbox Dark
+# Retro groove with warm earth tones — bold and cozy
+# ═══════════════════════════════════════════════════════════════
+
+[meta]
+name        = "Gruvbox Dark"
+version     = "1"
+variant     = "dark"
+description = "Retro groove with warm earth tones — bold and cozy"
+print_safe  = false
+extends     = ""
+
+# ─── Layer 1: Primitives ──────────────────────────────────────
+
+[colors]
+bg_hard        = "#1D2021"
+bg             = "#282828"
+bg_soft        = "#32302F"
+bg1            = "#3C3836"
+bg2            = "#504945"
+bg3            = "#665C54"
+bg4            = "#7C6F64"
+fg             = "#EBDBB2"
+fg1            = "#EBDBB2"
+fg2            = "#D5C4A1"
+fg3            = "#BDAE93"
+fg4            = "#A89984"
+red            = "#FB4934"
+green          = "#B8BB26"
+yellow         = "#FABD2F"
+blue           = "#83A598"
+purple         = "#D3869B"
+aqua           = "#8EC07C"
+orange         = "#FE8019"
+
+[fonts]
+heading          = "Inter"
+heading_weight   = 600
+heading_italic   = false
+body             = "Source Serif 4"
+body_weight      = 400
+body_italic      = false
+mono             = "JetBrains Mono"
+mono_weight      = 400
+mono_ligatures   = false
+heading_fallback = ["Inter", "Helvetica Neue", "Arial"]
+body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
+mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
+
+[font_sizes]
+body   = "11pt"
+small  = "9pt"
+code   = "10pt"
+h1     = "33.5pt"
+h2     = "27pt"
+h3     = "21.5pt"
+h4     = "17pt"
+h5     = "14pt"
+h6     = "11pt"
+
+# ─── Layer 2: Semantic ────────────────────────────────────────
+
+[page]
+background     = "bg"
+margin_top     = "25mm"
+margin_bottom  = "30mm"
+margin_left    = "25mm"
+margin_right   = "25mm"
+paper          = "a4"
+columns        = 1
+column_gap     = "12mm"
+
+[text]
+color           = "fg"
+line_height     = 1.5
+paragraph_gap   = "0.85em"
+justification   = "justify"
+spacing_mode    = "gap"
+first_line_indent = "0pt"
+orphan_lines    = 2
+widow_lines     = 2
+
+[headings]
+color          = "yellow"
+font           = "heading"
+line_height    = 1.2
+letter_spacing = "-0.015em"
+
+[headings.h1]
+weight           = 700
+line_height      = 1.1
+border           = true
+above            = "36pt"
+below            = "12pt"
+page_break_before = false
+
+[headings.h2]
+weight           = 600
+line_height      = 1.15
+border           = true
+above            = "28pt"
+below            = "8pt"
+page_break_before = false
+
+[headings.h3]
+weight         = 600
+line_height    = 1.2
+above          = "22pt"
+below          = "6pt"
+
+[headings.h4]
+weight         = 500
+line_height    = 1.2
+above          = "18pt"
+below          = "4pt"
+
+[headings.h5]
+weight         = 500
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+
+[headings.h6]
+weight         = 600
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+uppercase      = true
+letter_spacing = "0.05em"
+
+[code_block]
+background        = "bg_hard"
+border_color      = "bg2"
+border_radius     = "6pt"
+padding_vertical  = "12pt"
+padding_horizontal = "14pt"
+line_height       = 1.45
+left_accent       = false
+left_accent_color = "blue"
+line_numbers      = false
+language_label    = true
+language_label_color = "fg4"
+language_label_size  = "8pt"
+wrap              = true
+
+[code_inline]
+background     = "bg_hard"
+border_color   = "bg2"
+border_radius  = "3pt"
+
+[blockquote]
+border_color      = "blue"
+border_width      = "2.5pt"
+background        = "blue"
+background_opacity = 0.0
+text_color        = "fg4"
+italic            = true
+left_padding      = "14pt"
+
+[table]
+header_background   = "bg1"
+header_border_color = "bg2"
+header_border_width = "1.5pt"
+header_font         = "heading"
+header_weight       = 600
+row_border_color    = "bg2"
+row_border_width    = "0.5pt"
+stripe_background   = "bg_hard"
+vertical_lines      = false
+cell_padding        = "6pt 10pt"
+
+[horizontal_rule]
+color     = "bg2"
+width     = "60%"
+thickness = "0.5pt"
+style     = "line"
+
+[links]
+color     = "blue"
+underline = true
+
+[images]
+max_width        = "100%"
+alignment        = "center"
+border           = false
+border_radius    = "4pt"
+caption_font     = "body"
+caption_size     = "small"
+caption_color    = "fg4"
+caption_italic   = true
+caption_position = "below"
+
+[list]
+bullet_color       = "fg4"
+indent             = "20pt"
+nested_indent      = "20pt"
+task_checked_color = "green"
+task_unchecked_color = "bg3"
+
+[footnotes]
+separator_color   = "bg2"
+separator_width   = "33%"
+text_size         = "small"
+number_color      = "blue"
+backref_color     = "blue"
+
+[alerts]
+note_color          = "blue"
+tip_color           = "green"
+important_color     = "purple"
+warning_color       = "yellow"
+caution_color       = "red"
+border_width        = "3pt"
+background_opacity  = 0.08
+show_icon           = true
+show_label          = true
+
+[toc]
+title             = "Contents"
+title_size        = "h2"
+entry_color       = "fg"
+page_number_color = "fg4"
+leader_style      = "dots"
+indent            = "1.5em"
+max_depth         = 3
+
+[page_numbers]
+enabled    = true
+position   = "bottom-center"
+format     = "1"
+font       = "body"
+size       = "small"
+color      = "fg4"
+first_page = false
+
+[title_page]
+enabled          = true
+title_font       = "heading"
+title_size       = "42pt"
+title_color      = "yellow"
+subtitle_color   = "fg"
+author_color     = "fg4"
+date_color       = "bg3"
+separator_color  = "blue"
+
+[emphasis]
+strikethrough_color = "bg3"
+
+[math]
+color = "fg"
+
+[highlight]
+fill         = "yellow"
+fill_opacity = 0.25
+text_color   = ""
+border_radius = "2pt"
+
+[description_list]
+term_font       = "heading"
+term_weight     = 600
+term_color      = "yellow"
+definition_indent = "20pt"
+term_spacing    = "4pt"
+item_spacing    = "12pt"
+
+# ─── Syntax Highlighting ──────────────────────────────────────
+
+[syntax]
+background = "bg_hard"
+
+[syntax.text]
+color = "#EBDBB2"
+
+[syntax.keyword]
+color  = "#FB4934"
+bold   = true
+
+[syntax.string]
+color  = "#B8BB26"
+italic = true
+
+[syntax.number]
+color = "#D3869B"
+
+[syntax.function]
+color  = "#83A598"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#FABD2F"
+
+[syntax.comment]
+color  = "#928374"
+italic = true
+
+[syntax.constant]
+color = "#D3869B"
+
+[syntax.boolean]
+color = "#D3869B"
+bold  = true
+
+[syntax.operator]
+color = "#8EC07C"
+
+[syntax.property]
+color = "#83A598"
+
+[syntax.tag]
+color = "#FB4934"
+bold  = true
+
+[syntax.attribute]
+color = "#FABD2F"
+
+[syntax.variable]
+color = "#FE8019"
+
+[syntax.builtin]
+color  = "#FE8019"
+bold   = true
+
+[syntax.punctuation]
+color = "#A89984"
+
+[syntax.escape]
+color = "#FE8019"
+bold  = true

@@ -1,0 +1,331 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint Theme — Nord
+# Arctic, clean, frost-bitten — polar precision
+# ═══════════════════════════════════════════════════════════════
+
+[meta]
+name        = "Nord"
+version     = "1"
+variant     = "dark"
+description = "Arctic, clean, frost-bitten — polar precision"
+print_safe  = false
+extends     = ""
+
+# ─── Layer 1: Primitives ──────────────────────────────────────
+
+[colors]
+# Polar Night
+nord0          = "#2E3440"
+nord1          = "#3B4252"
+nord2          = "#434C5E"
+nord3          = "#4C566A"
+# Snow Storm
+nord4          = "#D8DEE9"
+nord5          = "#E5E9F0"
+nord6          = "#ECEFF4"
+# Frost
+nord7          = "#8FBCBB"
+nord8          = "#88C0D0"
+nord9          = "#81A1C1"
+nord10         = "#5E81AC"
+# Aurora
+nord11         = "#BF616A"
+nord12         = "#D08770"
+nord13         = "#EBCB8B"
+nord14         = "#A3BE8C"
+nord15         = "#B48EAD"
+
+[fonts]
+heading          = "Inter"
+heading_weight   = 600
+heading_italic   = false
+body             = "Source Serif 4"
+body_weight      = 400
+body_italic      = false
+mono             = "JetBrains Mono"
+mono_weight      = 400
+mono_ligatures   = false
+heading_fallback = ["Inter", "Helvetica Neue", "Arial"]
+body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
+mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
+
+[font_sizes]
+body   = "11pt"
+small  = "9pt"
+code   = "10pt"
+h1     = "33.5pt"
+h2     = "27pt"
+h3     = "21.5pt"
+h4     = "17pt"
+h5     = "14pt"
+h6     = "11pt"
+
+# ─── Layer 2: Semantic ────────────────────────────────────────
+
+[page]
+background     = "nord0"
+margin_top     = "25mm"
+margin_bottom  = "30mm"
+margin_left    = "25mm"
+margin_right   = "25mm"
+paper          = "a4"
+columns        = 1
+column_gap     = "12mm"
+
+[text]
+color           = "nord4"
+line_height     = 1.5
+paragraph_gap   = "0.85em"
+justification   = "justify"
+spacing_mode    = "gap"
+first_line_indent = "0pt"
+orphan_lines    = 2
+widow_lines     = 2
+
+[headings]
+color          = "nord6"
+font           = "heading"
+line_height    = 1.2
+letter_spacing = "-0.015em"
+
+[headings.h1]
+weight           = 700
+line_height      = 1.1
+border           = true
+above            = "36pt"
+below            = "12pt"
+page_break_before = false
+
+[headings.h2]
+weight           = 600
+line_height      = 1.15
+border           = true
+above            = "28pt"
+below            = "8pt"
+page_break_before = false
+
+[headings.h3]
+weight         = 600
+line_height    = 1.2
+above          = "22pt"
+below          = "6pt"
+
+[headings.h4]
+weight         = 500
+line_height    = 1.2
+above          = "18pt"
+below          = "4pt"
+
+[headings.h5]
+weight         = 500
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+
+[headings.h6]
+weight         = 600
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+uppercase      = true
+letter_spacing = "0.05em"
+
+[code_block]
+background        = "nord1"
+border_color      = "nord3"
+border_radius     = "6pt"
+padding_vertical  = "12pt"
+padding_horizontal = "14pt"
+line_height       = 1.45
+left_accent       = false
+left_accent_color = "nord8"
+line_numbers      = false
+language_label    = true
+language_label_color = "nord3"
+language_label_size  = "8pt"
+wrap              = true
+
+[code_inline]
+background     = "nord1"
+border_color   = "nord3"
+border_radius  = "3pt"
+
+[blockquote]
+border_color      = "nord8"
+border_width      = "2.5pt"
+background        = "nord8"
+background_opacity = 0.0
+text_color        = "nord4"
+italic            = true
+left_padding      = "14pt"
+
+[table]
+header_background   = "nord1"
+header_border_color = "nord3"
+header_border_width = "1.5pt"
+header_font         = "heading"
+header_weight       = 600
+row_border_color    = "nord2"
+row_border_width    = "0.5pt"
+stripe_background   = "nord1"
+vertical_lines      = false
+cell_padding        = "6pt 10pt"
+
+[horizontal_rule]
+color     = "nord3"
+width     = "60%"
+thickness = "0.5pt"
+style     = "line"
+
+[links]
+color     = "nord8"
+underline = true
+
+[images]
+max_width        = "100%"
+alignment        = "center"
+border           = false
+border_radius    = "4pt"
+caption_font     = "body"
+caption_size     = "small"
+caption_color    = "nord3"
+caption_italic   = true
+caption_position = "below"
+
+[list]
+bullet_color       = "nord9"
+indent             = "20pt"
+nested_indent      = "20pt"
+task_checked_color = "nord14"
+task_unchecked_color = "nord3"
+
+[footnotes]
+separator_color   = "nord3"
+separator_width   = "33%"
+text_size         = "small"
+number_color      = "nord8"
+backref_color     = "nord8"
+
+[alerts]
+note_color          = "nord8"
+tip_color           = "nord14"
+important_color     = "nord9"
+warning_color       = "nord13"
+caution_color       = "nord11"
+border_width        = "3pt"
+background_opacity  = 0.08
+show_icon           = true
+show_label          = true
+
+[toc]
+title             = "Contents"
+title_size        = "h2"
+entry_color       = "nord4"
+page_number_color = "nord3"
+leader_style      = "dots"
+indent            = "1.5em"
+max_depth         = 3
+
+[page_numbers]
+enabled    = true
+position   = "bottom-center"
+format     = "1"
+font       = "body"
+size       = "small"
+color      = "nord3"
+first_page = false
+
+[title_page]
+enabled          = true
+title_font       = "heading"
+title_size       = "42pt"
+title_color      = "nord6"
+subtitle_color   = "nord4"
+author_color     = "nord4"
+date_color       = "nord3"
+separator_color  = "nord8"
+
+[emphasis]
+strikethrough_color = "nord3"
+
+[math]
+color = "nord4"
+
+[highlight]
+fill         = "nord13"
+fill_opacity = 0.25
+text_color   = ""
+border_radius = "2pt"
+
+[description_list]
+term_font       = "heading"
+term_weight     = 600
+term_color      = "nord6"
+definition_indent = "20pt"
+term_spacing    = "4pt"
+item_spacing    = "12pt"
+
+# ─── Syntax Highlighting ──────────────────────────────────────
+
+[syntax]
+background = "nord1"
+
+[syntax.text]
+color = "nord4"
+
+[syntax.keyword]
+color  = "#81A1C1"
+bold   = true
+
+[syntax.string]
+color  = "#A3BE8C"
+italic = true
+
+[syntax.number]
+color = "#B48EAD"
+
+[syntax.function]
+color  = "#88C0D0"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#8FBCBB"
+
+[syntax.comment]
+color  = "#616E88"
+italic = true
+
+[syntax.constant]
+color = "#B48EAD"
+
+[syntax.boolean]
+color = "#81A1C1"
+bold  = true
+
+[syntax.operator]
+color = "#81A1C1"
+
+[syntax.property]
+color = "#88C0D0"
+
+[syntax.tag]
+color = "#81A1C1"
+bold  = true
+
+[syntax.attribute]
+color = "#8FBCBB"
+
+[syntax.variable]
+color = "#D8DEE9"
+
+[syntax.builtin]
+color  = "#5E81AC"
+bold   = true
+
+[syntax.punctuation]
+color = "#4C566A"
+
+[syntax.escape]
+color = "#EBCB8B"
+bold  = true

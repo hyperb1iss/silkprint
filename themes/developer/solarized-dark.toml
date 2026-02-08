@@ -1,0 +1,327 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint Theme — Solarized Dark
+# Precision-engineered readability — Ethan Schoonover's dark side
+# ═══════════════════════════════════════════════════════════════
+
+[meta]
+name        = "Solarized Dark"
+version     = "1"
+variant     = "dark"
+description = "Precision-engineered readability — deep indigo warmth"
+print_safe  = false
+extends     = ""
+
+# ─── Layer 1: Primitives ──────────────────────────────────────
+
+[colors]
+base03         = "#002B36"
+base02         = "#073642"
+base01         = "#586E75"
+base00         = "#657B83"
+base0          = "#839496"
+base1          = "#93A1A1"
+base2          = "#EEE8D5"
+base3          = "#FDF6E3"
+yellow         = "#B58900"
+orange         = "#CB4B16"
+red            = "#DC322F"
+magenta        = "#D33682"
+violet         = "#6C71C4"
+blue           = "#268BD2"
+cyan           = "#2AA198"
+green          = "#859900"
+
+[fonts]
+heading          = "Inter"
+heading_weight   = 600
+heading_italic   = false
+body             = "Source Serif 4"
+body_weight      = 400
+body_italic      = false
+mono             = "JetBrains Mono"
+mono_weight      = 400
+mono_ligatures   = false
+heading_fallback = ["Inter", "Helvetica Neue", "Arial"]
+body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
+mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
+
+[font_sizes]
+body   = "11pt"
+small  = "9pt"
+code   = "10pt"
+h1     = "33.5pt"
+h2     = "27pt"
+h3     = "21.5pt"
+h4     = "17pt"
+h5     = "14pt"
+h6     = "11pt"
+
+# ─── Layer 2: Semantic ────────────────────────────────────────
+
+[page]
+background     = "base03"
+margin_top     = "25mm"
+margin_bottom  = "30mm"
+margin_left    = "25mm"
+margin_right   = "25mm"
+paper          = "a4"
+columns        = 1
+column_gap     = "12mm"
+
+[text]
+color           = "base0"
+line_height     = 1.5
+paragraph_gap   = "0.85em"
+justification   = "justify"
+spacing_mode    = "gap"
+first_line_indent = "0pt"
+orphan_lines    = 2
+widow_lines     = 2
+
+[headings]
+color          = "base1"
+font           = "heading"
+line_height    = 1.2
+letter_spacing = "-0.015em"
+
+[headings.h1]
+weight           = 700
+line_height      = 1.1
+border           = true
+above            = "36pt"
+below            = "12pt"
+page_break_before = false
+
+[headings.h2]
+weight           = 600
+line_height      = 1.15
+border           = true
+above            = "28pt"
+below            = "8pt"
+page_break_before = false
+
+[headings.h3]
+weight         = 600
+line_height    = 1.2
+above          = "22pt"
+below          = "6pt"
+
+[headings.h4]
+weight         = 500
+line_height    = 1.2
+above          = "18pt"
+below          = "4pt"
+
+[headings.h5]
+weight         = 500
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+
+[headings.h6]
+weight         = 600
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+uppercase      = true
+letter_spacing = "0.05em"
+
+[code_block]
+background        = "base02"
+border_color      = "base01"
+border_radius     = "6pt"
+padding_vertical  = "12pt"
+padding_horizontal = "14pt"
+line_height       = 1.45
+left_accent       = false
+left_accent_color = "blue"
+line_numbers      = false
+language_label    = true
+language_label_color = "base01"
+language_label_size  = "8pt"
+wrap              = true
+
+[code_inline]
+background     = "base02"
+border_color   = "base01"
+border_radius  = "3pt"
+
+[blockquote]
+border_color      = "blue"
+border_width      = "2.5pt"
+background        = "blue"
+background_opacity = 0.0
+text_color        = "base0"
+italic            = true
+left_padding      = "14pt"
+
+[table]
+header_background   = "base02"
+header_border_color = "base01"
+header_border_width = "1.5pt"
+header_font         = "heading"
+header_weight       = 600
+row_border_color    = "base01"
+row_border_width    = "0.5pt"
+stripe_background   = "base02"
+vertical_lines      = false
+cell_padding        = "6pt 10pt"
+
+[horizontal_rule]
+color     = "base01"
+width     = "60%"
+thickness = "0.5pt"
+style     = "line"
+
+[links]
+color     = "blue"
+underline = true
+
+[images]
+max_width        = "100%"
+alignment        = "center"
+border           = false
+border_radius    = "4pt"
+caption_font     = "body"
+caption_size     = "small"
+caption_color    = "base01"
+caption_italic   = true
+caption_position = "below"
+
+[list]
+bullet_color       = "base01"
+indent             = "20pt"
+nested_indent      = "20pt"
+task_checked_color = "green"
+task_unchecked_color = "base01"
+
+[footnotes]
+separator_color   = "base01"
+separator_width   = "33%"
+text_size         = "small"
+number_color      = "blue"
+backref_color     = "blue"
+
+[alerts]
+note_color          = "blue"
+tip_color           = "green"
+important_color     = "violet"
+warning_color       = "yellow"
+caution_color       = "red"
+border_width        = "3pt"
+background_opacity  = 0.08
+show_icon           = true
+show_label          = true
+
+[toc]
+title             = "Contents"
+title_size        = "h2"
+entry_color       = "base0"
+page_number_color = "base01"
+leader_style      = "dots"
+indent            = "1.5em"
+max_depth         = 3
+
+[page_numbers]
+enabled    = true
+position   = "bottom-center"
+format     = "1"
+font       = "body"
+size       = "small"
+color      = "base01"
+first_page = false
+
+[title_page]
+enabled          = true
+title_font       = "heading"
+title_size       = "42pt"
+title_color      = "base1"
+subtitle_color   = "base0"
+author_color     = "base0"
+date_color       = "base01"
+separator_color  = "blue"
+
+[emphasis]
+strikethrough_color = "base01"
+
+[math]
+color = "base0"
+
+[highlight]
+fill         = "yellow"
+fill_opacity = 0.25
+text_color   = ""
+border_radius = "2pt"
+
+[description_list]
+term_font       = "heading"
+term_weight     = 600
+term_color      = "base1"
+definition_indent = "20pt"
+term_spacing    = "4pt"
+item_spacing    = "12pt"
+
+# ─── Syntax Highlighting ──────────────────────────────────────
+
+[syntax]
+background = "base02"
+
+[syntax.text]
+color = "#839496"
+
+[syntax.keyword]
+color  = "#859900"
+bold   = true
+
+[syntax.string]
+color  = "#2AA198"
+italic = true
+
+[syntax.number]
+color = "#D33682"
+
+[syntax.function]
+color  = "#268BD2"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#B58900"
+
+[syntax.comment]
+color  = "#586E75"
+italic = true
+
+[syntax.constant]
+color = "#CB4B16"
+
+[syntax.boolean]
+color = "#CB4B16"
+bold  = true
+
+[syntax.operator]
+color = "#859900"
+
+[syntax.property]
+color = "#268BD2"
+
+[syntax.tag]
+color = "#268BD2"
+bold  = true
+
+[syntax.attribute]
+color = "#B58900"
+
+[syntax.variable]
+color = "#CB4B16"
+
+[syntax.builtin]
+color  = "#6C71C4"
+bold   = true
+
+[syntax.punctuation]
+color = "#586E75"
+
+[syntax.escape]
+color = "#DC322F"
+bold  = true

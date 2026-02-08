@@ -1,0 +1,22 @@
+# ================================================================
+# SilkPrint — Intentionally Invalid Theme (for error testing)
+# This file has deliberate TOML syntax errors.
+# ================================================================
+
+[meta
+name = "Broken Theme"
+version = "1"
+variant = "not-a-valid-variant"
+
+[colors]
+text_primary = "not-a-color"
+accent = #missing-quotes
+background = "#gggggg"
+
+[fonts
+heading = "Inter"
+
+[this is not valid toml]
+random garbage here = = =
+
+missing_closing = "this string never ends

@@ -1,0 +1,328 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint Theme — High Contrast
+# Extreme B&W, maximum readability
+# ═══════════════════════════════════════════════════════════════
+
+[meta]
+name        = "High Contrast"
+version     = "1"
+variant     = "light"
+description = "Extreme B&W, maximum readability"
+print_safe  = true
+extends     = ""
+
+# ─── Layer 1: Primitives ──────────────────────────────────────
+
+[colors]
+white          = "#FFFFFF"
+cream          = "#FFFFFF"
+surface        = "#F0F0F0"
+surface_alt    = "#E8E8E8"
+border_light   = "#000000"
+border_strong  = "#000000"
+text_primary   = "#000000"
+text_secondary = "#333333"
+text_muted     = "#555555"
+accent_black   = "#1A1A1A"
+accent_green   = "#1A1A1A"
+accent_amber   = "#333333"
+accent_red     = "#000000"
+
+[fonts]
+heading          = "Inter"
+heading_weight   = 700
+heading_italic   = false
+body             = "Source Serif 4"
+body_weight      = 400
+body_italic      = false
+mono             = "JetBrains Mono"
+mono_weight      = 400
+mono_ligatures   = false
+heading_fallback = ["Inter", "Helvetica Neue", "Arial"]
+body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
+mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
+
+[font_sizes]
+body   = "11pt"
+small  = "9pt"
+code   = "10pt"
+h1     = "33.5pt"
+h2     = "27pt"
+h3     = "21.5pt"
+h4     = "17pt"
+h5     = "14pt"
+h6     = "11pt"
+
+# ─── Layer 2: Semantic ────────────────────────────────────────
+
+[page]
+background     = "white"
+margin_top     = "25mm"
+margin_bottom  = "30mm"
+margin_left    = "25mm"
+margin_right   = "25mm"
+paper          = "a4"
+columns        = 1
+column_gap     = "12mm"
+
+[text]
+color           = "text_primary"
+line_height     = 1.5
+paragraph_gap   = "0.85em"
+justification   = "justify"
+spacing_mode    = "gap"
+first_line_indent = "0pt"
+orphan_lines    = 2
+widow_lines     = 2
+
+[headings]
+color          = "text_primary"
+font           = "heading"
+line_height    = 1.2
+letter_spacing = "-0.015em"
+
+[headings.h1]
+weight           = 900
+line_height      = 1.1
+border           = true
+above            = "36pt"
+below            = "12pt"
+page_break_before = false
+
+[headings.h2]
+weight           = 700
+line_height      = 1.15
+border           = true
+above            = "28pt"
+below            = "8pt"
+page_break_before = false
+
+[headings.h3]
+weight         = 700
+line_height    = 1.2
+above          = "22pt"
+below          = "6pt"
+
+[headings.h4]
+weight         = 600
+line_height    = 1.2
+above          = "18pt"
+below          = "4pt"
+
+[headings.h5]
+weight         = 600
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+
+[headings.h6]
+weight         = 700
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+uppercase      = true
+letter_spacing = "0.05em"
+
+[code_block]
+background        = "surface"
+border_color      = "border_light"
+border_radius     = "0pt"
+padding_vertical  = "12pt"
+padding_horizontal = "14pt"
+line_height       = 1.45
+left_accent       = false
+left_accent_color = "accent_black"
+line_numbers      = false
+language_label    = true
+language_label_color = "text_muted"
+language_label_size  = "8pt"
+wrap              = true
+
+[code_inline]
+background     = "surface"
+border_color   = "border_light"
+border_radius  = "0pt"
+
+[blockquote]
+border_color      = "accent_black"
+border_width      = "3pt"
+background        = "accent_black"
+background_opacity = 0.0
+text_color        = "text_secondary"
+italic            = true
+left_padding      = "14pt"
+
+[table]
+header_background   = "surface"
+header_border_color = "border_strong"
+header_border_width = "2pt"
+header_font         = "heading"
+header_weight       = 700
+row_border_color    = "border_light"
+row_border_width    = "0.5pt"
+stripe_background   = "cream"
+vertical_lines      = false
+cell_padding        = "6pt 10pt"
+
+[horizontal_rule]
+color     = "border_light"
+width     = "100%"
+thickness = "1pt"
+style     = "line"
+
+[links]
+color     = "accent_black"
+underline = true
+
+[images]
+max_width        = "100%"
+alignment        = "center"
+border           = false
+border_radius    = "0pt"
+caption_font     = "body"
+caption_size     = "small"
+caption_color    = "text_muted"
+caption_italic   = true
+caption_position = "below"
+
+[list]
+bullet_color       = "text_primary"
+indent             = "20pt"
+nested_indent      = "20pt"
+task_checked_color = "accent_black"
+task_unchecked_color = "text_muted"
+
+[footnotes]
+separator_color   = "border_light"
+separator_width   = "33%"
+text_size         = "small"
+number_color      = "accent_black"
+backref_color     = "accent_black"
+
+[alerts]
+note_color          = "accent_black"
+tip_color           = "accent_green"
+important_color     = "accent_black"
+warning_color       = "accent_amber"
+caution_color       = "accent_red"
+border_width        = "3pt"
+background_opacity  = 0.08
+show_icon           = true
+show_label          = true
+
+[toc]
+title             = "Contents"
+title_size        = "h2"
+entry_color       = "text_primary"
+page_number_color = "text_muted"
+leader_style      = "dots"
+indent            = "1.5em"
+max_depth         = 3
+
+[page_numbers]
+enabled    = true
+position   = "bottom-center"
+format     = "1"
+font       = "body"
+size       = "small"
+color      = "text_muted"
+first_page = false
+
+[title_page]
+enabled          = true
+title_font       = "heading"
+title_size       = "42pt"
+title_color      = "text_primary"
+subtitle_color   = "text_secondary"
+author_color     = "text_secondary"
+date_color       = "text_muted"
+separator_color  = "accent_black"
+
+[emphasis]
+strikethrough_color = "text_muted"
+
+[math]
+color = "text_primary"
+
+[highlight]
+fill         = "#000000"
+fill_opacity = 0.15
+text_color   = ""
+border_radius = "0pt"
+
+[description_list]
+term_font       = "heading"
+term_weight     = 700
+term_color      = "text_primary"
+definition_indent = "20pt"
+term_spacing    = "4pt"
+item_spacing    = "12pt"
+
+# ─── Syntax Highlighting ──────────────────────────────────────
+
+[syntax]
+background = "surface"
+
+[syntax.text]
+color = "#000000"
+
+[syntax.keyword]
+color  = "#000000"
+bold   = true
+
+[syntax.string]
+color  = "#333333"
+italic = true
+
+[syntax.number]
+color = "#1A1A1A"
+
+[syntax.function]
+color  = "#000000"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#1A1A1A"
+bold  = true
+
+[syntax.comment]
+color  = "#777777"
+italic = true
+
+[syntax.constant]
+color = "#000000"
+bold  = true
+
+[syntax.boolean]
+color = "#000000"
+bold  = true
+
+[syntax.operator]
+color = "#000000"
+
+[syntax.property]
+color  = "#333333"
+italic = true
+
+[syntax.tag]
+color = "#000000"
+bold  = true
+
+[syntax.attribute]
+color  = "#333333"
+italic = true
+
+[syntax.variable]
+color = "#1A1A1A"
+
+[syntax.builtin]
+color  = "#000000"
+bold   = true
+
+[syntax.punctuation]
+color = "#555555"
+
+[syntax.escape]
+color = "#1A1A1A"
+bold  = true
