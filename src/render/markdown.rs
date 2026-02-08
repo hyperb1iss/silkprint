@@ -46,11 +46,15 @@ pub fn parse<'a>(arena: &'a comrak::Arena<'a>, input: &str) -> &'a AstNode<'a> {
 /// Traverses every node in the tree, converting each to valid Typst syntax.
 /// Footnote definitions are collected during traversal and inlined at their
 /// reference sites via `#footnote[...]`.
+///
+/// Mermaid code blocks are emitted as image references to virtual SVG files.
+/// The collected mermaid sources are returned so the caller can render them
+/// before Typst compilation.
 pub fn emit_typst<'a>(
     root: &'a AstNode<'a>,
     _theme: &ResolvedTheme,
     warnings: &mut WarningCollector,
-) -> String {
+) -> (String, Vec<String>) {
     // First pass: collect footnote definitions by name so we can inline them
     // at the reference site (Typst's #footnote[...] model).
     let footnotes = collect_footnote_definitions(root, warnings);
@@ -64,11 +68,13 @@ pub fn emit_typst<'a>(
         in_table_header: false,
         in_tight_list: false,
         warnings,
+        mermaid_sources: Vec::new(),
+        mermaid_counter: 0,
     };
 
     emit_node(root, &mut ctx);
 
-    ctx.out
+    (ctx.out, ctx.mermaid_sources)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -85,6 +91,8 @@ struct EmitContext<'w> {
     in_table_header: bool,
     in_tight_list: bool,
     warnings: &'w mut WarningCollector,
+    mermaid_sources: Vec<String>,
+    mermaid_counter: usize,
 }
 
 impl EmitContext<'_> {
@@ -498,17 +506,27 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         ExtractedNode::CodeBlock { info, literal } => {
             let lang = info.split([' ', ',', '\t']).next().unwrap_or("");
 
-            ctx.newline();
-            if lang.is_empty() {
-                ctx.push("```\n");
+            if lang == "mermaid" {
+                // Emit image reference — SVG will be rendered before compilation
+                let idx = ctx.mermaid_counter;
+                ctx.mermaid_counter += 1;
+                ctx.mermaid_sources.push(literal.clone());
+                ctx.newline();
+                let vpath = super::mermaid::MERMAID_VPATH_PREFIX;
+                let _ = writeln!(ctx.out, "#align(center)[#image(\"{vpath}{idx}.svg\")]");
             } else {
-                let _ = writeln!(ctx.out, "```{lang}");
-            }
+                ctx.newline();
+                if lang.is_empty() {
+                    ctx.push("```\n");
+                } else {
+                    let _ = writeln!(ctx.out, "```{lang}");
+                }
 
-            let content = literal.strip_suffix('\n').unwrap_or(&literal);
-            ctx.push(content);
-            ctx.newline();
-            ctx.push("```\n");
+                let content = literal.strip_suffix('\n').unwrap_or(&literal);
+                ctx.push(content);
+                ctx.newline();
+                ctx.push("```\n");
+            }
         }
 
         // ─── HTML block (pass through as comment) ────────────────
@@ -704,6 +722,8 @@ fn collect_footnote_definitions<'a>(
                 in_table_header: false,
                 in_tight_list: false,
                 warnings,
+                mermaid_sources: Vec::new(),
+                mermaid_counter: 0,
             };
             emit_children(node, &mut fn_ctx);
             map.insert(name, fn_ctx.out);
@@ -890,6 +910,8 @@ const KNOWN_LANGUAGES: &[&str] = &[
     "yml",
     "zig",
     "zsh",
+    // Diagram languages (handled specially, not syntax-highlighted)
+    "mermaid",
 ];
 
 /// Warn if a code block specifies an unrecognized language identifier.
@@ -1004,7 +1026,7 @@ mod tests {
         let root = parse(&arena, markdown);
         let theme = test_theme();
         let mut warnings = WarningCollector::new();
-        emit_typst(root, &theme, &mut warnings)
+        emit_typst(root, &theme, &mut warnings).0
     }
 
     #[test]

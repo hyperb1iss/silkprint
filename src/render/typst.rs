@@ -4,6 +4,7 @@
 //! giving full control over font loading, file resolution, and compilation
 //! without depending on a third-party wrapper.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use typst::foundations::{Bytes, Datetime};
@@ -35,6 +36,8 @@ struct SilkWorld {
     main_id: FileId,
     root: PathBuf,
     tmtheme_data: Vec<u8>,
+    /// Virtual mermaid SVG files keyed by path (e.g., `/__mermaid_0.svg`).
+    mermaid_svgs: HashMap<String, Vec<u8>>,
 }
 
 impl SilkWorld {
@@ -44,6 +47,7 @@ impl SilkWorld {
         theme: &ResolvedTheme,
         root_dir: &Path,
         font_data: Vec<Vec<u8>>,
+        mermaid_svgs: HashMap<String, Vec<u8>>,
     ) -> Self {
         // Build the main source — detached (no package, virtual path "main.typ")
         let main_source = Source::detached(typst_source);
@@ -71,6 +75,7 @@ impl SilkWorld {
             main_id,
             root: root_dir.to_path_buf(),
             tmtheme_data: theme.tmtheme_xml.as_bytes().to_vec(),
+            mermaid_svgs,
         }
     }
 }
@@ -105,6 +110,16 @@ impl World for SilkWorld {
         // Serve the virtual tmTheme file for syntax highlighting
         if path_str == TMTHEME_VPATH {
             return Ok(Bytes::new(self.tmtheme_data.clone()));
+        }
+
+        // Serve virtual mermaid SVG files
+        if path_str.starts_with(super::mermaid::MERMAID_VPATH_PREFIX) {
+            if let Some(svg_data) = self.mermaid_svgs.get(path_str.as_ref()) {
+                return Ok(Bytes::new(svg_data.clone()));
+            }
+            return Err(typst::diag::FileError::NotFound(
+                vpath.as_rooted_path().to_path_buf(),
+            ));
         }
 
         // Resolve relative to the document root directory (input file's parent)
@@ -171,6 +186,7 @@ fn unix_to_ymd_hms(secs: i64) -> (i32, u8, u8, u8, u8, u8) {
     (year as i32, m as u8, d as u8, hour, minute, second)
 }
 
+#[allow(clippy::implicit_hasher)]
 /// Compile Typst source to PDF bytes.
 ///
 /// This is the main entry point for Wave 3F. It:
@@ -183,6 +199,7 @@ pub fn compile_to_pdf(
     theme: &ResolvedTheme,
     root_dir: &Path,
     font_dirs: &[PathBuf],
+    mermaid_svgs: &HashMap<String, Vec<u8>>,
     _warnings: &mut WarningCollector,
 ) -> Result<Vec<u8>, SilkprintError> {
     // Load bundled fonts (Inter, Source Serif 4, JetBrains Mono)
@@ -210,7 +227,7 @@ pub fn compile_to_pdf(
     }
 
     // Build the world
-    let world = SilkWorld::new(typst_source, theme, root_dir, font_data);
+    let world = SilkWorld::new(typst_source, theme, root_dir, font_data, mermaid_svgs.clone());
 
     // Compile to a paged document
     let result = typst::compile::<PagedDocument>(&world);
