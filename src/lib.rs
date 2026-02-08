@@ -58,6 +58,9 @@ impl PaperSize {
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
     pub theme: ThemeSource,
+    /// Whether the theme was explicitly set by the user (vs. default).
+    /// When `false`, front matter `theme:` can override.
+    pub theme_explicit: bool,
     pub paper: PaperSize,
     pub font_dirs: Vec<PathBuf>,
     pub toc: Option<bool>,
@@ -68,6 +71,7 @@ impl Default for RenderOptions {
     fn default() -> Self {
         Self {
             theme: ThemeSource::BuiltIn("silk-light".to_string()),
+            theme_explicit: false,
             paper: PaperSize::A4,
             font_dirs: Vec::new(),
             toc: None,
@@ -83,9 +87,23 @@ pub fn render(
     options: &RenderOptions,
 ) -> Result<(Vec<u8>, Vec<warnings::SilkprintWarning>), SilkprintError> {
     let mut warnings = WarningCollector::new();
-    let resolved_theme = theme::load_theme(&options.theme, &mut warnings)?;
-    let pdf_bytes =
-        render::render_pipeline(input, input_path, options, &resolved_theme, &mut warnings)?;
+
+    // Extract front matter first — it may override the theme
+    let (front_matter, body) = render::frontmatter::extract(input)?;
+    if let Some(fm) = &front_matter {
+        render::frontmatter::warn_unknown_fields(fm, &mut warnings);
+    }
+    let effective_theme_source = resolve_effective_theme(options, front_matter.as_ref());
+    let resolved_theme = theme::load_theme(&effective_theme_source, &mut warnings)?;
+
+    let pdf_bytes = render::render_pipeline(
+        &body,
+        front_matter.as_ref(),
+        input_path,
+        options,
+        &resolved_theme,
+        &mut warnings,
+    )?;
     Ok((pdf_bytes, warnings.into_warnings()))
 }
 
@@ -95,8 +113,41 @@ pub fn render_to_typst(
     options: &RenderOptions,
 ) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
     let mut warnings = WarningCollector::new();
-    let resolved_theme = theme::load_theme(&options.theme, &mut warnings)?;
-    let typst_source =
-        render::render_to_typst_source(input, options, &resolved_theme, &mut warnings)?;
+
+    let (front_matter, body) = render::frontmatter::extract(input)?;
+    if let Some(fm) = &front_matter {
+        render::frontmatter::warn_unknown_fields(fm, &mut warnings);
+    }
+    let effective_theme_source = resolve_effective_theme(options, front_matter.as_ref());
+    let resolved_theme = theme::load_theme(&effective_theme_source, &mut warnings)?;
+
+    let typst_source = render::render_to_typst_source(
+        &body,
+        front_matter.as_ref(),
+        options,
+        &resolved_theme,
+        &mut warnings,
+    )?;
     Ok((typst_source, warnings.into_warnings()))
+}
+
+/// Determine the effective theme source, respecting precedence:
+/// CLI > front matter > default.
+///
+/// If the CLI theme is the built-in default ("silk-light") and front matter
+/// specifies a different theme, the front matter theme wins.
+fn resolve_effective_theme(options: &RenderOptions, front_matter: Option<&render::frontmatter::FrontMatter>) -> ThemeSource {
+    // CLI explicit theme always wins (CLI > front matter > default)
+    if options.theme_explicit {
+        return options.theme.clone();
+    }
+    // Front matter theme overrides the default — apply same name-or-path resolution
+    if let Some(fm_theme) = front_matter.and_then(|fm| fm.theme.as_deref()) {
+        let path = Path::new(fm_theme);
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            return ThemeSource::Custom(path.to_path_buf());
+        }
+        return ThemeSource::BuiltIn(fm_theme.to_string());
+    }
+    options.theme.clone()
 }

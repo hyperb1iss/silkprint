@@ -28,7 +28,7 @@ pub fn generate(
     out.push_str("#set raw(theme: \"/__silkprint_theme.tmTheme\")\n\n");
 
     // ─── Text ────────────────────────────────────────────────────
-    emit_text_setup(&mut out, t);
+    emit_text_setup(&mut out, t, front_matter);
 
     // ─── Paragraph ───────────────────────────────────────────────
     emit_paragraph_setup(&mut out, t);
@@ -53,6 +53,28 @@ pub fn generate(
 
     // ─── Footnotes ───────────────────────────────────────────────
     emit_footnote_rule(&mut out, t);
+
+    // ─── Title Page ───────────────────────────────────────────────
+    let show_title_page = options.title_page.unwrap_or(t.title_page.enabled);
+    if show_title_page {
+        emit_title_page(&mut out, front_matter, t);
+    }
+
+    // ─── Table of Contents ────────────────────────────────────────
+    let show_toc = options
+        .toc
+        .or_else(|| front_matter.and_then(|fm| fm.toc))
+        .unwrap_or(false);
+    if show_toc {
+        let theme_depth = if t.toc.max_depth > 0 { t.toc.max_depth } else { 3 };
+        let depth = front_matter
+            .and_then(|fm| fm.toc_depth)
+            .unwrap_or(theme_depth);
+        out.push_str("#outline(\n");
+        let _ = writeln!(out, "  depth: {depth},");
+        out.push_str(")\n");
+        out.push_str("#pagebreak()\n\n");
+    }
 
     out
 }
@@ -122,7 +144,11 @@ fn emit_page_setup(
     out.push_str(")\n\n");
 }
 
-fn emit_text_setup(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
+fn emit_text_setup(
+    out: &mut String,
+    t: &crate::theme::tokens::ThemeTokens,
+    front_matter: Option<&FrontMatter>,
+) {
     let body_font = default_if_empty(&t.fonts.body, "Source Serif 4");
     let body_size = default_if_empty(&t.font_sizes.body, "11pt");
 
@@ -147,7 +173,10 @@ fn emit_text_setup(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
         let _ = writeln!(out, "  fill: rgb(\"{}\"),", t.text.color);
     }
 
-    out.push_str("  lang: \"en\",\n");
+    let lang = front_matter
+        .and_then(|fm| fm.lang.as_deref())
+        .unwrap_or("en");
+    let _ = writeln!(out, "  lang: \"{}\",", escape_typst_string(lang));
     out.push_str("  hyphenate: true,\n");
     out.push_str("  ligatures: true,\n");
     out.push_str(")\n\n");
@@ -507,6 +536,74 @@ fn emit_footnote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
         "  [#text(fill: rgb(\"{num_color}\"))[#it.note.counter.display()] #it.note.body]"
     );
     out.push_str("}\n");
+}
+
+fn emit_title_page(
+    out: &mut String,
+    front_matter: Option<&FrontMatter>,
+    t: &crate::theme::tokens::ThemeTokens,
+) {
+    let Some(fm) = front_matter else { return };
+    let has_content = fm.title.is_some() || fm.subtitle.is_some() || fm.author.is_some();
+    if !has_content {
+        return;
+    }
+
+    let title_font_raw = default_if_empty(&t.title_page.title_font, &t.fonts.heading);
+    let title_font = default_if_empty(title_font_raw, "Inter");
+    let title_size = default_if_empty(&t.title_page.title_size, "28pt");
+    let title_color = default_if_empty(&t.title_page.title_color, &t.headings.color);
+    let subtitle_color = default_if_empty(&t.title_page.subtitle_color, &t.text.color);
+    let author_color = default_if_empty(&t.title_page.author_color, &t.text.color);
+    let date_color = default_if_empty(&t.title_page.date_color, &t.text.color);
+    let sep_color = default_if_empty(&t.title_page.separator_color, "#e2e2e8");
+
+    out.push_str("#page[\n");
+    out.push_str("  #v(1fr)\n");
+    out.push_str("  #align(center)[\n");
+
+    if let Some(title) = &fm.title {
+        let _ = writeln!(
+            out,
+            "    #text(font: \"{title_font}\", size: {title_size}, weight: 700, fill: rgb(\"{title_color}\"))[{}]",
+            escape_typst_string(title)
+        );
+    }
+    if let Some(subtitle) = &fm.subtitle {
+        out.push_str("    #v(8pt)\n");
+        let _ = writeln!(
+            out,
+            "    #text(size: 16pt, fill: rgb(\"{subtitle_color}\"))[{}]",
+            escape_typst_string(subtitle)
+        );
+    }
+
+    out.push_str("    #v(16pt)\n");
+    let _ = writeln!(
+        out,
+        "    #line(length: 40%, stroke: 0.5pt + rgb(\"{sep_color}\"))"
+    );
+    out.push_str("    #v(16pt)\n");
+
+    if let Some(author) = &fm.author {
+        let _ = writeln!(
+            out,
+            "    #text(size: 14pt, fill: rgb(\"{author_color}\"))[{}]",
+            escape_typst_string(author)
+        );
+    }
+    if let Some(date) = &fm.date {
+        out.push_str("    #v(8pt)\n");
+        let _ = writeln!(
+            out,
+            "    #text(size: 12pt, fill: rgb(\"{date_color}\"))[{}]",
+            escape_typst_string(&date.0)
+        );
+    }
+
+    out.push_str("  ]\n");
+    out.push_str("  #v(1fr)\n");
+    out.push_str("]\n\n");
 }
 
 // ═══════════════════════════════════════════════════════════════════

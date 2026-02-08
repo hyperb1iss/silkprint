@@ -184,11 +184,32 @@ pub fn compile_to_pdf(
     typst_source: &str,
     theme: &ResolvedTheme,
     root_dir: &Path,
+    font_dirs: &[PathBuf],
     warnings: &mut WarningCollector,
 ) -> Result<Vec<u8>, SilkprintError> {
     // Load bundled fonts (Inter, Source Serif 4, JetBrains Mono)
-    let font_data = crate::fonts::load_bundled_fonts();
+    let mut font_data = crate::fonts::load_bundled_fonts();
     tracing::debug!(font_files = font_data.len(), "loaded bundled font files");
+
+    // Load fonts from user-specified directories
+    for dir in font_dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| {
+                    let e = ext.to_ascii_lowercase();
+                    e == "ttf" || e == "otf" || e == "ttc" || e == "otc"
+                }) {
+                    if let Ok(data) = std::fs::read(&path) {
+                        tracing::debug!(path = %path.display(), "loaded user font");
+                        font_data.push(data);
+                    }
+                }
+            }
+        } else {
+            tracing::warn!(dir = %dir.display(), "font directory not found");
+        }
+    }
 
     // Build the world
     let world = SilkWorld::new(typst_source, theme, root_dir, font_data);

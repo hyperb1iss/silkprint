@@ -416,8 +416,19 @@ fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
     let theme = resolve_theme_source(&cli.theme);
     let font_dirs = cli.font_dir.iter().cloned().collect();
 
+    // Detect if --theme / -t was explicitly passed (vs. clap default).
+    // clap's -t always requires a value, so valid forms are:
+    //   --theme NAME, --theme=NAME, -t NAME, -tNAME
+    let theme_explicit = {
+        let args: Vec<String> = std::env::args().collect();
+        args.iter().any(|a| a == "--theme" || a.starts_with("--theme="))
+            || args.windows(2).any(|w| w[0] == "-t")
+            || args.iter().any(|a| a.starts_with("-t") && a.len() > 2)
+    };
+
     Ok(RenderOptions {
         theme,
+        theme_explicit,
         paper,
         font_dirs,
         toc: cli.toc_override(),
