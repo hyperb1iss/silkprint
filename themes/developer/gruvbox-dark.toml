@@ -292,7 +292,7 @@ italic = true
 color = "#FABD2F"
 
 [syntax.comment]
-color  = "#928374"
+color  = "#948576"
 italic = true
 
 [syntax.constant]

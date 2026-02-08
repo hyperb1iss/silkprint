@@ -21,9 +21,9 @@ border_light   = "#E0C8A8"
 border_strong  = "#C8A878"
 text_primary   = "#3A2218"
 text_secondary = "#8B6B50"
-text_muted     = "#A88B70"
+text_muted     = "#7F6955"
 heading_ember  = "#C44B2B"
-accent_amber   = "#D4782F"
+accent_amber   = "#A15B23"
 accent_gold    = "#B88C20"
 accent_rose    = "#C44B5E"
 accent_red     = "#B03A2A"
@@ -271,22 +271,22 @@ color  = "#B03A5B"
 bold   = true
 
 [syntax.string]
-color  = "#6A8C30"
+color  = "#547026"
 italic = true
 
 [syntax.number]
-color = "#D4782F"
+color = "#985621"
 
 [syntax.function]
-color  = "#C44B2B"
+color  = "#B04326"
 bold   = true
 italic = true
 
 [syntax.type]
-color = "#B88C20"
+color = "#806216"
 
 [syntax.comment]
-color  = "#A88B70"
+color  = "#77624F"
 italic = true
 
 [syntax.constant]
@@ -300,25 +300,25 @@ bold  = true
 color = "text_primary"
 
 [syntax.property]
-color = "#C44B2B"
+color = "#B04326"
 
 [syntax.tag]
 color = "#B03A2A"
 bold  = true
 
 [syntax.attribute]
-color = "#D4782F"
+color = "#985621"
 
 [syntax.variable]
 color = "#B03A5B"
 
 [syntax.builtin]
-color  = "#C44B2B"
+color  = "#B04326"
 bold   = true
 
 [syntax.punctuation]
-color = "text_muted"
+color = "#77624F"
 
 [syntax.escape]
-color = "#D4782F"
+color = "#985621"
 bold  = true

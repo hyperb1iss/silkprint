@@ -19,6 +19,8 @@ nord0          = "#2E3440"
 nord1          = "#3B4252"
 nord2          = "#434C5E"
 nord3          = "#4C566A"
+nord3_bright   = "#9CA2AD"
+nord3_mid      = "#7C8392"
 # Snow Storm
 nord4          = "#D8DEE9"
 nord5          = "#E5E9F0"
@@ -188,7 +190,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "nord3"
+caption_color    = "nord3_bright"
 caption_italic   = true
 caption_position = "below"
 
@@ -232,7 +234,7 @@ position   = "bottom-center"
 format     = "1"
 font       = "body"
 size       = "small"
-color      = "nord3"
+color      = "nord3_mid"
 first_page = false
 
 [title_page]
@@ -274,7 +276,7 @@ background = "nord1"
 color = "nord4"
 
 [syntax.keyword]
-color  = "#81A1C1"
+color  = "#9DB6CF"
 bold   = true
 
 [syntax.string]
@@ -282,7 +284,7 @@ color  = "#A3BE8C"
 italic = true
 
 [syntax.number]
-color = "#B48EAD"
+color = "#C7ABC2"
 
 [syntax.function]
 color  = "#88C0D0"
@@ -293,24 +295,24 @@ italic = true
 color = "#8FBCBB"
 
 [syntax.comment]
-color  = "#616E88"
+color  = "#AEB5C2"
 italic = true
 
 [syntax.constant]
-color = "#B48EAD"
+color = "#C7ABC2"
 
 [syntax.boolean]
-color = "#81A1C1"
+color = "#9DB6CF"
 bold  = true
 
 [syntax.operator]
-color = "#81A1C1"
+color = "#9DB6CF"
 
 [syntax.property]
 color = "#88C0D0"
 
 [syntax.tag]
-color = "#81A1C1"
+color = "#9DB6CF"
 bold  = true
 
 [syntax.attribute]
@@ -320,11 +322,11 @@ color = "#8FBCBB"
 color = "#D8DEE9"
 
 [syntax.builtin]
-color  = "#5E81AC"
+color  = "#A3B7CF"
 bold   = true
 
 [syntax.punctuation]
-color = "#4C566A"
+color = "#B0B4BD"
 
 [syntax.escape]
 color = "#EBCB8B"

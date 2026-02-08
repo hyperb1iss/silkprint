@@ -21,7 +21,7 @@ border_light   = "#2A2A3E"
 border_strong  = "#FF2E8B"
 text_primary   = "#D0D0E0"
 text_secondary = "#7878A0"
-text_muted     = "#505068"
+text_muted     = "#818192"
 accent_cyan    = "#00F0FF"
 accent_pink    = "#FF2E8B"
 accent_amber   = "#FFB347"
@@ -285,7 +285,7 @@ italic = true
 color = "#FF6EC7"
 
 [syntax.comment]
-color  = "#505068"
+color  = "#818192"
 italic = true
 
 [syntax.constant]

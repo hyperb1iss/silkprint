@@ -22,7 +22,7 @@ border_light   = "#D0CFC8"
 border_strong  = "#B8B7AE"
 text_primary   = "#1A1A24"
 text_secondary = "#5C5C6B"
-text_muted     = "#8888A0"
+text_muted     = "#66667A"
 accent_blue    = "#2B4D8C"
 accent_green   = "#2D6B4A"
 accent_amber   = "#8C7030"
@@ -275,7 +275,7 @@ color  = "#2D6B4A"
 italic = true
 
 [syntax.number]
-color = "#8C7030"
+color = "#7A6228"
 
 [syntax.function]
 color  = "#2B4D8C"
@@ -283,10 +283,10 @@ bold   = true
 italic = true
 
 [syntax.type]
-color = "#8C7030"
+color = "#7A6228"
 
 [syntax.comment]
-color  = "#8888A0"
+color  = "#66667A"
 italic = true
 
 [syntax.constant]
@@ -307,7 +307,7 @@ color = "#8C3030"
 bold  = true
 
 [syntax.attribute]
-color = "#8C7030"
+color = "#7A6228"
 
 [syntax.variable]
 color = "#8C3030"
@@ -320,5 +320,5 @@ bold   = true
 color = "text_muted"
 
 [syntax.escape]
-color = "#8C7030"
+color = "#7A6228"
 bold  = true

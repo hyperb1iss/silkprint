@@ -21,8 +21,8 @@ surface_alt    = "#DDD0AA"
 border_light   = "#C4B590"
 border_strong  = "#A89A72"
 text_primary   = "#3B2F20"
-text_secondary = "#7A6B55"
-text_muted     = "#9A8B72"
+text_secondary = "#6B5C45"
+text_muted     = "#675A42"
 accent_brown   = "#7B4A2B"
 accent_green   = "#5A6B30"
 accent_amber   = "#7B6020"
@@ -271,11 +271,11 @@ color  = "#5C3D1E"
 bold   = true
 
 [syntax.string]
-color  = "#5A6B30"
+color  = "#4D5C28"
 italic = true
 
 [syntax.number]
-color = "#7B6020"
+color = "#6B5218"
 
 [syntax.function]
 color  = "#7B4A2B"
@@ -283,10 +283,10 @@ bold   = true
 italic = true
 
 [syntax.type]
-color = "#7B6020"
+color = "#6B5218"
 
 [syntax.comment]
-color  = "#9A8B72"
+color  = "#675A42"
 italic = true
 
 [syntax.constant]
@@ -307,7 +307,7 @@ color = "#7B3020"
 bold  = true
 
 [syntax.attribute]
-color = "#7B6020"
+color = "#6B5218"
 
 [syntax.variable]
 color = "#7B3020"
@@ -320,5 +320,5 @@ bold   = true
 color = "text_muted"
 
 [syntax.escape]
-color = "#7B6020"
+color = "#6B5218"
 bold  = true

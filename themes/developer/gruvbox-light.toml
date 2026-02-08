@@ -187,7 +187,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "fg4"
+caption_color    = "#786B61"
 caption_italic   = true
 caption_position = "below"
 
@@ -277,7 +277,7 @@ color  = "#9D0006"
 bold   = true
 
 [syntax.string]
-color  = "#79740E"
+color  = "#77720E"
 italic = true
 
 [syntax.number]
@@ -289,10 +289,10 @@ bold   = true
 italic = true
 
 [syntax.type]
-color = "#B57614"
+color = "#9A6411"
 
 [syntax.comment]
-color  = "#928374"
+color  = "#7B6D60"
 italic = true
 
 [syntax.constant]
@@ -313,7 +313,7 @@ color = "#9D0006"
 bold  = true
 
 [syntax.attribute]
-color = "#B57614"
+color = "#9A6411"
 
 [syntax.variable]
 color = "#AF3A03"
@@ -323,7 +323,7 @@ color  = "#AF3A03"
 bold   = true
 
 [syntax.punctuation]
-color = "#7C6F64"
+color = "#7A6D63"
 
 [syntax.escape]
 color = "#AF3A03"

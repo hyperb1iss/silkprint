@@ -192,7 +192,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "overlay0"
+caption_color    = "overlay2"
 caption_italic   = true
 caption_position = "below"
 
@@ -297,7 +297,7 @@ italic = true
 color = "#F9E2AF"
 
 [syntax.comment]
-color  = "#6C7086"
+color  = "#979AAB"
 italic = true
 
 [syntax.constant]
@@ -328,7 +328,7 @@ color  = "#F38BA8"
 bold   = true
 
 [syntax.punctuation]
-color = "#9399B2"
+color = "#949AB2"
 
 [syntax.escape]
 color = "#F5C2E7"

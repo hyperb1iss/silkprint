@@ -17,9 +17,11 @@ extends     = ""
 base03         = "#002B36"
 base02         = "#073642"
 base01         = "#586E75"
-base00         = "#657B83"
+base00         = "#5B6F77"
 base0          = "#839496"
 base1          = "#93A1A1"
+base1_dark     = "#636D6D"
+base1_mid      = "#7F8C8C"
 base2          = "#EEE8D5"
 base3          = "#FDF6E3"
 yellow         = "#B58900"
@@ -27,7 +29,7 @@ orange         = "#CB4B16"
 red            = "#DC322F"
 magenta        = "#D33682"
 violet         = "#6C71C4"
-blue           = "#268BD2"
+blue           = "#1F71AC"
 cyan           = "#2AA198"
 green          = "#859900"
 
@@ -156,7 +158,7 @@ italic            = true
 left_padding      = "14pt"
 
 [table]
-header_background   = "base2"
+header_background   = "base3"
 header_border_color = "base1"
 header_border_width = "1.5pt"
 header_font         = "heading"
@@ -184,7 +186,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "base1"
+caption_color    = "base1_dark"
 caption_italic   = true
 caption_position = "below"
 
@@ -228,7 +230,7 @@ position   = "bottom-center"
 format     = "1"
 font       = "body"
 size       = "small"
-color      = "base1"
+color      = "base1_mid"
 first_page = false
 
 [title_page]
@@ -267,61 +269,61 @@ item_spacing    = "12pt"
 background = "base2"
 
 [syntax.text]
-color = "#657B83"
+color = "#54676E"
 
 [syntax.keyword]
-color  = "#859900"
+color  = "#5D6B00"
 bold   = true
 
 [syntax.string]
-color  = "#2AA198"
+color  = "#1C6F68"
 italic = true
 
 [syntax.number]
-color = "#D33682"
+color = "#B32D6E"
 
 [syntax.function]
-color  = "#268BD2"
+color  = "#1C689D"
 bold   = true
 italic = true
 
 [syntax.type]
-color = "#B58900"
+color = "#7E5F00"
 
 [syntax.comment]
-color  = "#93A1A1"
+color  = "#5C6565"
 italic = true
 
 [syntax.constant]
-color = "#CB4B16"
+color = "#AE4012"
 
 [syntax.boolean]
-color = "#CB4B16"
+color = "#AE4012"
 bold  = true
 
 [syntax.operator]
-color = "#859900"
+color = "#616F00"
 
 [syntax.property]
-color = "#268BD2"
+color = "#1E6DA5"
 
 [syntax.tag]
-color = "#268BD2"
+color = "#1E6DA5"
 bold  = true
 
 [syntax.attribute]
-color = "#B58900"
+color = "#846400"
 
 [syntax.variable]
-color = "#CB4B16"
+color = "#B64314"
 
 [syntax.builtin]
-color  = "#6C71C4"
+color  = "#5A5FBD"
 bold   = true
 
 [syntax.punctuation]
-color = "#93A1A1"
+color = "#5E6B6B"
 
 [syntax.escape]
-color = "#DC322F"
+color = "#CA2522"
 bold  = true

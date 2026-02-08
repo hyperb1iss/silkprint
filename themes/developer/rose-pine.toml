@@ -183,7 +183,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "muted"
+caption_color    = "#817E99"
 caption_italic   = true
 caption_position = "below"
 
@@ -269,7 +269,7 @@ background = "surface"
 color = "#E0DEF4"
 
 [syntax.keyword]
-color  = "#31748F"
+color  = "#3C8FB0"
 bold   = true
 
 [syntax.string]
@@ -288,7 +288,7 @@ italic = true
 color = "#9CCFD8"
 
 [syntax.comment]
-color  = "#6E6A86"
+color  = "#86839D"
 italic = true
 
 [syntax.constant]
@@ -305,7 +305,7 @@ color = "#908CAA"
 color = "#EB6F92"
 
 [syntax.tag]
-color = "#31748F"
+color = "#3C8FB0"
 bold  = true
 
 [syntax.attribute]

@@ -148,7 +148,7 @@ border_color      = "heading_rose"
 border_width      = "2.5pt"
 background        = "heading_rose"
 background_opacity = 0.0
-text_color        = "text_secondary"
+text_color        = "#8B6A71"
 italic            = true
 left_padding      = "14pt"
 
@@ -171,7 +171,7 @@ thickness = "0.5pt"
 style     = "line"
 
 [links]
-color     = "accent_matcha"
+color     = "#547D50"
 underline = true
 
 [images]
@@ -181,7 +181,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "text_muted"
+caption_color    = "#8D6972"
 caption_italic   = true
 caption_position = "below"
 
@@ -196,8 +196,8 @@ task_unchecked_color = "text_muted"
 separator_color   = "border_light"
 separator_width   = "33%"
 text_size         = "small"
-number_color      = "heading_rose"
-backref_color     = "heading_rose"
+number_color      = "#BE4B6A"
+backref_color     = "#BE4B6A"
 
 [alerts]
 note_color          = "accent_matcha"
@@ -225,7 +225,7 @@ position   = "bottom-center"
 format     = "1"
 font       = "body"
 size       = "small"
-color      = "text_muted"
+color      = "#9E7A82"
 first_page = false
 
 [title_page]
@@ -267,58 +267,58 @@ background = "surface"
 color = "text_primary"
 
 [syntax.keyword]
-color  = "#C45C78"
+color  = "#B84362"
 bold   = true
 
 [syntax.string]
-color  = "#5E8C5A"
+color  = "#4F764C"
 italic = true
 
 [syntax.number]
-color = "#D4708A"
+color = "#C13A5D"
 
 [syntax.function]
-color  = "#4A7A6A"
+color  = "#477566"
 bold   = true
 italic = true
 
 [syntax.type]
-color = "#A07C30"
+color = "#866828"
 
 [syntax.comment]
-color  = "#A88B92"
+color  = "#85636C"
 italic = true
 
 [syntax.constant]
-color = "#C44D56"
+color = "#BF3F49"
 
 [syntax.boolean]
-color = "#C44D56"
+color = "#BF3F49"
 bold  = true
 
 [syntax.operator]
 color = "text_primary"
 
 [syntax.property]
-color = "#4A7A6A"
+color = "#477566"
 
 [syntax.tag]
-color = "#C44D56"
+color = "#BF3F49"
 bold  = true
 
 [syntax.attribute]
-color = "#D4708A"
+color = "#C13A5D"
 
 [syntax.variable]
-color = "#C45C78"
+color = "#B84362"
 
 [syntax.builtin]
-color  = "#5E8C5A"
+color  = "#4F764C"
 bold   = true
 
 [syntax.punctuation]
-color = "text_muted"
+color = "#85636C"
 
 [syntax.escape]
-color = "#D4708A"
+color = "#C13A5D"
 bold  = true

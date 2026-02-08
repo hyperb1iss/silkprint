@@ -22,11 +22,11 @@ border_light   = "#e2e2e8"
 border_strong  = "#c8c8d4"
 text_primary   = "#1a1a2e"
 text_secondary = "#555570"
-text_muted     = "#6a6a80"
-accent_blue    = "#3d4fa8"
-accent_green   = "#256f4a"
-accent_amber   = "#8a6a25"
-accent_red     = "#b0404a"
+text_muted     = "#6a6a82"
+accent_blue    = "#4a5dbd"
+accent_green   = "#2d7a50"
+accent_amber   = "#9a7020"
+accent_red     = "#c44d56"
 
 [fonts]
 heading          = "Inter"
@@ -76,7 +76,7 @@ orphan_lines    = 2
 widow_lines     = 2
 
 [headings]
-color          = "text_primary"
+color          = "accent_blue"
 font           = "heading"
 line_height    = 1.2
 letter_spacing = "-0.015em"

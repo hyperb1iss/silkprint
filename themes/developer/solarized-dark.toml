@@ -156,7 +156,7 @@ italic            = true
 left_padding      = "14pt"
 
 [table]
-header_background   = "base02"
+header_background   = "base03"
 header_border_color = "base01"
 header_border_width = "1.5pt"
 header_font         = "heading"
@@ -174,7 +174,7 @@ thickness = "0.5pt"
 style     = "line"
 
 [links]
-color     = "blue"
+color     = "#2F93D9"
 underline = true
 
 [images]
@@ -184,7 +184,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "base01"
+caption_color    = "#789199"
 caption_italic   = true
 caption_position = "below"
 
@@ -199,8 +199,8 @@ task_unchecked_color = "base01"
 separator_color   = "base01"
 separator_width   = "33%"
 text_size         = "small"
-number_color      = "blue"
-backref_color     = "blue"
+number_color      = "#2F93D9"
+backref_color     = "#2F93D9"
 
 [alerts]
 note_color          = "blue"
@@ -228,7 +228,7 @@ position   = "bottom-center"
 format     = "1"
 font       = "body"
 size       = "small"
-color      = "base01"
+color      = "#5C747B"
 first_page = false
 
 [title_page]
@@ -267,61 +267,61 @@ item_spacing    = "12pt"
 background = "base02"
 
 [syntax.text]
-color = "#839496"
+color = "#8B9B9D"
 
 [syntax.keyword]
-color  = "#859900"
+color  = "#8CA200"
 bold   = true
 
 [syntax.string]
-color  = "#2AA198"
+color  = "#2CA99F"
 italic = true
 
 [syntax.number]
-color = "#D33682"
+color = "#E174A9"
 
 [syntax.function]
-color  = "#268BD2"
+color  = "#469FDE"
 bold   = true
 italic = true
 
 [syntax.type]
-color = "#B58900"
+color = "#C09100"
 
 [syntax.comment]
-color  = "#586E75"
+color  = "#859CA3"
 italic = true
 
 [syntax.constant]
-color = "#CB4B16"
+color = "#EB7848"
 
 [syntax.boolean]
-color = "#CB4B16"
+color = "#EB7848"
 bold  = true
 
 [syntax.operator]
-color = "#859900"
+color = "#8CA200"
 
 [syntax.property]
-color = "#268BD2"
+color = "#469FDE"
 
 [syntax.tag]
-color = "#268BD2"
+color = "#469FDE"
 bold  = true
 
 [syntax.attribute]
-color = "#B58900"
+color = "#C09100"
 
 [syntax.variable]
-color = "#CB4B16"
+color = "#EB7848"
 
 [syntax.builtin]
-color  = "#6C71C4"
+color  = "#8F93D2"
 bold   = true
 
 [syntax.punctuation]
-color = "#586E75"
+color = "#859CA3"
 
 [syntax.escape]
-color = "#DC322F"
+color = "#E87673"
 bold  = true

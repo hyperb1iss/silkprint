@@ -20,10 +20,10 @@ surface_alt    = "#D8E0EA"
 border_light   = "#B8C8D8"
 border_strong  = "#8AA0B8"
 text_primary   = "#1C2A38"
-text_secondary = "#6B8098"
-text_muted     = "#8A9AB0"
+text_secondary = "#5A6C81"
+text_muted     = "#606B7B"
 heading_navy   = "#2E5080"
-accent_blue    = "#4A90C4"
+accent_blue    = "#386E96"
 accent_ice     = "#3A80B8"
 accent_amber   = "#A07C30"
 accent_red     = "#C44D56"
@@ -267,15 +267,15 @@ background = "surface"
 color = "text_primary"
 
 [syntax.keyword]
-color  = "#6C5CE7"
+color  = "#6051CD"
 bold   = true
 
 [syntax.string]
-color  = "#2E8B57"
+color  = "#257147"
 italic = true
 
 [syntax.number]
-color = "#D4782F"
+color = "#945420"
 
 [syntax.function]
 color  = "#2E5080"
@@ -283,17 +283,17 @@ bold   = true
 italic = true
 
 [syntax.type]
-color = "#A07C30"
+color = "#7C6025"
 
 [syntax.comment]
-color  = "#8A9AB0"
+color  = "#5B6574"
 italic = true
 
 [syntax.constant]
-color = "#C44D56"
+color = "#A84249"
 
 [syntax.boolean]
-color = "#C44D56"
+color = "#A84249"
 bold  = true
 
 [syntax.operator]
@@ -303,22 +303,22 @@ color = "text_primary"
 color = "#2E5080"
 
 [syntax.tag]
-color = "#C44D56"
+color = "#A84249"
 bold  = true
 
 [syntax.attribute]
-color = "#D4782F"
+color = "#945420"
 
 [syntax.variable]
-color = "#6C5CE7"
+color = "#6051CD"
 
 [syntax.builtin]
-color  = "#4A90C4"
+color  = "#35678D"
 bold   = true
 
 [syntax.punctuation]
-color = "text_muted"
+color = "#5B6574"
 
 [syntax.escape]
-color = "#D4782F"
+color = "#945420"
 bold  = true

@@ -286,7 +286,7 @@ italic = true
 color = "#6A5A1A"
 
 [syntax.comment]
-color  = "#6A6A6A"
+color  = "#585858"
 italic = true
 
 [syntax.constant]
@@ -317,7 +317,7 @@ color  = "#1A1A6A"
 bold   = true
 
 [syntax.punctuation]
-color = "text_muted"
+color = "#585858"
 
 [syntax.escape]
 color = "#6A5A1A"

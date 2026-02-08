@@ -148,7 +148,7 @@ border_color      = "accent_purple"
 border_width      = "2.5pt"
 background        = "accent_purple"
 background_opacity = 0.05
-text_color        = "text_secondary"
+text_color        = "#8374A2"
 italic            = true
 left_padding      = "14pt"
 
@@ -181,7 +181,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "text_muted"
+caption_color    = "#8373A4"
 caption_italic   = true
 caption_position = "below"
 
@@ -225,7 +225,7 @@ position   = "bottom-center"
 format     = "1"
 font       = "body"
 size       = "small"
-color      = "text_muted"
+color      = "#675887"
 first_page = false
 
 [title_page]
@@ -267,7 +267,7 @@ background = "surface"
 color = "text_primary"
 
 [syntax.keyword]
-color  = "#B040E0"
+color  = "#B751E3"
 bold   = true
 
 [syntax.string]
@@ -286,7 +286,7 @@ italic = true
 color = "#D080F0"
 
 [syntax.comment]
-color  = "#5C4E78"
+color  = "#8878A8"
 italic = true
 
 [syntax.constant]
@@ -317,7 +317,7 @@ color  = "#60E8A8"
 bold   = true
 
 [syntax.punctuation]
-color = "text_muted"
+color = "#8878A8"
 
 [syntax.escape]
 color = "#D0A050"

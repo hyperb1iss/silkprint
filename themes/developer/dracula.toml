@@ -18,6 +18,7 @@ background     = "#282A36"
 current_line   = "#44475A"
 foreground     = "#F8F8F2"
 comment        = "#6272A4"
+comment_bright = "#8A96BB"
 cyan           = "#8BE9FD"
 green          = "#50FA7B"
 orange         = "#FFB86C"
@@ -181,7 +182,7 @@ border           = false
 border_radius    = "4pt"
 caption_font     = "body"
 caption_size     = "small"
-caption_color    = "comment"
+caption_color    = "comment_bright"
 caption_italic   = true
 caption_position = "below"
 
@@ -267,7 +268,7 @@ background = "current_line"
 color = "#F8F8F2"
 
 [syntax.keyword]
-color  = "#FF79C6"
+color  = "#FF9DD5"
 bold   = true
 
 [syntax.string]
@@ -275,7 +276,7 @@ color  = "#F1FA8C"
 italic = true
 
 [syntax.number]
-color = "#BD93F9"
+color = "#CDAEFA"
 
 [syntax.function]
 color  = "#50FA7B"
@@ -286,24 +287,24 @@ italic = true
 color = "#8BE9FD"
 
 [syntax.comment]
-color  = "#6272A4"
+color  = "#B5BCD4"
 italic = true
 
 [syntax.constant]
-color = "#BD93F9"
+color = "#CDAEFA"
 
 [syntax.boolean]
-color = "#BD93F9"
+color = "#CDAEFA"
 bold  = true
 
 [syntax.operator]
-color = "#FF79C6"
+color = "#FF9DD5"
 
 [syntax.property]
 color = "#50FA7B"
 
 [syntax.tag]
-color = "#FF79C6"
+color = "#FF9DD5"
 bold  = true
 
 [syntax.attribute]
