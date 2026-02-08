@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint — Base Syntax Highlighting (Light Variant)
+# Applied automatically when a light theme omits [syntax.*] tables
+# ═══════════════════════════════════════════════════════════════
+
+[syntax]
+background = "surface"
+
+[syntax.text]
+color = "text_primary"
+
+[syntax.keyword]
+color  = "#a626a4"
+bold   = true
+
+[syntax.string]
+color  = "#50a14f"
+italic = true
+
+[syntax.number]
+color = "#986801"
+
+[syntax.function]
+color  = "#4078f2"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#c18401"
+
+[syntax.comment]
+color  = "#a0a1a7"
+italic = true
+
+[syntax.constant]
+color = "#e45649"
+
+[syntax.boolean]
+color = "#e45649"
+bold  = true
+
+[syntax.operator]
+color = "text_primary"
+
+[syntax.property]
+color = "#4078f2"
+
+[syntax.tag]
+color = "#e45649"
+bold  = true
+
+[syntax.attribute]
+color = "#986801"
+
+[syntax.variable]
+color = "#e45649"
+
+[syntax.builtin]
+color  = "#4078f2"
+bold   = true
+
+[syntax.punctuation]
+color = "text_muted"
+
+[syntax.escape]
+color = "#986801"
+bold  = true

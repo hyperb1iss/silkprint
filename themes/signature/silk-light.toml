@@ -1,0 +1,324 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint Theme — Silk Light
+# Clean, warm, professional — the default
+# ═══════════════════════════════════════════════════════════════
+
+[meta]
+name        = "Silk Light"
+version     = "1"
+variant     = "light"
+description = "Clean, warm, professional"
+print_safe  = true
+extends     = ""
+
+# ─── Layer 1: Primitives ──────────────────────────────────────
+
+[colors]
+white          = "#ffffff"
+cream          = "#fafaf8"
+surface        = "#f4f4f8"
+surface_alt    = "#eaeaf0"
+border_light   = "#e2e2e8"
+border_strong  = "#c8c8d4"
+text_primary   = "#1a1a2e"
+text_secondary = "#555570"
+text_muted     = "#8888a0"
+accent_blue    = "#4a5dbd"
+accent_green   = "#2d8659"
+accent_amber   = "#a07c30"
+accent_red     = "#c44d56"
+
+[fonts]
+heading          = "Inter"
+heading_weight   = 600
+heading_italic   = false
+body             = "Source Serif 4"
+body_weight      = 400
+body_italic      = false
+mono             = "JetBrains Mono"
+mono_weight      = 400
+mono_ligatures   = false
+heading_fallback = ["Inter", "Helvetica Neue", "Arial"]
+body_fallback    = ["Source Serif 4", "Georgia", "Times New Roman"]
+mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
+
+[font_sizes]
+body   = "11pt"
+small  = "9pt"
+code   = "10pt"
+h1     = "33.5pt"
+h2     = "27pt"
+h3     = "21.5pt"
+h4     = "17pt"
+h5     = "14pt"
+h6     = "11pt"
+
+# ─── Layer 2: Semantic ────────────────────────────────────────
+
+[page]
+background     = "white"
+margin_top     = "25mm"
+margin_bottom  = "30mm"
+margin_left    = "25mm"
+margin_right   = "25mm"
+paper          = "a4"
+columns        = 1
+column_gap     = "12mm"
+
+[text]
+color           = "text_primary"
+line_height     = 1.5
+paragraph_gap   = "0.85em"
+justification   = "justify"
+spacing_mode    = "gap"
+first_line_indent = "0pt"
+orphan_lines    = 2
+widow_lines     = 2
+
+[headings]
+color          = "text_primary"
+font           = "heading"
+line_height    = 1.2
+letter_spacing = "-0.015em"
+
+[headings.h1]
+weight           = 700
+line_height      = 1.1
+border           = true
+above            = "36pt"
+below            = "12pt"
+page_break_before = false
+
+[headings.h2]
+weight           = 600
+line_height      = 1.15
+border           = true
+above            = "28pt"
+below            = "8pt"
+page_break_before = false
+
+[headings.h3]
+weight         = 600
+line_height    = 1.2
+above          = "22pt"
+below          = "6pt"
+
+[headings.h4]
+weight         = 500
+line_height    = 1.2
+above          = "18pt"
+below          = "4pt"
+
+[headings.h5]
+weight         = 500
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+
+[headings.h6]
+weight         = 600
+line_height    = 1.25
+above          = "18pt"
+below          = "4pt"
+uppercase      = true
+letter_spacing = "0.05em"
+
+[code_block]
+background        = "surface"
+border_color      = "border_light"
+border_radius     = "6pt"
+padding_vertical  = "12pt"
+padding_horizontal = "14pt"
+line_height       = 1.45
+left_accent       = false
+left_accent_color = "accent_blue"
+line_numbers      = false
+language_label    = true
+language_label_color = "text_muted"
+language_label_size  = "8pt"
+wrap              = true
+
+[code_inline]
+background     = "surface"
+border_color   = "border_light"
+border_radius  = "3pt"
+
+[blockquote]
+border_color      = "accent_blue"
+border_width      = "2.5pt"
+background        = "accent_blue"
+background_opacity = 0.0
+text_color        = "text_secondary"
+italic            = true
+left_padding      = "14pt"
+
+[table]
+header_background   = "surface"
+header_border_color = "border_strong"
+header_border_width = "1.5pt"
+header_font         = "heading"
+header_weight       = 600
+row_border_color    = "border_light"
+row_border_width    = "0.5pt"
+stripe_background   = "cream"
+vertical_lines      = false
+cell_padding        = "6pt 10pt"
+
+[horizontal_rule]
+color     = "border_light"
+width     = "60%"
+thickness = "0.5pt"
+style     = "line"
+
+[links]
+color     = "accent_blue"
+underline = true
+
+[images]
+max_width        = "100%"
+alignment        = "center"
+border           = false
+border_radius    = "4pt"
+caption_font     = "body"
+caption_size     = "small"
+caption_color    = "text_muted"
+caption_italic   = true
+caption_position = "below"
+
+[list]
+bullet_color       = "text_secondary"
+indent             = "20pt"
+nested_indent      = "20pt"
+task_checked_color = "accent_green"
+task_unchecked_color = "text_muted"
+
+[footnotes]
+separator_color   = "border_light"
+separator_width   = "33%"
+text_size         = "small"
+number_color      = "accent_blue"
+backref_color     = "accent_blue"
+
+[alerts]
+note_color          = "accent_blue"
+tip_color           = "accent_green"
+important_color     = "accent_blue"
+warning_color       = "accent_amber"
+caution_color       = "accent_red"
+border_width        = "3pt"
+background_opacity  = 0.08
+show_icon           = true
+show_label          = true
+
+[toc]
+title             = "Contents"
+title_size        = "h2"
+entry_color       = "text_primary"
+page_number_color = "text_muted"
+leader_style      = "dots"
+indent            = "1.5em"
+max_depth         = 3
+
+[page_numbers]
+enabled    = true
+position   = "bottom-center"
+format     = "1"
+font       = "body"
+size       = "small"
+color      = "text_muted"
+first_page = false
+
+[title_page]
+enabled          = true
+title_font       = "heading"
+title_size       = "42pt"
+title_color      = "text_primary"
+subtitle_color   = "text_secondary"
+author_color     = "text_secondary"
+date_color       = "text_muted"
+separator_color  = "accent_blue"
+
+[emphasis]
+strikethrough_color = "text_muted"
+
+[math]
+color = "text_primary"
+
+[highlight]
+fill         = "accent_amber"
+fill_opacity = 0.25
+text_color   = ""
+border_radius = "2pt"
+
+[description_list]
+term_font       = "heading"
+term_weight     = 600
+term_color      = "text_primary"
+definition_indent = "20pt"
+term_spacing    = "4pt"
+item_spacing    = "12pt"
+
+# ─── Syntax Highlighting ──────────────────────────────────────
+
+[syntax]
+background = "surface"
+
+[syntax.text]
+color = "text_primary"
+
+[syntax.keyword]
+color  = "#a626a4"
+bold   = true
+
+[syntax.string]
+color  = "#50a14f"
+italic = true
+
+[syntax.number]
+color = "#986801"
+
+[syntax.function]
+color  = "#4078f2"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#c18401"
+
+[syntax.comment]
+color  = "#a0a1a7"
+italic = true
+
+[syntax.constant]
+color = "#e45649"
+
+[syntax.boolean]
+color = "#e45649"
+bold  = true
+
+[syntax.operator]
+color = "text_primary"
+
+[syntax.property]
+color = "#4078f2"
+
+[syntax.tag]
+color = "#e45649"
+bold  = true
+
+[syntax.attribute]
+color = "#986801"
+
+[syntax.variable]
+color = "#e45649"
+
+[syntax.builtin]
+color  = "#4078f2"
+bold   = true
+
+[syntax.punctuation]
+color = "text_muted"
+
+[syntax.escape]
+color = "#986801"
+bold  = true

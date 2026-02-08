@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════
+# SilkPrint — Base Syntax Highlighting (Dark Variant)
+# Applied automatically when a dark theme omits [syntax.*] tables
+# ═══════════════════════════════════════════════════════════════
+
+[syntax]
+background = "#282c34"
+
+[syntax.text]
+color = "#abb2bf"
+
+[syntax.keyword]
+color  = "#c678dd"
+bold   = true
+
+[syntax.string]
+color  = "#98c379"
+italic = true
+
+[syntax.number]
+color = "#d19a66"
+
+[syntax.function]
+color  = "#61afef"
+bold   = true
+italic = true
+
+[syntax.type]
+color = "#e5c07b"
+
+[syntax.comment]
+color  = "#5c6370"
+italic = true
+
+[syntax.constant]
+color = "#e06c75"
+
+[syntax.boolean]
+color = "#e06c75"
+bold  = true
+
+[syntax.operator]
+color = "#abb2bf"
+
+[syntax.property]
+color = "#61afef"
+
+[syntax.tag]
+color = "#e06c75"
+bold  = true
+
+[syntax.attribute]
+color = "#d19a66"
+
+[syntax.variable]
+color = "#e06c75"
+
+[syntax.builtin]
+color  = "#61afef"
+bold   = true
+
+[syntax.punctuation]
+color = "#5c6370"
+
+[syntax.escape]
+color = "#d19a66"
+bold  = true

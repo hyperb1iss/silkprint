@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Complete theme token hierarchy, deserialized from TOML.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ThemeTokens {
     pub meta: MetaTokens,
@@ -32,7 +32,7 @@ pub struct ThemeTokens {
     pub syntax: SyntaxTokens,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct MetaTokens {
     pub name: String,
@@ -43,7 +43,7 @@ pub struct MetaTokens {
     pub extends: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct FontTokens {
     pub heading: String,
@@ -60,7 +60,7 @@ pub struct FontTokens {
     pub mono_fallback: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct FontSizeTokens {
     pub body: String,
@@ -74,7 +74,7 @@ pub struct FontSizeTokens {
     pub h6: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct PageTokens {
     pub background: String,
@@ -87,7 +87,7 @@ pub struct PageTokens {
     pub column_gap: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TextTokens {
     pub color: String,
@@ -100,7 +100,7 @@ pub struct TextTokens {
     pub widow_lines: u8,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct HeadingTokens {
     pub color: String,
@@ -115,7 +115,7 @@ pub struct HeadingTokens {
     pub h6: HeadingLevelTokens,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct HeadingLevelTokens {
     pub weight: u16,
@@ -128,7 +128,7 @@ pub struct HeadingLevelTokens {
     pub letter_spacing: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct CodeBlockTokens {
@@ -147,7 +147,7 @@ pub struct CodeBlockTokens {
     pub wrap: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct CodeInlineTokens {
     pub background: String,
@@ -155,7 +155,7 @@ pub struct CodeInlineTokens {
     pub border_radius: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct BlockquoteTokens {
     pub border_color: String,
@@ -167,7 +167,7 @@ pub struct BlockquoteTokens {
     pub left_padding: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TableTokens {
     pub header_background: String,
@@ -182,7 +182,7 @@ pub struct TableTokens {
     pub cell_padding: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct HorizontalRuleTokens {
     pub color: String,
@@ -191,14 +191,14 @@ pub struct HorizontalRuleTokens {
     pub style: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct LinkTokens {
     pub color: String,
     pub underline: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ImageTokens {
     pub max_width: String,
@@ -212,7 +212,7 @@ pub struct ImageTokens {
     pub caption_position: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ListTokens {
     pub bullet_color: String,
@@ -222,7 +222,7 @@ pub struct ListTokens {
     pub task_unchecked_color: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct FootnoteTokens {
     pub separator_color: String,
@@ -232,7 +232,7 @@ pub struct FootnoteTokens {
     pub backref_color: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AlertTokens {
     pub note_color: String,
@@ -246,7 +246,7 @@ pub struct AlertTokens {
     pub show_label: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TocTokens {
     pub title: String,
@@ -258,7 +258,7 @@ pub struct TocTokens {
     pub max_depth: u8,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct PageNumberTokens {
     pub enabled: bool,
@@ -270,7 +270,7 @@ pub struct PageNumberTokens {
     pub first_page: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TitlePageTokens {
     pub enabled: bool,
@@ -283,19 +283,19 @@ pub struct TitlePageTokens {
     pub separator_color: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct EmphasisTokens {
     pub strikethrough_color: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct MathTokens {
     pub color: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct HighlightTokens {
     pub fill: String,
@@ -304,7 +304,7 @@ pub struct HighlightTokens {
     pub border_radius: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct DescriptionListTokens {
     pub term_font: String,
@@ -316,7 +316,7 @@ pub struct DescriptionListTokens {
 }
 
 /// Syntax highlighting tokens, each with optional color/bold/italic.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SyntaxTokens {
     pub background: String,
@@ -340,7 +340,7 @@ pub struct SyntaxTokens {
     pub escape: SyntaxStyleTokens,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SyntaxStyleTokens {
     pub color: String,
