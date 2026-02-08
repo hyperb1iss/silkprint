@@ -1,0 +1,127 @@
+[package]
+name = "silkprint"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Stefanie Jane <stef@hyperbliss.tech>"]
+description = "Transform Markdown into stunning PDFs with electric elegance"
+readme = "README.md"
+homepage = "https://github.com/hyperb1iss/silkprint"
+repository = "https://github.com/hyperb1iss/silkprint"
+license = "Apache-2.0"
+keywords = ["markdown", "pdf", "typesetting", "cli", "typography"]
+categories = ["command-line-utilities", "text-processing"]
+
+[lib]
+name = "silkprint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "silkprint"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5.57", features = ["derive", "cargo", "env"] }
+comrak = { version = "0.50.0", default-features = false, features = ["shortcodes"] }
+directories = "6.0.0"
+indicatif = "0.18.3"
+miette = { version = "7.6.0", features = ["fancy"] }
+open = "5.3.3"
+owo-colors = "4.2.3"
+rust-embed = { version = "8.11.0", features = ["compression"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_yaml_ng = "0.10.0"
+thiserror = "2.0.18"
+toml = "0.9.11"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+typst = "0.14"
+typst-pdf = "0.14"
+
+[dev-dependencies]
+assert_cmd = "2.1.2"
+insta = { version = "1.46.3", features = ["yaml"] }
+lopdf = "0.39.0"
+predicates = "3.1.3"
+pretty_assertions = "1.4.1"
+tempfile = "3.24.0"
+
+# ════════════════════════════════════════════════════════════════
+# Lints — from conventions/rust/Cargo.toml.template
+# ════════════════════════════════════════════════════════════════
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = { level = "allow", priority = 1 }
+
+[lints.clippy]
+all = { level = "deny", priority = 0 }
+style = { level = "warn", priority = 1 }
+perf = { level = "deny", priority = 1 }
+pedantic = { level = "warn", priority = 10 }
+missing_errors_doc = { level = "allow", priority = 20 }
+missing_panics_doc = { level = "allow", priority = 20 }
+missing_safety_doc = { level = "allow", priority = 20 }
+module_name_repetitions = { level = "allow", priority = 21 }
+significant_drop_tightening = { level = "allow", priority = 21 }
+must_use_candidate = { level = "allow", priority = 21 }
+cast_precision_loss = { level = "warn", priority = 22 }
+cast_possible_truncation = { level = "warn", priority = 22 }
+cast_sign_loss = { level = "warn", priority = 22 }
+as_conversions = { level = "warn", priority = 22 }
+out_of_bounds_indexing = { level = "deny", priority = 30 }
+enum_glob_use = { level = "deny", priority = 30 }
+unwrap_used = { level = "deny", priority = 30 }
+undocumented_unsafe_blocks = { level = "deny", priority = 30 }
+dbg_macro = { level = "warn", priority = 31 }
+todo = { level = "warn", priority = 31 }
+implicit_clone = { level = "warn", priority = 33 }
+inefficient_to_string = { level = "warn", priority = 33 }
+string_lit_as_bytes = { level = "warn", priority = 33 }
+too_many_lines = { level = "warn", priority = 34 }
+cognitive_complexity = { level = "warn", priority = 34 }
+result_large_err = { level = "warn", priority = 35 }
+manual_let_else = { level = "warn", priority = 36 }
+redundant_else = { level = "warn", priority = 36 }
+semicolon_if_nothing_returned = { level = "warn", priority = 36 }
+cloned_instead_of_copied = { level = "warn", priority = 36 }
+flat_map_option = { level = "warn", priority = 36 }
+from_iter_instead_of_collect = { level = "warn", priority = 36 }
+needless_pass_by_value = { level = "warn", priority = 36 }
+trivially_copy_pass_by_ref = { level = "warn", priority = 36 }
+if_not_else = { level = "warn", priority = 36 }
+match_same_arms = { level = "warn", priority = 36 }
+needless_continue = { level = "warn", priority = 36 }
+wildcard_imports = { level = "deny", priority = 37 }
+print_stdout = { level = "warn", priority = 37 }
+print_stderr = { level = "warn", priority = 37 }
+multiple_crate_versions = { level = "allow", priority = 40 }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.deb]
+maintainer = "Stefanie Jane <stef@hyperbliss.tech>"
+copyright = "2026, silkprint Contributors <https://github.com/hyperb1iss/silkprint>"
+license-file = ["LICENSE", "4"]
+extended-description = "Transform Markdown into stunning PDFs with electric elegance"
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/silkprint", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/silkprint/README", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/silkprint", dest = "/usr/bin/silkprint", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/silkprint/README", mode = "644" },
+]
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+strip = true
