@@ -348,6 +348,7 @@ fn resolve_token_colors(tokens: &mut ThemeTokens) {
 
     // Table
     r(&mut tokens.table.header_background);
+    r(&mut tokens.table.header_text_color);
     r(&mut tokens.table.header_border_color);
     r(&mut tokens.table.row_border_color);
     r(&mut tokens.table.stripe_background);
@@ -489,7 +490,11 @@ fn run_contrast_checks(tokens: &ThemeTokens, warnings: &mut WarningCollector) {
         // Table header text vs header background (4.5:1)
         (
             "table header",
-            &tokens.text.color,
+            if tokens.table.header_text_color.is_empty() {
+                &tokens.headings.color
+            } else {
+                &tokens.table.header_text_color
+            },
             &tokens.table.header_background,
             4.5,
         ),

@@ -341,6 +341,9 @@ fn emit_heading_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
             let _ = writeln!(out, "    #set par(leading: {heading_leading:.2}em)");
         }
 
+        // Inline code in headings: strip box styling, inherit heading color/size
+        out.push_str("    #show raw.where(block: false): r => r\n");
+
         // H6 uppercase treatment
         if hl.tokens.uppercase == Some(true) {
             out.push_str("    #upper(it.body)\n");
@@ -472,10 +475,42 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
         _ => ("10pt", "6pt"),
     };
 
+    let row_border_color = default_if_empty(&t.table.row_border_color, "#e2e2e8");
+    let row_border_width = default_if_empty(&t.table.row_border_width, "0.5pt");
+    let stripe_bg = &t.table.stripe_background;
+
     out.push_str("#set table(\n");
-    out.push_str("  stroke: none,\n");
+
+    // Row dividers + optional vertical lines
+    if t.table.vertical_lines {
+        let _ = writeln!(
+            out,
+            "  stroke: {row_border_width} + rgb(\"{row_border_color}\"),"
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            "  stroke: (x: none, y: {row_border_width} + rgb(\"{row_border_color}\")),"
+        );
+    }
+
     let _ = writeln!(out, "  inset: (x: {x_pad}, y: {y_pad}),");
+
+    // Alternating row stripes
+    if !stripe_bg.is_empty() {
+        let _ = writeln!(
+            out,
+            "  fill: (_, y) => if y > 0 and calc.even(y) {{ rgb(\"{stripe_bg}\") }},"
+        );
+    }
+
     out.push_str(")\n");
+
+    // Table font size override (smaller text for dense data)
+    if !t.table.font_size.is_empty() {
+        let table_size = &t.table.font_size;
+        let _ = writeln!(out, "#show table: set text(size: {table_size})");
+    }
 
     // Header cell styling
     let header_weight = if t.table.header_weight > 0 {
@@ -492,7 +527,11 @@ fn emit_table_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     };
     // Resolve semantic font names: "heading" → fonts.heading, "body" → fonts.body
     let header_font = resolve_font_name(header_font_raw, t);
-    let header_color = default_if_empty(&t.headings.color, &t.text.color);
+    let header_color = if t.table.header_text_color.is_empty() {
+        default_if_empty(&t.headings.color, &t.text.color)
+    } else {
+        &t.table.header_text_color
+    };
     let _ = writeln!(
         out,
         "#show table.cell.where(y: 0): set text(font: \"{header_font}\", weight: {header_weight}, fill: rgb(\"{header_color}\"))"

@@ -45,7 +45,7 @@ pub fn render_pipeline(
         std::collections::HashMap::new()
     } else {
         tracing::info!(count = mermaid_sources.len(), "rendering mermaid diagrams");
-        mermaid::render_all(&mermaid_sources, warnings)
+        mermaid::render_all(&mermaid_sources, theme, warnings)
     };
 
     // 4. Combine preamble + content

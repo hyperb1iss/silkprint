@@ -550,6 +550,9 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
             ctx.table_alignments.clone_from(&alignments);
             ctx.newline();
 
+            // Detect empty header rows (GFM requires headers, but they may be blank)
+            let empty_header = has_empty_header(node);
+
             let align_strs: Vec<&str> = alignments
                 .iter()
                 .map(|a| match a {
@@ -561,16 +564,39 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 .collect();
             let align_list = align_strs.join(", ");
 
-            let _ = writeln!(
-                ctx.out,
-                "#table(\n  columns: {num_columns},\n  align: ({align_list},),"
-            );
+            if empty_header {
+                // Wrap in a code scope that resets header styling so the first
+                // data row isn't accidentally styled as a header.
+                ctx.push("#{\n");
+                ctx.push("show table.cell.where(y: 0): set text(weight: 400)\n");
+                ctx.push("show table.cell.where(y: 0): set table.cell(fill: none, stroke: none)\n");
+                // Inside #{ }, no # prefix needed
+                let _ = writeln!(
+                    ctx.out,
+                    "table(\n  columns: {num_columns},\n  align: ({align_list},),"
+                );
+            } else {
+                let _ = writeln!(
+                    ctx.out,
+                    "#table(\n  columns: {num_columns},\n  align: ({align_list},),"
+                );
+            }
 
             for child in node.children() {
+                // Skip the empty header row entirely
+                if empty_header {
+                    let data = child.data.borrow();
+                    if matches!(&data.value, NodeValue::TableRow(true)) {
+                        continue;
+                    }
+                }
                 emit_node(child, ctx);
             }
 
             ctx.push(")\n");
+            if empty_header {
+                ctx.push("}\n");
+            }
             ctx.table_alignments.clear();
         }
 
@@ -736,6 +762,28 @@ fn collect_footnote_definitions<'a>(
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════
+
+/// Check whether a table's header row has all empty cells.
+///
+/// GFM syntax requires a header row, but the user may leave all cells blank
+/// when the table is purely data (e.g., `| | | |`). We detect this so the
+/// emitter can skip the empty row and avoid an empty accent-colored bar.
+fn has_empty_header<'a>(table_node: &'a AstNode<'a>) -> bool {
+    let Some(first_row) = table_node.children().next() else {
+        return false;
+    };
+    let data = first_row.data.borrow();
+    if !matches!(&data.value, NodeValue::TableRow(true)) {
+        return false;
+    }
+    drop(data);
+
+    first_row.children().all(|cell| {
+        let mut text = String::new();
+        collect_text(cell, &mut text);
+        text.trim().is_empty()
+    })
+}
 
 /// Collect all plain text from a node's descendants into a buffer.
 fn collect_text<'a>(node: &'a AstNode<'a>, buf: &mut String) {

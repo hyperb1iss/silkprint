@@ -171,10 +171,12 @@ pub struct BlockquoteTokens {
 #[serde(default)]
 pub struct TableTokens {
     pub header_background: String,
+    pub header_text_color: String,
     pub header_border_color: String,
     pub header_border_width: String,
     pub header_font: String,
     pub header_weight: u16,
+    pub font_size: String,
     pub row_border_color: String,
     pub row_border_width: String,
     pub stripe_background: String,

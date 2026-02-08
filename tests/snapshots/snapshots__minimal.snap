@@ -14,7 +14,7 @@ expression: typst
 
 #set text(
   font: ("JetBrains Mono", "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"),
-  size: 10.5pt,
+  size: 9pt,
   fill: rgb("#2b2540"),
   lang: "en",
   hyphenate: true,
@@ -23,62 +23,68 @@ expression: typst
 
 #set par(
   justify: true,
-  leading: 0.50em,
-  spacing: 0.85em,
+  leading: 0.35em,
+  spacing: 0.6em,
 )
 
 #show heading.where(level: 1): it => {
-  v(36pt)
-  block(below: 12pt)[
-    #set text(font: "Inter", size: 24pt, weight: 700, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(20pt)
+  block(below: 8pt)[
+    #set text(font: "Inter", size: 16pt, weight: 700, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.10em)
+    #show raw.where(block: false): r => r
     #it.body
   ]
   line(length: 100%, stroke: 0.5pt + rgb("#d8d0ea"))
 }
 
 #show heading.where(level: 2): it => {
-  v(28pt)
-  block(below: 8pt)[
-    #set text(font: "Inter", size: 19pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(16pt)
+  block(below: 5pt)[
+    #set text(font: "Inter", size: 13pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.15em)
+    #show raw.where(block: false): r => r
     #it.body
   ]
   line(length: 100%, stroke: 0.5pt + rgb("#d8d0ea"))
 }
 
 #show heading.where(level: 3): it => {
-  v(22pt)
-  block(below: 6pt)[
-    #set text(font: "Inter", size: 16pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(14pt)
+  block(below: 4pt)[
+    #set text(font: "Inter", size: 11pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.20em)
+    #show raw.where(block: false): r => r
     #it.body
   ]
 }
 
 #show heading.where(level: 4): it => {
-  v(18pt)
-  block(below: 4pt)[
-    #set text(font: "Inter", size: 13pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(12pt)
+  block(below: 3pt)[
+    #set text(font: "Inter", size: 10pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.20em)
+    #show raw.where(block: false): r => r
     #it.body
   ]
 }
 
 #show heading.where(level: 5): it => {
-  v(18pt)
-  block(below: 4pt)[
-    #set text(font: "Inter", size: 11.5pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(10pt)
+  block(below: 2pt)[
+    #set text(font: "Inter", size: 9pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
     #set par(leading: 0.25em)
+    #show raw.where(block: false): r => r
     #it.body
   ]
 }
 
 #show heading.where(level: 6): it => {
-  v(18pt)
-  block(below: 4pt)[
-    #set text(font: "Inter", size: 10.5pt, weight: 600, fill: rgb("#1565c0"), tracking: 0.05em)
+  v(10pt)
+  block(below: 2pt)[
+    #set text(font: "Inter", size: 8.5pt, weight: 600, fill: rgb("#1565c0"), tracking: 0.05em)
     #set par(leading: 0.25em)
+    #show raw.where(block: false): r => r
     #upper(it.body)
   ]
 }
@@ -92,7 +98,7 @@ expression: typst
     width: 100%,
     breakable: true,
   )[
-    #set text(font: "JetBrains Mono", size: 9.5pt, ligatures: false)
+    #set text(font: "JetBrains Mono", size: 8.5pt, ligatures: false)
     #set par(justify: false, leading: 0.45em)
     #it
   ]
@@ -105,7 +111,7 @@ expression: typst
     radius: 3pt,
     inset: (x: 3pt, y: 1.5pt),
   )[
-    #set text(font: "JetBrains Mono", size: 9.5pt, ligatures: false)
+    #set text(font: "JetBrains Mono", size: 8.5pt, ligatures: false)
     #it
   ]
 }
@@ -127,11 +133,13 @@ expression: typst
 }
 
 #set table(
-  stroke: none,
-  inset: (x: 10pt, y: 6pt),
+  stroke: (x: none, y: 0.5pt + rgb("#d8d0ea")),
+  inset: (x: 8pt, y: 5pt),
+  fill: (_, y) => if y > 0 and calc.even(y) { rgb("#e8e2f5") },
 )
-#show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#1565c0"))
-#show table.cell.where(y: 0): set table.cell(fill: rgb("#f1ecff"), stroke: (bottom: 1.5pt + rgb("#c0b6d6")))
+#show table: set text(size: 7.5pt)
+#show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#ffffff"))
+#show table.cell.where(y: 0): set table.cell(fill: rgb("#1565c0"), stroke: (bottom: 1.5pt + rgb("#1565c0")))
 
 #show footnote.entry: it => {
   line(length: 33%, stroke: 0.5pt + rgb("#d8d0ea"))
