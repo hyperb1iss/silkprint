@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════
+   SilkCircuit Design Tokens — Neon Variant
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* Backgrounds */
+  --sc-bg: #12101a;
+  --sc-bg-dark: #0a0812;
+  --sc-bg-highlight: #1a162a;
+  --sc-bg-surface: #211d30;
+
+  /* Primary palette */
+  --sc-purple: #e135ff;
+  --sc-pink: #ff00ff;
+  --sc-pink-soft: #ff99ff;
+  --sc-cyan: #80ffea;
+  --sc-coral: #ff6ac1;
+  --sc-yellow: #f1fa8c;
+
+  /* Text */
+  --sc-fg: #f8f8f2;
+  --sc-fg-muted: #8b82a8;
+  --sc-fg-dim: #5a5272;
+
+  /* Semantic */
+  --sc-success: #50fa7b;
+  --sc-warning: #f1fa8c;
+  --sc-error: #ff6363;
+
+  /* Spacing */
+  --sc-space-xs: 4px;
+  --sc-space-sm: 8px;
+  --sc-space-md: 16px;
+  --sc-space-lg: 24px;
+  --sc-space-xl: 32px;
+  --sc-space-2xl: 48px;
+  --sc-space-3xl: 64px;
+
+  /* Motion */
+  --sc-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --sc-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --sc-duration-fast: 150ms;
+  --sc-duration-normal: 250ms;
+  --sc-duration-slow: 350ms;
+}
+
+@theme inline {
+  --color-sc-bg: var(--sc-bg);
+  --color-sc-bg-dark: var(--sc-bg-dark);
+  --color-sc-bg-highlight: var(--sc-bg-highlight);
+  --color-sc-bg-surface: var(--sc-bg-surface);
+  --color-sc-purple: var(--sc-purple);
+  --color-sc-pink: var(--sc-pink);
+  --color-sc-pink-soft: var(--sc-pink-soft);
+  --color-sc-cyan: var(--sc-cyan);
+  --color-sc-coral: var(--sc-coral);
+  --color-sc-yellow: var(--sc-yellow);
+  --color-sc-fg: var(--sc-fg);
+  --color-sc-fg-muted: var(--sc-fg-muted);
+  --color-sc-fg-dim: var(--sc-fg-dim);
+  --color-sc-success: var(--sc-success);
+  --color-sc-warning: var(--sc-warning);
+  --color-sc-error: var(--sc-error);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+/* ═══════════════════════════════════════════════
+   Base Styles
+   ═══════════════════════════════════════════════ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--sc-bg);
+  color: var(--sc-fg);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+::selection {
+  background: rgba(225, 53, 255, 0.3);
+  color: var(--sc-fg);
+}
+
+/* ═══════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════ */
+
+@keyframes neonGlow {
+  from {
+    filter: drop-shadow(0 0 20px rgba(225, 53, 255, 0.25));
+  }
+  to {
+    filter: drop-shadow(0 0 40px rgba(225, 53, 255, 0.5));
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Utility Classes
+   ═══════════════════════════════════════════════ */
+
+.neon-glow {
+  animation: neonGlow 2s ease-in-out infinite alternate;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--sc-purple), var(--sc-pink-soft), var(--sc-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--sc-purple),
+    var(--sc-pink-soft),
+    var(--sc-cyan),
+    var(--sc-purple)
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+.glass {
+  background: rgba(26, 22, 42, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(128, 255, 234, 0.1);
+}
+
+.glow-border {
+  border: 1px solid rgba(128, 255, 234, 0.15);
+  transition:
+    border-color var(--sc-duration-normal) var(--sc-ease-out),
+    box-shadow var(--sc-duration-normal) var(--sc-ease-out);
+}
+
+.glow-border:hover {
+  border-color: rgba(128, 255, 234, 0.4);
+  box-shadow: 0 0 20px rgba(128, 255, 234, 0.08);
+}
+
+/* Editor scrollbar styling */
+.editor-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.editor-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.editor-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--sc-fg-dim);
+  border-radius: 3px;
+}
+.editor-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--sc-fg-muted);
+}
