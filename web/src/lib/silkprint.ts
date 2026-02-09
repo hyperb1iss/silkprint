@@ -3,6 +3,8 @@ import type { InitOutput } from './wasm/silkprint_wasm';
 let wasmModule: InitOutput | null = null;
 let initPromise: Promise<InitOutput> | null = null;
 
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+
 const FONT_FILES = [
   'inter/Inter-Regular.ttf',
   'inter/Inter-Medium.ttf',
@@ -21,11 +23,11 @@ const FONT_FILES = [
 // Pre-warm: start all fetches immediately on module load.
 // WASM + 12 fonts download in parallel over HTTP/2.
 const wasmFetchPromise: Promise<Response> | null =
-  typeof window !== 'undefined' ? fetch('/wasm/silkprint_wasm_bg.wasm') : null;
+  typeof window !== 'undefined' ? fetch(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`) : null;
 
 const fontFetchPromises: Promise<ArrayBuffer>[] =
   typeof window !== 'undefined'
-    ? FONT_FILES.map(f => fetch(`/fonts/${f}`).then(r => r.arrayBuffer()))
+    ? FONT_FILES.map(f => fetch(`${BASE_PATH}/fonts/${f}`).then(r => r.arrayBuffer()))
     : [];
 
 /**
@@ -44,7 +46,7 @@ async function ensureInit(): Promise<InitOutput> {
         Promise.all(fontFetchPromises),
       ]);
 
-      const source = wasmFetchPromise ?? fetch('/wasm/silkprint_wasm_bg.wasm');
+      const source = wasmFetchPromise ?? fetch(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`);
       const output = await wasm.default(await source);
 
       // Register all fonts before first render

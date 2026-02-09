@@ -173,3 +173,50 @@ jobs:
         run: pnpm lint
       - name: Build
         run: pnpm build
+
+  # ── Deploy to GitHub Pages ─────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: [changes, wasm, web]
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: wasm-out/
+      - name: Install WASM artifacts and fonts
+        working-directory: .
+        run: |
+          mkdir -p web/src/lib/wasm web/public/wasm web/public/fonts
+          cp wasm-out/silkprint_wasm.js wasm-out/silkprint_wasm.d.ts web/src/lib/wasm/
+          cp wasm-out/silkprint_wasm_bg.wasm web/public/wasm/
+          cp -r fonts/core/* web/public/fonts/
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Build for Pages
+        env:
+          GITHUB_PAGES: 'true'
+          NEXT_PUBLIC_BASE_PATH: /silkprint
+        run: pnpm build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+      - uses: actions/deploy-pages@v4
+        id: deployment
