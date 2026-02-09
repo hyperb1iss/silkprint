@@ -50,7 +50,7 @@ wasm:
         web/src/lib/wasm/silkprint_wasm.js
     # Optimize WASM binary if wasm-opt is available, otherwise just move it
     if command -v wasm-opt >/dev/null 2>&1; then \
-        wasm-opt -Oz --enable-bulk-memory --enable-sign-ext --enable-mutable-globals \
+        wasm-opt -Oz --all-features \
             web/src/lib/wasm/silkprint_wasm_bg.wasm \
             -o web/public/wasm/silkprint_wasm_bg.wasm && \
         rm web/src/lib/wasm/silkprint_wasm_bg.wasm; \
