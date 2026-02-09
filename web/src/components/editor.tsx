@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PdfPreview } from './pdf-preview';
+import { ThemeSelector } from './theme-selector';
 
 const SAMPLE_MARKDOWN = `# Welcome to SilkPrint
 
@@ -40,17 +41,6 @@ fn main() {
 
 *Beautiful documents, effortlessly.*
 `;
-
-const DEFAULT_THEMES = [
-  { id: 'silk-light', name: 'Silk Light', variant: 'light' },
-  { id: 'silk-dark', name: 'Silk Dark', variant: 'dark' },
-  { id: 'silkcircuit-neon', name: 'SilkCircuit Neon', variant: 'dark' },
-  { id: 'manuscript', name: 'Manuscript', variant: 'light' },
-  { id: 'nord', name: 'Nord', variant: 'dark' },
-  { id: 'dracula', name: 'Dracula', variant: 'dark' },
-  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', variant: 'dark' },
-  { id: 'tokyo-night', name: 'Tokyo Night', variant: 'dark' },
-];
 
 type EngineState =
   | { status: 'loading'; progress: string }
@@ -198,27 +188,7 @@ export function Editor() {
       </div>
 
       {/* Theme selector */}
-      <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-        {DEFAULT_THEMES.map(theme => (
-          <button
-            type="button"
-            key={theme.id}
-            onClick={() => setActiveTheme(theme.id)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-              activeTheme === theme.id
-                ? 'bg-sc-purple/20 text-sc-purple shadow-[0_0_12px_rgba(225,53,255,0.2)]'
-                : 'bg-sc-bg-highlight text-sc-fg-muted hover:bg-sc-bg-surface hover:text-sc-fg'
-            }`}
-          >
-            <span
-              className={`mr-1.5 inline-block h-2 w-2 rounded-full ${
-                theme.variant === 'light' ? 'bg-amber-200' : 'bg-indigo-400'
-              }`}
-            />
-            {theme.name}
-          </button>
-        ))}
-      </div>
+      <ThemeSelector activeTheme={activeTheme} onSelect={setActiveTheme} />
 
       {/* Editor / Preview split */}
       <div className="glow-border grid grid-cols-1 overflow-hidden rounded-2xl bg-sc-bg-dark lg:grid-cols-2">
