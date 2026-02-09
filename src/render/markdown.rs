@@ -432,8 +432,13 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                     escape_typst_content(&alt_text)
                 };
                 ctx.push("\n#align(center)[\n");
-                ctx.push("#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[\n");
-                let _ = writeln!(ctx.out, "#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {label}\\]]]");
+                ctx.push(
+                    "#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[\n",
+                );
+                let _ = writeln!(
+                    ctx.out,
+                    "#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {label}\\]]]"
+                );
                 ctx.push("]\n]\n");
             }
 
@@ -450,8 +455,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 let mut alt_text = String::new();
                 collect_text(node, &mut alt_text);
                 if !alt_text.is_empty() {
-                    let _ =
-                        writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&alt_text));
+                    let _ = writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&alt_text));
                 }
 
                 ctx.push(")\n");
@@ -653,9 +657,8 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 let _ = write!(ctx.out, "#footnote[{}]", content.trim());
             } else {
                 let _ = write!(ctx.out, "#super[{}]", escape_typst_content(&name));
-                ctx.warnings.push(SilkprintWarning::FootnoteNotFound {
-                    name: name.clone(),
-                });
+                ctx.warnings
+                    .push(SilkprintWarning::FootnoteNotFound { name: name.clone() });
             }
         }
 
@@ -885,7 +888,6 @@ fn collect_text<'a>(node: &'a AstNode<'a>, buf: &mut String) {
         }
     }
 }
-
 
 /// Return a backtick fence long enough to not collide with `content`.
 ///

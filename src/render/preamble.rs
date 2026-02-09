@@ -476,10 +476,7 @@ fn emit_image_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let caption_position = default_if_empty(&t.images.caption_position, "bottom");
     if caption_position != "bottom" {
         let _ = writeln!(out, "#show figure: set figure(placement: none)");
-        let _ = writeln!(
-            out,
-            "#show figure.caption: set align({alignment})"
-        );
+        let _ = writeln!(out, "#show figure.caption: set align({alignment})");
     }
 
     // Image max width and optional border

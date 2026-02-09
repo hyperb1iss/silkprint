@@ -10,8 +10,8 @@
 use std::fmt::Write;
 
 use ego_tree::NodeRef;
-use scraper::node::{Element, Node};
 use scraper::Html;
+use scraper::node::{Element, Node};
 
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
@@ -329,11 +329,7 @@ fn emit_image(
 }
 
 /// Two-pass table emitter: count columns, then emit `#table(columns: N, ...)`.
-fn emit_table(
-    node: NodeRef<'_, Node>,
-    out: &mut String,
-    warnings: &mut WarningCollector,
-) {
+fn emit_table(node: NodeRef<'_, Node>, out: &mut String, warnings: &mut WarningCollector) {
     let rows = collect_table_rows(node);
     if rows.is_empty() {
         return;
@@ -424,11 +420,7 @@ fn count_row_cells(row: NodeRef<'_, Node>) -> usize {
 }
 
 /// Emit all cells in a `<tr>` as `[content],` entries.
-fn emit_table_row(
-    row: NodeRef<'_, Node>,
-    out: &mut String,
-    warnings: &mut WarningCollector,
-) {
+fn emit_table_row(row: NodeRef<'_, Node>, out: &mut String, warnings: &mut WarningCollector) {
     for child in row.children() {
         if let Node::Element(ref el) = *child.value() {
             let tag = el.name();
@@ -496,12 +488,13 @@ fn clean_heading_content(s: &str) -> String {
 
 /// Parse the `align` attribute into a Typst alignment keyword.
 fn parse_alignment(el: &Element) -> Option<&'static str> {
-    el.attr("align").and_then(|a| match a.to_lowercase().as_str() {
-        "center" => Some("center"),
-        "right" => Some("right"),
-        "left" => Some("left"),
-        _ => None,
-    })
+    el.attr("align")
+        .and_then(|a| match a.to_lowercase().as_str() {
+            "center" => Some("center"),
+            "right" => Some("right"),
+            "left" => Some("left"),
+            _ => None,
+        })
 }
 
 /// Extract heading level from tag name (h1 -> 1, h6 -> 6).
@@ -623,8 +616,10 @@ mod tests {
     #[test]
     fn test_remote_image_placeholder() {
         let mut w = WarningCollector::new();
-        let result =
-            emit_html_block("<img src=\"https://example.com/img.png\" alt=\"Badge\">", &mut w);
+        let result = emit_html_block(
+            "<img src=\"https://example.com/img.png\" alt=\"Badge\">",
+            &mut w,
+        );
         assert!(result.contains("Badge"), "got: {result}");
         assert!(!result.contains("image("), "got: {result}");
         assert_eq!(w.warnings().len(), 1);
@@ -771,7 +766,10 @@ mod tests {
         let block = emit_html_block("", &mut w);
         let inline = emit_html_inline("", &mut w);
         assert!(block.is_empty() || block.trim().is_empty(), "got: {block}");
-        assert!(inline.is_empty() || inline.trim().is_empty(), "got: {inline}");
+        assert!(
+            inline.is_empty() || inline.trim().is_empty(),
+            "got: {inline}"
+        );
     }
 
     #[test]

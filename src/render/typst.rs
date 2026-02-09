@@ -251,7 +251,13 @@ pub fn compile_to_pdf(
     let _ = font_dirs;
 
     // Build the world
-    let world = SilkWorld::new(typst_source, theme, root_dir, font_data, mermaid_svgs.clone());
+    let world = SilkWorld::new(
+        typst_source,
+        theme,
+        root_dir,
+        font_data,
+        mermaid_svgs.clone(),
+    );
 
     // Compile to a paged document
     let result = typst::compile::<PagedDocument>(&world);

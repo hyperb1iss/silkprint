@@ -38,8 +38,8 @@ pub fn render_pdf(markdown: &str, theme_name: &str) -> Result<Vec<u8>, JsError> 
         ..Default::default()
     };
 
-    let (pdf_bytes, _warnings) = silkprint::render(markdown, None, &options)
-        .map_err(|e| JsError::new(&format_error(&e)))?;
+    let (pdf_bytes, _warnings) =
+        silkprint::render(markdown, None, &options).map_err(|e| JsError::new(&format_error(&e)))?;
 
     Ok(pdf_bytes)
 }
@@ -63,8 +63,8 @@ pub fn render_pdf_with_options(
         ..Default::default()
     };
 
-    let (pdf_bytes, _warnings) = silkprint::render(markdown, None, &options)
-        .map_err(|e| JsError::new(&format_error(&e)))?;
+    let (pdf_bytes, _warnings) =
+        silkprint::render(markdown, None, &options).map_err(|e| JsError::new(&format_error(&e)))?;
 
     Ok(pdf_bytes)
 }

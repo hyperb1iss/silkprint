@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use lopdf::Document;
-use silkprint::{render, RenderOptions};
+use silkprint::{RenderOptions, render};
 
 /// Render a fixture file to raw PDF bytes.
 fn render_fixture_to_pdf(name: &str) -> Vec<u8> {
@@ -14,8 +14,8 @@ fn render_fixture_to_pdf(name: &str) -> Vec<u8> {
     let input = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("fixture '{path}' should exist: {e}"));
     let options = RenderOptions::default();
-    let (pdf_bytes, _warnings) = render(&input, Some(Path::new(&path)), &options)
-        .expect("render should produce PDF bytes");
+    let (pdf_bytes, _warnings) =
+        render(&input, Some(Path::new(&path)), &options).expect("render should produce PDF bytes");
     pdf_bytes
 }
 

@@ -31,9 +31,7 @@ fn test_list_themes() {
         .arg("--list-themes")
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("silk-light").and(predicate::str::contains("40")),
-        );
+        .stdout(predicate::str::contains("silk-light").and(predicate::str::contains("40")));
 }
 
 // ── Error cases ──────────────────────────────────────────────────
@@ -41,9 +39,7 @@ fn test_list_themes() {
 #[test]
 fn test_missing_input() {
     // No input file — should fail because all modes except --list-themes require one.
-    silkprint()
-        .assert()
-        .failure();
+    silkprint().assert().failure();
 }
 
 #[test]
@@ -94,9 +90,7 @@ fn test_dump_typst() {
         .arg("tests/fixtures/basic.md")
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("#set").or(predicate::str::contains("page")),
-        );
+        .stdout(predicate::str::contains("#set").or(predicate::str::contains("page")));
 }
 
 // ── Render modes ─────────────────────────────────────────────────
@@ -104,7 +98,10 @@ fn test_dump_typst() {
 #[test]
 fn test_render_to_file() {
     let out = NamedTempFile::new().expect("should create tempfile");
-    let out_path = out.path().to_str().expect("tempfile path should be valid UTF-8");
+    let out_path = out
+        .path()
+        .to_str()
+        .expect("tempfile path should be valid UTF-8");
 
     silkprint()
         .arg("tests/fixtures/basic.md")

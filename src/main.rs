@@ -145,9 +145,7 @@ const SEPARATOR: &str = "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500
 fn handle_list_themes() {
     let mut themes = silkprint::theme::builtin::list_themes();
     // Print-safe first, then the rest — alphabetical within each group
-    themes.sort_by(|a, b| {
-        b.print_safe.cmp(&a.print_safe).then(a.name.cmp(b.name))
-    });
+    themes.sort_by(|a, b| b.print_safe.cmp(&a.print_safe).then(a.name.cmp(b.name)));
 
     // Column widths (plain text, before colorization)
     let name_w = 22;
@@ -212,7 +210,10 @@ fn handle_list_themes() {
             " ".to_string()
         };
 
-        println!("  {swatch}  {name}  {variant}  {badge}  {}", dim(t.description));
+        println!(
+            "  {swatch}  {name}  {variant}  {badge}  {}",
+            dim(t.description)
+        );
     }
 
     println!("  {wide_sep}");
@@ -410,8 +411,8 @@ fn make_spinner(message: &str) -> ProgressBar {
     let style = if color_enabled() {
         ProgressStyle::default_spinner()
             .tick_strings(&[
-                "\u{2801}", "\u{2809}", "\u{2819}", "\u{281b}", "\u{2813}", "\u{2816}",
-                "\u{2826}", "\u{2834}", "\u{2830}", "\u{2820}", "\u{2800}", "\u{2801}",
+                "\u{2801}", "\u{2809}", "\u{2819}", "\u{281b}", "\u{2813}", "\u{2816}", "\u{2826}",
+                "\u{2834}", "\u{2830}", "\u{2820}", "\u{2800}", "\u{2801}",
             ])
             .template("  \x1b[38;2;225;53;255m{spinner}\x1b[0m {msg}")
     } else {
@@ -449,7 +450,9 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
     let spinner = if use_spinner {
         Some(make_spinner(&format!(
             "Rendering {} with {}",
-            input_path.file_name().map_or("input", |n| n.to_str().unwrap_or("input")),
+            input_path
+                .file_name()
+                .map_or("input", |n| n.to_str().unwrap_or("input")),
             &cli.theme,
         )))
     } else {

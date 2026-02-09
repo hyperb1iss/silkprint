@@ -3,7 +3,7 @@
 //! Each test renders a fixture through `render_to_typst()` and snapshots
 //! the resulting Typst markup. Run `cargo insta review` to accept changes.
 
-use silkprint::{render_to_typst, RenderOptions};
+use silkprint::{RenderOptions, render_to_typst};
 
 /// Load a fixture from `tests/fixtures/` and render it to Typst source.
 fn render_fixture(name: &str) -> String {
