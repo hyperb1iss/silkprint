@@ -22,6 +22,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
+      ci: ${{ steps.filter.outputs.ci }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -40,12 +41,15 @@ jobs:
               - 'rust-toolchain.toml'
             web:
               - 'web/**'
+            ci:
+              - '.github/workflows/**'
+              - 'justfile'
 
   # ── Rust format + clippy ────────────────────────────────────
   check:
     name: Format & Clippy
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +68,7 @@ jobs:
   test:
     name: Test
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +88,7 @@ jobs:
   deny:
     name: Deny
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +98,7 @@ jobs:
   wasm:
     name: WASM
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +146,7 @@ jobs:
   web:
     name: Web
     needs: [changes, wasm]
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -178,7 +182,7 @@ jobs:
   deploy:
     name: Deploy
     needs: [changes, wasm, web]
-    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true')
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.ci == 'true')
     runs-on: ubuntu-latest
     permissions:
       pages: write
