@@ -107,9 +107,11 @@ jobs:
       - name: Get wasm-bindgen version
         id: wb-version
         run: |
-          version=$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
-            | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version' 2>/dev/null \
-            || grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep version | head -1 | sed 's/.*"\(.*\)"/\1/')
+          version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ -z "$version" ]; then
+            echo "::error::Could not determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
