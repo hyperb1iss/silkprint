@@ -130,7 +130,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq binaryen > /dev/null 2>&1 || true
           if command -v wasm-opt >/dev/null 2>&1; then
-            wasm-opt -Oz --enable-bulk-memory wasm-out/silkprint_wasm_bg.wasm -o wasm-out/silkprint_wasm_bg.wasm
+            wasm-opt -Oz --enable-bulk-memory --enable-sign-ext --enable-mutable-globals wasm-out/silkprint_wasm_bg.wasm -o wasm-out/silkprint_wasm_bg.wasm
           fi
       - uses: actions/upload-artifact@v4
         with:
