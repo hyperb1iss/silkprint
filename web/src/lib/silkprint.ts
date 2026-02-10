@@ -47,7 +47,7 @@ async function ensureInit(): Promise<InitOutput> {
       ]);
 
       const source = wasmFetchPromise ?? fetch(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`);
-      const output = await wasm.default(await source);
+      const output = await wasm.default({ module_or_path: await source });
 
       // Register all fonts before first render
       for (const buf of fontBuffers) {
