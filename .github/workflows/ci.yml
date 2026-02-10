@@ -132,10 +132,12 @@ jobs:
             wasm-out/silkprint_wasm.js
       - name: Optimize WASM
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq binaryen > /dev/null 2>&1 || true
-          if command -v wasm-opt >/dev/null 2>&1; then
-            wasm-opt -Oz --detect-features wasm-out/silkprint_wasm_bg.wasm -o wasm-out/silkprint_wasm_bg.wasm
-          fi
+          curl -sL https://github.com/WebAssembly/binaryen/releases/download/version_122/binaryen-version_122-x86_64-linux.tar.gz \
+            | tar xz --strip-components=2 -C /usr/local/bin binaryen-version_122/bin/wasm-opt
+          wasm-opt -Oz \
+            --enable-sign-ext --enable-mutable-globals --enable-bulk-memory \
+            --enable-nontrapping-float-to-int --enable-multivalue --enable-reference-types \
+            wasm-out/silkprint_wasm_bg.wasm -o wasm-out/silkprint_wasm_bg.wasm
       - uses: actions/upload-artifact@v4
         with:
           name: wasm
