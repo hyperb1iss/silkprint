@@ -177,8 +177,8 @@ export function Editor() {
   }, []);
 
   return (
-    <section id="editor" className="mx-auto max-w-7xl px-6 py-20">
-      <div className="mb-10 text-center">
+    <section id="editor" className="mx-auto max-w-7xl px-6 py-16">
+      <div className="mb-8 text-center">
         <h2 className="mb-3 text-3xl font-bold tracking-tight md:text-4xl">
           <span className="gradient-text">Live Editor</span>
         </h2>

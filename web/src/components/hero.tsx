@@ -16,7 +16,7 @@ export function Hero() {
         </div>
 
         <h1 className="mb-6 text-5xl font-extrabold leading-[1.1] tracking-tight md:text-7xl">
-          Markdown to PDF, <span className="gradient-text-shimmer">made stunning.</span>
+          Markdown to PDF, <span className="gradient-text-shimmer block">made stunning.</span>
         </h1>
 
         <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-sc-fg-muted md:text-xl">

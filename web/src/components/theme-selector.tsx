@@ -521,6 +521,22 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
     return () => window.removeEventListener('keydown', handler);
   }, [expanded]);
 
+  // Close on click outside
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setExpanded(false);
+      }
+    };
+    // Use setTimeout so the opening click doesn't immediately close it
+    const t = setTimeout(() => window.addEventListener('mousedown', handler), 0);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('mousedown', handler);
+    };
+  }, [expanded]);
+
   // Filter themes
   const filteredThemes = useMemo(() => {
     let result = THEMES;
@@ -563,7 +579,7 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
   );
 
   return (
-    <div className="mb-6">
+    <div className="relative mb-6">
       {/* ── Trigger Row ─────────────────────────────────────── */}
       <div className="flex items-center justify-center gap-3">
         {/* Current theme pill */}
@@ -613,124 +629,105 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
         </button>
       </div>
 
-      {/* ── Expanded Panel ──────────────────────────────────── */}
-      <div
-        className="grid transition-[grid-template-rows] duration-300 ease-out"
-        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-      >
-        <div className="overflow-hidden">
-          <div ref={panelRef} className="pt-5">
-            <div className="rounded-2xl bg-sc-bg-dark/80 p-4 ring-1 ring-white/[0.06] backdrop-blur-sm">
-              {/* Search */}
-              <div className="relative mb-3">
-                <svg
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sc-fg-dim"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-                <input
-                  ref={searchRef}
-                  type="text"
-                  placeholder="Search themes..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="w-full rounded-xl bg-sc-bg/80 py-2.5 pl-10 pr-4 text-sm text-sc-fg placeholder:text-sc-fg-dim ring-1 ring-white/[0.06] transition-all focus:outline-none focus:ring-sc-purple/40 focus:shadow-[0_0_20px_rgba(225,53,255,0.08)]"
+      {/* ── Floating Overlay Panel ────────────────────────── */}
+      {expanded && (
+        <div ref={panelRef} className="absolute left-0 right-0 top-full z-40 pt-3 animate-drop-in">
+          <div className="rounded-2xl bg-sc-bg-dark/95 p-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.08] backdrop-blur-xl">
+            {/* Search */}
+            <div className="relative mb-3">
+              <svg
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sc-fg-dim"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sc-fg-dim hover:text-sc-fg"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-
-              {/* Family filter pills */}
-              <div className="mb-3 flex flex-wrap gap-1.5">
+              </svg>
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="Search themes..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full rounded-xl bg-sc-bg/80 py-2.5 pl-10 pr-4 text-sm text-sc-fg placeholder:text-sc-fg-dim ring-1 ring-white/[0.06] transition-all focus:outline-none focus:ring-sc-purple/40 focus:shadow-[0_0_20px_rgba(225,53,255,0.08)]"
+              />
+              {search && (
                 <button
                   type="button"
-                  onClick={() => setActiveFamily(null)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                    activeFamily === null
-                      ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
-                      : 'text-sc-fg-dim hover:bg-sc-bg-highlight hover:text-sc-fg'
-                  }`}
+                  onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sc-fg-dim hover:text-sc-fg"
                 >
-                  All ({THEMES.length})
+                  <svg
+                    aria-hidden="true"
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-                {FAMILIES.map(fam => {
-                  const count = THEMES.filter(t => t.family === fam.id).length;
-                  return (
-                    <button
-                      type="button"
-                      key={fam.id}
-                      onClick={() => setActiveFamily(f => (f === fam.id ? null : fam.id))}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                        activeFamily === fam.id
-                          ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
-                          : 'text-sc-fg-dim hover:bg-sc-bg-highlight hover:text-sc-fg'
-                      }`}
-                    >
-                      {fam.label} ({count})
-                    </button>
-                  );
-                })}
-              </div>
+              )}
+            </div>
 
-              {/* Theme grid */}
-              <div className="editor-scrollbar max-h-[360px] overflow-y-auto pr-1">
-                {filteredThemes.length === 0 && (
-                  <div className="py-8 text-center text-sm text-sc-fg-dim">
-                    No themes match &ldquo;{search}&rdquo;
+            {/* Family filter pills */}
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setActiveFamily(null)}
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                  activeFamily === null
+                    ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
+                    : 'text-sc-fg-dim hover:bg-sc-bg-highlight hover:text-sc-fg'
+                }`}
+              >
+                All ({THEMES.length})
+              </button>
+              {FAMILIES.map(fam => {
+                const count = THEMES.filter(t => t.family === fam.id).length;
+                return (
+                  <button
+                    type="button"
+                    key={fam.id}
+                    onClick={() => setActiveFamily(f => (f === fam.id ? null : fam.id))}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                      activeFamily === fam.id
+                        ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
+                        : 'text-sc-fg-dim hover:bg-sc-bg-highlight hover:text-sc-fg'
+                    }`}
+                  >
+                    {fam.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Theme grid */}
+            <div className="editor-scrollbar max-h-[360px] overflow-y-auto pr-1">
+              {filteredThemes.length === 0 && (
+                <div className="py-8 text-center text-sm text-sc-fg-dim">
+                  No themes match &ldquo;{search}&rdquo;
+                </div>
+              )}
+
+              {/* Grouped view (when no filter active) */}
+              {groupedThemes?.map(({ family, themes }) => (
+                <div key={family.id} className="mb-4 last:mb-0">
+                  <div className="mb-2 flex items-center gap-2 px-1">
+                    <h4 className="text-xs font-semibold uppercase tracking-widest text-sc-fg-dim">
+                      {family.label}
+                    </h4>
+                    <div className="h-px flex-1 bg-white/[0.04]" />
                   </div>
-                )}
-
-                {/* Grouped view (when no filter active) */}
-                {groupedThemes?.map(({ family, themes }) => (
-                  <div key={family.id} className="mb-4 last:mb-0">
-                    <div className="mb-2 flex items-center gap-2 px-1">
-                      <h4 className="text-xs font-semibold uppercase tracking-widest text-sc-fg-dim">
-                        {family.label}
-                      </h4>
-                      <div className="h-px flex-1 bg-white/[0.04]" />
-                    </div>
-                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                      {themes.map(theme => (
-                        <ThemeCard
-                          key={theme.id}
-                          theme={theme}
-                          isActive={activeTheme === theme.id}
-                          onSelect={() => handleSelect(theme.id)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-
-                {/* Flat view (when searching or family selected) */}
-                {!groupedThemes && (
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {filteredThemes.map(theme => (
+                    {themes.map(theme => (
                       <ThemeCard
                         key={theme.id}
                         theme={theme}
@@ -739,19 +736,33 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
                       />
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              ))}
 
-              {/* Footer count */}
-              {(search || activeFamily) && filteredThemes.length > 0 && (
-                <div className="mt-2 text-center text-xs text-sc-fg-dim">
-                  {filteredThemes.length} of {THEMES.length} themes
+              {/* Flat view (when searching or family selected) */}
+              {!groupedThemes && (
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {filteredThemes.map(theme => (
+                    <ThemeCard
+                      key={theme.id}
+                      theme={theme}
+                      isActive={activeTheme === theme.id}
+                      onSelect={() => handleSelect(theme.id)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
+
+            {/* Footer count */}
+            {(search || activeFamily) && filteredThemes.length > 0 && (
+              <div className="mt-2 text-center text-xs text-sc-fg-dim">
+                {filteredThemes.length} of {THEMES.length} themes
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
