@@ -50,7 +50,7 @@ type EngineState =
 
 export function Editor() {
   const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN);
-  const [activeTheme, setActiveTheme] = useState('silk-light');
+  const [activeTheme, setActiveTheme] = useState('silkcircuit-dawn');
   const [engineState, setEngineState] = useState<EngineState>({
     status: 'loading',
     progress: 'Downloading SilkPrint engine...',

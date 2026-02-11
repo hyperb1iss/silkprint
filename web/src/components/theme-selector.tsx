@@ -16,51 +16,26 @@ interface ThemeMeta {
 }
 
 const FAMILIES = [
-  { id: 'signature', label: 'Signature' },
   { id: 'silkcircuit', label: 'SilkCircuit' },
+  { id: 'signature', label: 'Signature' },
   { id: 'developer', label: 'Developer' },
   { id: 'classic', label: 'Classic' },
-  { id: 'futuristic', label: 'Futuristic' },
   { id: 'nature', label: 'Nature' },
+  { id: 'futuristic', label: 'Futuristic' },
   { id: 'artistic', label: 'Artistic' },
   { id: 'greyscale', label: 'Greyscale' },
 ] as const;
 
 const THEMES: ThemeMeta[] = [
-  // Signature
+  // SilkCircuit — Dawn first (default theme)
   {
-    id: 'silk-light',
-    name: 'Silk Light',
-    family: 'signature',
+    id: 'silkcircuit-dawn',
+    name: 'SilkCircuit Dawn',
+    family: 'silkcircuit',
     variant: 'light',
     printSafe: true,
-    colors: { bg: '#ffffff', fg: '#1a1a2e', accent: '#4a5dbd' },
+    colors: { bg: '#faf8ff', fg: '#2b2540', accent: '#1565c0' },
   },
-  {
-    id: 'silk-dark',
-    name: 'Silk Dark',
-    family: 'signature',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#12121e', fg: '#e0e0f0', accent: '#7b93db' },
-  },
-  {
-    id: 'manuscript',
-    name: 'Manuscript',
-    family: 'signature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F5EDE4', fg: '#2C2419', accent: '#4A3728' },
-  },
-  {
-    id: 'monochrome',
-    name: 'Monochrome',
-    family: 'signature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FFFFFF', fg: '#000000', accent: '#000000' },
-  },
-  // SilkCircuit
   {
     id: 'silkcircuit-neon',
     name: 'SilkCircuit Neon',
@@ -93,13 +68,38 @@ const THEMES: ThemeMeta[] = [
     printSafe: false,
     colors: { bg: '#0a0816', fg: '#ffffff', accent: '#00ffff' },
   },
+  // Signature
   {
-    id: 'silkcircuit-dawn',
-    name: 'SilkCircuit Dawn',
-    family: 'silkcircuit',
+    id: 'silk-light',
+    name: 'Silk Light',
+    family: 'signature',
     variant: 'light',
     printSafe: true,
-    colors: { bg: '#faf8ff', fg: '#2b2540', accent: '#1565c0' },
+    colors: { bg: '#ffffff', fg: '#1a1a2e', accent: '#4a5dbd' },
+  },
+  {
+    id: 'silk-dark',
+    name: 'Silk Dark',
+    family: 'signature',
+    variant: 'dark',
+    printSafe: false,
+    colors: { bg: '#12121e', fg: '#e0e0f0', accent: '#7b93db' },
+  },
+  {
+    id: 'manuscript',
+    name: 'Manuscript',
+    family: 'signature',
+    variant: 'light',
+    printSafe: true,
+    colors: { bg: '#F5EDE4', fg: '#2C2419', accent: '#4A3728' },
+  },
+  {
+    id: 'monochrome',
+    name: 'Monochrome',
+    family: 'signature',
+    variant: 'light',
+    printSafe: true,
+    colors: { bg: '#FFFFFF', fg: '#000000', accent: '#000000' },
   },
   // Developer
   {
