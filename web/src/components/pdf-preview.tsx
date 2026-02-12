@@ -34,8 +34,9 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
       const canvases: HTMLCanvasElement[] = [];
 
       const containerWidth = containerRef.current?.clientWidth ?? 600;
-      // Leave some padding
-      const targetWidth = containerWidth - 32;
+      // Tighter padding on small containers (mobile)
+      const padding = containerWidth < 480 ? 16 : 32;
+      const targetWidth = containerWidth - padding;
 
       for (let i = 1; i <= doc.numPages; i++) {
         const page = await doc.getPage(i);

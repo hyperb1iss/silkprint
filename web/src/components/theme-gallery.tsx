@@ -62,9 +62,9 @@ const THEME_FAMILIES = [
 
 export function ThemeGallery() {
   return (
-    <section id="themes" className="mx-auto max-w-7xl px-6 py-20">
-      <div className="mb-12 text-center">
-        <h2 className="mb-3 text-3xl font-bold tracking-tight md:text-4xl">
+    <section id="themes" className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-20">
+      <div className="mb-8 text-center md:mb-12">
+        <h2 className="mb-2 text-2xl font-bold tracking-tight sm:text-3xl md:mb-3 md:text-4xl">
           <span className="gradient-text">40+ Themes</span>
         </h2>
         <p className="mx-auto max-w-lg text-sc-fg-muted">

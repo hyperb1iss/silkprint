@@ -1,6 +1,6 @@
 export function Hero() {
   return (
-    <section className="relative flex min-h-[85vh] flex-col items-center justify-center overflow-hidden px-6 pt-20 text-center">
+    <section className="relative flex min-h-[70vh] flex-col items-center justify-center overflow-hidden px-4 pt-16 text-center md:min-h-[85vh] md:px-6 md:pt-20">
       {/* Background gradient orbs */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-sc-purple/10 blur-[120px]" />
@@ -15,11 +15,11 @@ export function Hero() {
           40+ themes &middot; Powered by Typst
         </div>
 
-        <h1 className="mb-6 text-5xl font-extrabold leading-[1.1] tracking-tight md:text-7xl">
+        <h1 className="mb-6 text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl md:text-7xl">
           Markdown to PDF, <span className="gradient-text-shimmer block">made stunning.</span>
         </h1>
 
-        <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-sc-fg-muted md:text-xl">
+        <p className="mx-auto mb-8 max-w-2xl text-base leading-relaxed text-sc-fg-muted sm:mb-10 md:text-xl">
           Paste your Markdown. Pick a gorgeous theme. Get a print-ready PDF in seconds. No LaTeX, no
           setup, no suffering.
         </p>

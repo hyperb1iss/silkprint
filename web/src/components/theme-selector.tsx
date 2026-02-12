@@ -581,13 +581,13 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
   return (
     <div className="relative mb-6">
       {/* ── Trigger Row ─────────────────────────────────────── */}
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex items-center justify-center gap-2 sm:gap-3">
         {/* Current theme pill */}
         {currentTheme && (
-          <div className="flex items-center gap-2.5 rounded-xl bg-sc-bg-dark/80 px-3 py-2 ring-1 ring-white/[0.06]">
+          <div className="flex items-center gap-2 rounded-xl bg-sc-bg-dark/80 px-2.5 py-1.5 ring-1 ring-white/[0.06] sm:gap-2.5 sm:px-3 sm:py-2">
             <MiniPagePreview colors={currentTheme.colors} />
             <div>
-              <div className="text-sm font-semibold text-sc-fg">{currentTheme.name}</div>
+              <div className="text-xs font-semibold text-sc-fg sm:text-sm">{currentTheme.name}</div>
               <div className="flex items-center gap-1.5">
                 <span
                   className={`text-[10px] font-semibold uppercase tracking-wider ${
@@ -597,7 +597,7 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
                   {currentTheme.variant}
                 </span>
                 {currentTheme.printSafe && (
-                  <span className="text-[10px] text-sc-fg-dim">/ print-safe</span>
+                  <span className="hidden text-[10px] text-sc-fg-dim sm:inline">/ print-safe</span>
                 )}
               </div>
             </div>
@@ -609,7 +609,7 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
           type="button"
           onClick={() => setExpanded(v => !v)}
           disabled={disabled}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+          className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm ${
             expanded
               ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
               : 'bg-sc-bg-highlight text-sc-fg-muted ring-1 ring-white/[0.06] hover:bg-sc-bg-surface hover:text-sc-fg hover:ring-white/[0.1]'
@@ -625,14 +625,20 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
-          {expanded ? 'Close' : `Browse all ${THEMES.length} themes`}
+          <span className="hidden sm:inline">
+            {expanded ? 'Close' : `Browse all ${THEMES.length} themes`}
+          </span>
+          <span className="sm:hidden">{expanded ? 'Close' : 'Themes'}</span>
         </button>
       </div>
 
       {/* ── Floating Overlay Panel ────────────────────────── */}
       {expanded && (
-        <div ref={panelRef} className="absolute left-0 right-0 top-full z-40 pt-3 animate-drop-in">
-          <div className="rounded-2xl bg-sc-bg-dark/95 p-4 shadow-[0_16px_48px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.08] backdrop-blur-xl">
+        <div
+          ref={panelRef}
+          className="absolute left-0 right-0 top-full z-40 pt-2 animate-drop-in sm:pt-3"
+        >
+          <div className="rounded-xl bg-sc-bg-dark/95 p-3 shadow-[0_16px_48px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.08] backdrop-blur-xl sm:rounded-2xl sm:p-4">
             {/* Search */}
             <div className="relative mb-3">
               <svg
@@ -678,7 +684,7 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
             </div>
 
             {/* Family filter pills */}
-            <div className="mb-3 flex flex-wrap gap-1.5">
+            <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-x-visible sm:pb-0">
               <button
                 type="button"
                 onClick={() => setActiveFamily(null)}
@@ -710,7 +716,7 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
             </div>
 
             {/* Theme grid */}
-            <div className="editor-scrollbar max-h-[360px] overflow-y-auto pr-1">
+            <div className="editor-scrollbar max-h-[50vh] overflow-y-auto pr-1 sm:max-h-[360px]">
               {filteredThemes.length === 0 && (
                 <div className="py-8 text-center text-sm text-sc-fg-dim">
                   No themes match &ldquo;{search}&rdquo;

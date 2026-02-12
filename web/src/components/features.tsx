@@ -128,9 +128,9 @@ const FEATURES = [
 
 export function Features() {
   return (
-    <section className="mx-auto max-w-7xl px-6 py-20">
-      <div className="mb-12 text-center">
-        <h2 className="mb-3 text-3xl font-bold tracking-tight md:text-4xl">
+    <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-20">
+      <div className="mb-8 text-center md:mb-12">
+        <h2 className="mb-2 text-2xl font-bold tracking-tight sm:text-3xl md:mb-3 md:text-4xl">
           Why <span className="gradient-text">SilkPrint</span>?
         </h2>
         <p className="mx-auto max-w-lg text-sc-fg-muted">
@@ -138,11 +138,11 @@ export function Features() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map(feature => (
           <div
             key={feature.title}
-            className="glow-border group rounded-2xl bg-sc-bg-dark p-6 transition-all hover:-translate-y-1"
+            className="glow-border group rounded-xl bg-sc-bg-dark p-4 transition-all hover:-translate-y-1 sm:rounded-2xl sm:p-6"
           >
             <div className="mb-4 inline-flex rounded-xl bg-sc-purple/10 p-3 text-sc-purple transition-colors group-hover:bg-sc-purple/20">
               {feature.icon}

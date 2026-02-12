@@ -177,9 +177,9 @@ export function Editor() {
   }, []);
 
   return (
-    <section id="editor" className="mx-auto max-w-[1600px] px-4 py-16 2xl:px-6">
-      <div className="mb-8 text-center">
-        <h2 className="mb-3 text-3xl font-bold tracking-tight md:text-4xl">
+    <section id="editor" className="mx-auto max-w-[1600px] px-3 py-8 sm:px-4 lg:py-16 2xl:px-6">
+      <div className="mb-6 text-center lg:mb-8">
+        <h2 className="mb-2 text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl lg:mb-3">
           <span className="gradient-text">Live Editor</span>
         </h2>
         <p className="text-sc-fg-muted">
@@ -191,12 +191,12 @@ export function Editor() {
       <ThemeSelector activeTheme={activeTheme} onSelect={setActiveTheme} />
 
       {/* Editor / Preview split */}
-      <div className="glow-border grid grid-cols-1 overflow-hidden rounded-2xl bg-sc-bg-dark lg:grid-cols-2">
+      <div className="glow-border grid grid-cols-1 overflow-hidden rounded-xl bg-sc-bg-dark sm:rounded-2xl lg:grid-cols-2">
         {/* Markdown input */}
         <div className="flex flex-col border-b border-sc-cyan/10 lg:border-b-0 lg:border-r">
-          <div className="flex items-center justify-between border-b border-sc-cyan/10 px-4 py-2.5">
+          <div className="flex items-center justify-between border-b border-sc-cyan/10 px-3 py-2 sm:px-4 sm:py-2.5">
             <div className="flex items-center gap-2">
-              <div className="flex gap-1.5">
+              <div className="hidden gap-1.5 sm:flex">
                 <span className="h-3 w-3 rounded-full bg-sc-error/60" />
                 <span className="h-3 w-3 rounded-full bg-sc-warning/60" />
                 <span className="h-3 w-3 rounded-full bg-sc-success/60" />
@@ -232,13 +232,13 @@ export function Editor() {
                 onChange={handleFileUpload}
                 className="hidden"
               />
-              <span className="font-mono text-xs text-sc-fg-dim">Markdown</span>
+              <span className="hidden font-mono text-xs text-sc-fg-dim sm:inline">Markdown</span>
             </div>
           </div>
           <textarea
             value={markdown}
             onChange={e => setMarkdown(e.target.value)}
-            className="editor-scrollbar h-[700px] w-full resize-none bg-transparent p-4 font-mono text-sm leading-relaxed text-sc-fg placeholder:text-sc-fg-dim focus:outline-none"
+            className="editor-scrollbar h-[40vh] w-full resize-none bg-transparent p-3 font-mono text-sm leading-relaxed text-sc-fg placeholder:text-sc-fg-dim focus:outline-none sm:p-4 md:h-[50vh] lg:h-[70vh]"
             placeholder="Paste your Markdown here..."
             spellCheck={false}
           />
@@ -246,14 +246,14 @@ export function Editor() {
 
         {/* Preview panel */}
         <div className="flex flex-col">
-          <div className="flex items-center justify-between border-b border-sc-cyan/10 px-4 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-sc-fg-dim">Preview</span>
-              <span className="rounded bg-sc-purple/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sc-purple">
+          <div className="flex items-center justify-between border-b border-sc-cyan/10 px-3 py-2 sm:px-4 sm:py-2.5">
+            <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+              <span className="shrink-0 text-xs font-medium text-sc-fg-dim">Preview</span>
+              <span className="truncate rounded bg-sc-purple/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sc-purple sm:px-2">
                 {activeTheme}
               </span>
               {engineState.status === 'rendering' && (
-                <span className="animate-pulse rounded bg-sc-cyan/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sc-cyan">
+                <span className="hidden animate-pulse rounded bg-sc-cyan/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sc-cyan sm:inline">
                   Rendering...
                 </span>
               )}
@@ -262,7 +262,7 @@ export function Editor() {
               type="button"
               onClick={handleDownload}
               disabled={!pdfBytes || pdfBytes.length === 0}
-              className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sc-purple to-sc-coral px-3 py-1.5 text-xs font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_15px_rgba(225,53,255,0.3)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              className="group flex shrink-0 items-center gap-1 rounded-lg bg-gradient-to-r from-sc-purple to-sc-coral px-2.5 py-1.5 text-xs font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_15px_rgba(225,53,255,0.3)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none sm:gap-1.5 sm:px-3"
             >
               <svg
                 aria-hidden="true"
@@ -283,7 +283,7 @@ export function Editor() {
           </div>
 
           {/* Preview content */}
-          <div className="editor-scrollbar h-[700px] overflow-y-auto">
+          <div className="editor-scrollbar h-[40vh] overflow-y-auto md:h-[50vh] lg:h-[70vh]">
             {engineState.status === 'loading' && (
               <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
                 <LoadingSpinner />
@@ -313,7 +313,7 @@ export function Editor() {
                   </div>
                 )}
                 {pdfBytes && pdfBytes.length > 0 ? (
-                  <PdfPreview pdfBytes={pdfBytes} className="p-4" />
+                  <PdfPreview pdfBytes={pdfBytes} className="p-2 sm:p-4" />
                 ) : (
                   <div className="flex h-full items-center justify-center p-8">
                     <LoadingSpinner />
