@@ -177,7 +177,7 @@ export function Editor() {
   }, []);
 
   return (
-    <section id="editor" className="mx-auto max-w-7xl px-6 py-16">
+    <section id="editor" className="mx-auto max-w-[1600px] px-4 py-16 2xl:px-6">
       <div className="mb-8 text-center">
         <h2 className="mb-3 text-3xl font-bold tracking-tight md:text-4xl">
           <span className="gradient-text">Live Editor</span>
@@ -238,7 +238,7 @@ export function Editor() {
           <textarea
             value={markdown}
             onChange={e => setMarkdown(e.target.value)}
-            className="editor-scrollbar h-[500px] w-full resize-none bg-transparent p-4 font-mono text-sm leading-relaxed text-sc-fg placeholder:text-sc-fg-dim focus:outline-none"
+            className="editor-scrollbar h-[700px] w-full resize-none bg-transparent p-4 font-mono text-sm leading-relaxed text-sc-fg placeholder:text-sc-fg-dim focus:outline-none"
             placeholder="Paste your Markdown here..."
             spellCheck={false}
           />
@@ -283,7 +283,7 @@ export function Editor() {
           </div>
 
           {/* Preview content */}
-          <div className="editor-scrollbar h-[500px] overflow-y-auto">
+          <div className="editor-scrollbar h-[700px] overflow-y-auto">
             {engineState.status === 'loading' && (
               <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
                 <LoadingSpinner />
