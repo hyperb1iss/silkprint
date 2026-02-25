@@ -77,7 +77,7 @@ missing_docs = { level = "allow", priority = 1 }
 all = { level = "deny", priority = 0 }
 style = { level = "warn", priority = 1 }
 perf = { level = "deny", priority = 1 }
-pedantic = { level = "warn", priority = 10 }
+pedantic = { level = "deny", priority = 10 }
 missing_errors_doc = { level = "allow", priority = 20 }
 missing_panics_doc = { level = "allow", priority = 20 }
 missing_safety_doc = { level = "allow", priority = 20 }
@@ -97,6 +97,8 @@ todo = { level = "warn", priority = 31 }
 implicit_clone = { level = "warn", priority = 33 }
 inefficient_to_string = { level = "warn", priority = 33 }
 string_lit_as_bytes = { level = "warn", priority = 33 }
+future_not_send = { level = "warn", priority = 32 }
+async_yields_async = { level = "warn", priority = 32 }
 too_many_lines = { level = "warn", priority = 34 }
 cognitive_complexity = { level = "warn", priority = 34 }
 result_large_err = { level = "warn", priority = 35 }
