@@ -45,6 +45,9 @@ pub fn generate(
     // ─── Links ───────────────────────────────────────────────────
     emit_link_rule(&mut out, t);
 
+    // ─── Lists ───────────────────────────────────────────────────
+    emit_list_rules(&mut out, t);
+
     // ─── Images ─────────────────────────────────────────────────
     emit_image_rules(&mut out, t);
 
@@ -440,6 +443,57 @@ fn emit_link_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
         out.push_str("  it\n");
     }
     out.push_str("}\n\n");
+}
+
+fn emit_list_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
+    let indent = default_if_empty(&t.list.indent, "20pt");
+    let body_indent = "0.7em";
+    let item_spacing = "0.15em";
+    let bullet_color = default_if_empty(&t.list.bullet_color, &t.text.color);
+    let task_checked_color = default_if_empty(&t.list.task_checked_color, &t.text.color);
+    let task_unchecked_color = default_if_empty(&t.list.task_unchecked_color, &t.text.color);
+    let term_font_raw = default_if_empty(&t.description_list.term_font, &t.fonts.heading);
+    let term_font = resolve_font_name(default_if_empty(term_font_raw, "Inter"), t);
+    let term_weight = if t.description_list.term_weight > 0 {
+        t.description_list.term_weight
+    } else {
+        600
+    };
+    let term_color = default_if_empty(&t.description_list.term_color, &t.text.color);
+    let definition_indent = default_if_empty(&t.description_list.definition_indent, "20pt");
+    let term_item_spacing = default_if_empty(&t.description_list.item_spacing, "0.6em");
+    let term_spacing = default_if_empty(&t.description_list.term_spacing, "0.6em");
+
+    out.push_str("#set list(\n");
+    let _ = writeln!(out, "  indent: {indent},");
+    let _ = writeln!(out, "  body-indent: {body_indent},");
+    let _ = writeln!(out, "  spacing: {item_spacing},");
+    let _ = writeln!(
+        out,
+        "  marker: depth => if depth == 0 {{ [#text(fill: rgb(\"{bullet_color}\"))[•]] }} else if depth == 1 {{ [#text(fill: rgb(\"{bullet_color}\"))[◦]] }} else {{ [#text(fill: rgb(\"{bullet_color}\"))[▪]] }},"
+    );
+    out.push_str(")\n");
+
+    out.push_str("#set enum(\n");
+    let _ = writeln!(out, "  indent: {indent},");
+    let _ = writeln!(out, "  body-indent: {body_indent},");
+    let _ = writeln!(out, "  spacing: {item_spacing},");
+    out.push_str(")\n");
+
+    let _ = writeln!(
+        out,
+        "#set terms(indent: {definition_indent}, hanging-indent: {definition_indent}, spacing: {term_item_spacing}, separator: h({term_spacing}, weak: true))"
+    );
+    let _ = writeln!(
+        out,
+        "#let silkprint-task-marker(checked) = {{ let color = if checked {{ rgb(\"{task_checked_color}\") }} else {{ rgb(\"{task_unchecked_color}\") }}; let glyph = if checked {{ \"☑\" }} else {{ \"☐\" }}; box(width: 1.35em)[#text(size: 1.05em, fill: color)[#glyph]] }}"
+    );
+    let _ = writeln!(
+        out,
+        "#let silkprint-term(body) = text(font: \"{}\", weight: {term_weight}, fill: rgb(\"{term_color}\"))[#body]",
+        escape_typst_string(term_font)
+    );
+    out.push('\n');
 }
 
 fn emit_image_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {

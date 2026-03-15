@@ -16,6 +16,7 @@ use scraper::node::{Element, Node};
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
 use super::escape::{escape_typst_content, escape_typst_string};
+use super::image::{PreparedImage, PreparedImages};
 
 // ─── Public API ──────────────────────────────────────────────────────
 
@@ -23,12 +24,16 @@ use super::escape::{escape_typst_content, escape_typst_string};
 ///
 /// Parses the HTML as a full document and walks the DOM tree, emitting
 /// Typst equivalents for supported elements.
-pub fn emit_html_block(html: &str, warnings: &mut WarningCollector) -> String {
+pub fn emit_html_block(
+    html: &str,
+    images: &PreparedImages,
+    warnings: &mut WarningCollector,
+) -> String {
     let doc = Html::parse_document(html);
     let mut out = String::new();
 
     for child in doc.tree.root().children() {
-        emit_dom_node(child, &mut out, warnings, Context::Block);
+        emit_dom_node(child, &mut out, images, warnings, Context::Block);
     }
 
     out
@@ -37,12 +42,16 @@ pub fn emit_html_block(html: &str, warnings: &mut WarningCollector) -> String {
 /// Convert an inline HTML fragment into Typst markup.
 ///
 /// Parses the HTML as a fragment and emits only inline-level Typst.
-pub fn emit_html_inline(html: &str, warnings: &mut WarningCollector) -> String {
+pub fn emit_html_inline(
+    html: &str,
+    images: &PreparedImages,
+    warnings: &mut WarningCollector,
+) -> String {
     let doc = Html::parse_fragment(html);
     let mut out = String::new();
 
     for child in doc.tree.root().children() {
-        emit_dom_node(child, &mut out, warnings, Context::Inline);
+        emit_dom_node(child, &mut out, images, warnings, Context::Inline);
     }
 
     out
@@ -65,6 +74,7 @@ enum Context {
 fn emit_dom_node(
     node: NodeRef<'_, Node>,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
     ctx: Context,
 ) {
@@ -75,13 +85,13 @@ fn emit_dom_node(
 
         Node::Element(el) => {
             let tag = el.name();
-            emit_element(tag, node, el, out, warnings, ctx);
+            emit_element(tag, node, el, out, images, warnings, ctx);
         }
 
         // Document/Fragment roots, doctype, comments — recurse through children
         _ => {
             for child in node.children() {
-                emit_dom_node(child, out, warnings, ctx);
+                emit_dom_node(child, out, images, warnings, ctx);
             }
         }
     }
@@ -94,6 +104,7 @@ fn emit_element(
     node: NodeRef<'_, Node>,
     el: &Element,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
     ctx: Context,
 ) {
@@ -103,17 +114,17 @@ fn emit_element(
             if ctx != Context::Block {
                 return;
             }
-            emit_heading(tag, node, el, out, warnings);
+            emit_heading(tag, node, el, out, images, warnings);
         }
 
         // ─── Block containers ────────────────────────────────────
         "p" | "div" => {
             if ctx != Context::Block {
                 // In inline/table-cell context, just emit children directly
-                emit_children(node, out, warnings, ctx);
+                emit_children(node, out, images, warnings, ctx);
                 return;
             }
-            emit_aligned_block(node, el, out, warnings);
+            emit_aligned_block(node, el, out, images, warnings);
         }
 
         // ─── Table ───────────────────────────────────────────────
@@ -121,25 +132,25 @@ fn emit_element(
             if ctx != Context::Block {
                 return;
             }
-            emit_table(node, out, warnings);
+            emit_table(node, out, images, warnings);
         }
 
         // ─── Images ──────────────────────────────────────────────
-        "img" => emit_image(el, out, warnings, ctx),
+        "img" => emit_image(el, out, images, warnings, ctx),
 
         // ─── Links ───────────────────────────────────────────────
-        "a" => emit_link(node, el, out, warnings, ctx),
+        "a" => emit_link(node, el, out, images, warnings, ctx),
 
         // ─── Inline formatting ───────────────────────────────────
         "strong" | "b" => {
             out.push('*');
-            emit_children(node, out, warnings, ctx);
+            emit_children(node, out, images, warnings, ctx);
             out.push('*');
         }
 
         "em" | "i" => {
             out.push('_');
-            emit_children(node, out, warnings, ctx);
+            emit_children(node, out, images, warnings, ctx);
             out.push('_');
         }
 
@@ -152,13 +163,13 @@ fn emit_element(
 
         "sub" => {
             out.push_str("#sub[");
-            emit_children(node, out, warnings, ctx);
+            emit_children(node, out, images, warnings, ctx);
             out.push(']');
         }
 
         "sup" => {
             out.push_str("#super[");
-            emit_children(node, out, warnings, ctx);
+            emit_children(node, out, images, warnings, ctx);
             out.push(']');
         }
 
@@ -180,14 +191,14 @@ fn emit_element(
             if ctx != Context::Block {
                 return;
             }
-            emit_list(node, out, warnings, false);
+            emit_list(node, out, images, warnings, false);
         }
 
         "ol" => {
             if ctx != Context::Block {
                 return;
             }
-            emit_list(node, out, warnings, true);
+            emit_list(node, out, images, warnings, true);
         }
 
         // ─── Transparent wrappers ────────────────────────────────
@@ -196,7 +207,7 @@ fn emit_element(
         // all just pass through to their children.
         "thead" | "tbody" | "tfoot" | "tr" | "td" | "th" | "li" | "span" | "html" | "head"
         | "body" => {
-            emit_children(node, out, warnings, ctx);
+            emit_children(node, out, images, warnings, ctx);
         }
 
         // ─── Unknown tags ────────────────────────────────────────
@@ -204,7 +215,7 @@ fn emit_element(
             warnings.push(SilkprintWarning::UnsupportedHtmlTag {
                 tag: tag.to_string(),
             });
-            emit_children(node, out, warnings, ctx);
+            emit_children(node, out, images, warnings, ctx);
         }
     }
 }
@@ -217,13 +228,14 @@ fn emit_heading(
     node: NodeRef<'_, Node>,
     el: &Element,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
 ) {
     let level = heading_level(tag);
     let prefix = "=".repeat(level);
 
     let mut content = String::new();
-    emit_children(node, &mut content, warnings, Context::Inline);
+    emit_children(node, &mut content, images, warnings, Context::Inline);
 
     // Strip line breaks (`\` + newline) and collapse whitespace in heading text.
     // HTML headings like `<h1><br>Title<br></h1>` shouldn't produce Typst breaks.
@@ -245,10 +257,11 @@ fn emit_aligned_block(
     node: NodeRef<'_, Node>,
     el: &Element,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
 ) {
     let mut content = String::new();
-    emit_children(node, &mut content, warnings, Context::Block);
+    emit_children(node, &mut content, images, warnings, Context::Block);
 
     if let Some(align) = parse_alignment(el) {
         let _ = writeln!(out, "#align({align})[{content}]");
@@ -265,6 +278,7 @@ fn emit_link(
     node: NodeRef<'_, Node>,
     el: &Element,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
     ctx: Context,
 ) {
@@ -272,7 +286,7 @@ fn emit_link(
     let _ = write!(out, "#link(\"{}\")", escape_typst_string(href));
 
     let mut content = String::new();
-    emit_children(node, &mut content, warnings, ctx);
+    emit_children(node, &mut content, images, warnings, ctx);
 
     if !content.is_empty() {
         let _ = write!(out, "[{content}]");
@@ -286,50 +300,61 @@ fn emit_link(
 fn emit_image(
     el: &Element,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
     #[cfg(not(target_arch = "wasm32"))] ctx: Context,
     #[cfg(target_arch = "wasm32")] _ctx: Context,
 ) {
     let src = el.attr("src").unwrap_or("");
     let alt = el.attr("alt").unwrap_or("");
+    let title = el.attr("title").unwrap_or("");
+    let label = if !title.is_empty() {
+        title
+    } else if !alt.is_empty() {
+        alt
+    } else {
+        src
+    };
 
-    // Remote images: emit alt text as placeholder + warning
-    if src.starts_with("http://") || src.starts_with("https://") {
-        if !alt.is_empty() {
-            out.push_str(&escape_typst_content(alt));
-        }
-        warnings.push(SilkprintWarning::RemoteImageSkipped {
-            url: src.to_string(),
-        });
-        return;
-    }
+    let typst_path = match images.resolve(src) {
+        Some(PreparedImage::Available { typst_path }) => Some(typst_path.as_str()),
+        None if !(src.starts_with("http://") || src.starts_with("https://")) => Some(src),
+        _ => None,
+    };
 
-    // In WASM there's no filesystem — emit a placeholder for local images
-    #[cfg(target_arch = "wasm32")]
-    {
-        let label = if alt.is_empty() { src } else { alt };
-        let escaped = escape_typst_content(label);
-        let _ = write!(
-            out,
-            "#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {escaped}\\]]]]"
-        );
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
+    if let Some(typst_path) = typst_path {
         let width = parse_image_width(el);
-        let escaped_src = escape_typst_string(src);
+        let escaped_src = escape_typst_string(typst_path);
+        let escaped_label = escape_typst_content(label);
 
-        if ctx == Context::TableCell {
+        if matches!(ctx, Context::Inline | Context::TableCell) {
             let _ = write!(out, "#image(\"{escaped_src}\", width: {width})");
-        } else {
+        } else if escaped_label.is_empty() {
             let _ = write!(out, "#figure(image(\"{escaped_src}\", width: {width}))");
+        } else {
+            let _ = write!(
+                out,
+                "#figure(image(\"{escaped_src}\", width: {width}), caption: [{escaped_label}])"
+            );
+        }
+    } else {
+        emit_image_placeholder(out, label, ctx);
+
+        if images.resolve(src).is_none() && (src.starts_with("http://") || src.starts_with("https://")) {
+            warnings.push(SilkprintWarning::RemoteImageSkipped {
+                url: src.to_string(),
+            });
         }
     }
 }
 
 /// Two-pass table emitter: count columns, then emit `#table(columns: N, ...)`.
-fn emit_table(node: NodeRef<'_, Node>, out: &mut String, warnings: &mut WarningCollector) {
+fn emit_table(
+    node: NodeRef<'_, Node>,
+    out: &mut String,
+    images: &PreparedImages,
+    warnings: &mut WarningCollector,
+) {
     let rows = collect_table_rows(node);
     if rows.is_empty() {
         return;
@@ -351,7 +376,7 @@ fn emit_table(node: NodeRef<'_, Node>, out: &mut String, warnings: &mut WarningC
 
     // Second pass: emit cells
     for row in &rows {
-        emit_table_row(*row, out, warnings);
+        emit_table_row(*row, out, images, warnings);
     }
 
     out.push_str(")\n");
@@ -361,6 +386,7 @@ fn emit_table(node: NodeRef<'_, Node>, out: &mut String, warnings: &mut WarningC
 fn emit_list(
     node: NodeRef<'_, Node>,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
     ordered: bool,
 ) {
@@ -371,7 +397,7 @@ fn emit_list(
             if el.name() == "li" {
                 out.push_str(marker);
                 let mut item_content = String::new();
-                emit_children(child, &mut item_content, warnings, Context::Inline);
+                emit_children(child, &mut item_content, images, warnings, Context::Inline);
                 out.push_str(item_content.trim());
                 out.push('\n');
             }
@@ -420,13 +446,18 @@ fn count_row_cells(row: NodeRef<'_, Node>) -> usize {
 }
 
 /// Emit all cells in a `<tr>` as `[content],` entries.
-fn emit_table_row(row: NodeRef<'_, Node>, out: &mut String, warnings: &mut WarningCollector) {
+fn emit_table_row(
+    row: NodeRef<'_, Node>,
+    out: &mut String,
+    images: &PreparedImages,
+    warnings: &mut WarningCollector,
+) {
     for child in row.children() {
         if let Node::Element(ref el) = *child.value() {
             let tag = el.name();
             if matches!(tag, "td" | "th") {
                 let mut cell_content = String::new();
-                emit_children(child, &mut cell_content, warnings, Context::TableCell);
+                emit_children(child, &mut cell_content, images, warnings, Context::TableCell);
 
                 let align = parse_alignment(el);
 
@@ -453,11 +484,25 @@ fn emit_table_row(row: NodeRef<'_, Node>, out: &mut String, warnings: &mut Warni
 fn emit_children(
     node: NodeRef<'_, Node>,
     out: &mut String,
+    images: &PreparedImages,
     warnings: &mut WarningCollector,
     ctx: Context,
 ) {
     for child in node.children() {
-        emit_dom_node(child, out, warnings, ctx);
+        emit_dom_node(child, out, images, warnings, ctx);
+    }
+}
+
+fn emit_image_placeholder(out: &mut String, label: &str, ctx: Context) {
+    let escaped = escape_typst_content(label);
+
+    if ctx == Context::Block {
+        let _ = write!(
+            out,
+            "#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {escaped}\\]]]]"
+        );
+    } else {
+        out.push_str(&escaped);
     }
 }
 
@@ -550,12 +595,17 @@ fn parse_image_width(el: &Element) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::image::PreparedImages;
     use crate::warnings::WarningCollector;
+
+    fn images() -> PreparedImages {
+        PreparedImages::default()
+    }
 
     #[test]
     fn test_centered_heading() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<h1 align=\"center\">Title</h1>", &mut w);
+        let result = emit_html_block("<h1 align=\"center\">Title</h1>", &images(), &mut w);
         assert!(result.contains("#align(center)"), "got: {result}");
         assert!(result.contains("= Title"), "got: {result}");
     }
@@ -563,7 +613,7 @@ mod tests {
     #[test]
     fn test_heading_levels() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<h3>Third</h3>", &mut w);
+        let result = emit_html_block("<h3>Third</h3>", &images(), &mut w);
         assert!(result.contains("=== Third"), "got: {result}");
     }
 
@@ -572,6 +622,7 @@ mod tests {
         let mut w = WarningCollector::new();
         let result = emit_html_block(
             "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>",
+            &images(),
             &mut w,
         );
         assert!(result.contains("#table("), "got: {result}");
@@ -584,6 +635,7 @@ mod tests {
         let mut w = WarningCollector::new();
         let result = emit_html_block(
             "<table><thead><tr><th>H</th></tr></thead><tbody><tr><td>D</td></tr></tbody></table>",
+            &images(),
             &mut w,
         );
         assert!(result.contains("#table("), "got: {result}");
@@ -594,7 +646,7 @@ mod tests {
     #[test]
     fn test_image_with_width() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<img src=\"logo.png\" width=\"200\">", &mut w);
+        let result = emit_html_block("<img src=\"logo.png\" width=\"200\">", &images(), &mut w);
         assert!(result.contains("image(\"logo.png\""), "got: {result}");
         assert!(result.contains("width: 200pt"), "got: {result}");
     }
@@ -602,14 +654,14 @@ mod tests {
     #[test]
     fn test_image_percentage_width() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<img src=\"wide.png\" width=\"80%\">", &mut w);
+        let result = emit_html_block("<img src=\"wide.png\" width=\"80%\">", &images(), &mut w);
         assert!(result.contains("width: 80%"), "got: {result}");
     }
 
     #[test]
     fn test_image_default_width() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<img src=\"photo.jpg\">", &mut w);
+        let result = emit_html_block("<img src=\"photo.jpg\">", &images(), &mut w);
         assert!(result.contains("width: 100%"), "got: {result}");
     }
 
@@ -618,6 +670,7 @@ mod tests {
         let mut w = WarningCollector::new();
         let result = emit_html_block(
             "<img src=\"https://example.com/img.png\" alt=\"Badge\">",
+            &images(),
             &mut w,
         );
         assert!(result.contains("Badge"), "got: {result}");
@@ -628,7 +681,7 @@ mod tests {
     #[test]
     fn test_link() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<a href=\"https://example.com\">Click</a>", &mut w);
+        let result = emit_html_inline("<a href=\"https://example.com\">Click</a>", &images(), &mut w);
         assert!(
             result.contains("#link(\"https://example.com\")[Click]"),
             "got: {result}"
@@ -638,36 +691,36 @@ mod tests {
     #[test]
     fn test_strong() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<strong>bold</strong>", &mut w);
+        let result = emit_html_inline("<strong>bold</strong>", &images(), &mut w);
         assert!(result.contains("*bold*"), "got: {result}");
     }
 
     #[test]
     fn test_bold_tag() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<b>bold</b>", &mut w);
+        let result = emit_html_inline("<b>bold</b>", &images(), &mut w);
         assert!(result.contains("*bold*"), "got: {result}");
     }
 
     #[test]
     fn test_emphasis() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<em>italic</em>", &mut w);
+        let result = emit_html_inline("<em>italic</em>", &images(), &mut w);
         assert!(result.contains("_italic_"), "got: {result}");
     }
 
     #[test]
     fn test_inline_code() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<code>foo</code>", &mut w);
+        let result = emit_html_inline("<code>foo</code>", &images(), &mut w);
         assert!(result.contains("`foo`"), "got: {result}");
     }
 
     #[test]
     fn test_sub_sup() {
         let mut w = WarningCollector::new();
-        let sub = emit_html_inline("<sub>2</sub>", &mut w);
-        let sup = emit_html_inline("<sup>n</sup>", &mut w);
+        let sub = emit_html_inline("<sub>2</sub>", &images(), &mut w);
+        let sup = emit_html_inline("<sup>n</sup>", &images(), &mut w);
         assert!(sub.contains("#sub[2]"), "got: {sub}");
         assert!(sup.contains("#super[n]"), "got: {sup}");
     }
@@ -675,28 +728,28 @@ mod tests {
     #[test]
     fn test_br() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("before<br>after", &mut w);
+        let result = emit_html_inline("before<br>after", &images(), &mut w);
         assert!(result.contains('\\'), "got: {result}");
     }
 
     #[test]
     fn test_br_self_closing() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("before<br/>after", &mut w);
+        let result = emit_html_inline("before<br/>after", &images(), &mut w);
         assert!(result.contains('\\'), "got: {result}");
     }
 
     #[test]
     fn test_hr() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<hr>", &mut w);
+        let result = emit_html_block("<hr>", &images(), &mut w);
         assert!(result.contains("#line(length: 100%)"), "got: {result}");
     }
 
     #[test]
     fn test_unordered_list() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<ul><li>Alpha</li><li>Beta</li></ul>", &mut w);
+        let result = emit_html_block("<ul><li>Alpha</li><li>Beta</li></ul>", &images(), &mut w);
         assert!(result.contains("- Alpha"), "got: {result}");
         assert!(result.contains("- Beta"), "got: {result}");
     }
@@ -704,7 +757,7 @@ mod tests {
     #[test]
     fn test_ordered_list() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<ol><li>One</li><li>Two</li></ol>", &mut w);
+        let result = emit_html_block("<ol><li>One</li><li>Two</li></ol>", &images(), &mut w);
         assert!(result.contains("+ One"), "got: {result}");
         assert!(result.contains("+ Two"), "got: {result}");
     }
@@ -712,7 +765,7 @@ mod tests {
     #[test]
     fn test_span_transparent() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<span>hello</span>", &mut w);
+        let result = emit_html_inline("<span>hello</span>", &images(), &mut w);
         assert!(result.contains("hello"), "got: {result}");
         assert!(w.is_empty());
     }
@@ -720,7 +773,7 @@ mod tests {
     #[test]
     fn test_div_with_alignment() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<div align=\"center\">Centered</div>", &mut w);
+        let result = emit_html_block("<div align=\"center\">Centered</div>", &images(), &mut w);
         assert!(result.contains("#align(center)"), "got: {result}");
         assert!(result.contains("Centered"), "got: {result}");
     }
@@ -728,7 +781,7 @@ mod tests {
     #[test]
     fn test_unknown_tag_warns() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<marquee>scroll</marquee>", &mut w);
+        let result = emit_html_inline("<marquee>scroll</marquee>", &images(), &mut w);
         assert!(result.contains("scroll"), "got: {result}");
         assert!(!w.is_empty());
         let warning = &w.warnings()[0];
@@ -741,14 +794,14 @@ mod tests {
     #[test]
     fn test_nested_inline() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<strong><em>bold italic</em></strong>", &mut w);
+        let result = emit_html_inline("<strong><em>bold italic</em></strong>", &images(), &mut w);
         assert!(result.contains("*_bold italic_*"), "got: {result}");
     }
 
     #[test]
     fn test_p_alignment() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<p align=\"right\">Right text</p>", &mut w);
+        let result = emit_html_block("<p align=\"right\">Right text</p>", &images(), &mut w);
         assert!(result.contains("#align(right)"), "got: {result}");
         assert!(result.contains("Right text"), "got: {result}");
     }
@@ -756,15 +809,15 @@ mod tests {
     #[test]
     fn test_image_px_width() {
         let mut w = WarningCollector::new();
-        let result = emit_html_block("<img src=\"icon.png\" width=\"32px\">", &mut w);
+        let result = emit_html_block("<img src=\"icon.png\" width=\"32px\">", &images(), &mut w);
         assert!(result.contains("width: 32pt"), "got: {result}");
     }
 
     #[test]
     fn test_empty_html() {
         let mut w = WarningCollector::new();
-        let block = emit_html_block("", &mut w);
-        let inline = emit_html_inline("", &mut w);
+        let block = emit_html_block("", &images(), &mut w);
+        let inline = emit_html_inline("", &images(), &mut w);
         assert!(block.is_empty() || block.trim().is_empty(), "got: {block}");
         assert!(
             inline.is_empty() || inline.trim().is_empty(),
@@ -777,6 +830,7 @@ mod tests {
         let mut w = WarningCollector::new();
         let result = emit_html_block(
             "<table><tr><td align=\"right\">R</td><td>L</td></tr></table>",
+            &images(),
             &mut w,
         );
         assert!(result.contains("#align(right)"), "got: {result}");

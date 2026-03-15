@@ -39,6 +39,8 @@ struct SilkWorld {
     tmtheme_data: Vec<u8>,
     /// Virtual mermaid SVG files keyed by path (e.g., `/__mermaid_0.svg`).
     mermaid_svgs: HashMap<String, Vec<u8>>,
+    /// Virtual remote image files keyed by path (e.g., `/__remote_image_0.png`).
+    remote_images: HashMap<String, Vec<u8>>,
 }
 
 impl SilkWorld {
@@ -50,6 +52,7 @@ impl SilkWorld {
         #[cfg(target_arch = "wasm32")] _root_dir: &Path,
         font_data: Vec<Vec<u8>>,
         mermaid_svgs: HashMap<String, Vec<u8>>,
+        remote_images: HashMap<String, Vec<u8>>,
     ) -> Self {
         // Build the main source — detached (no package, virtual path "main.typ")
         let main_source = Source::detached(typst_source);
@@ -79,6 +82,7 @@ impl SilkWorld {
             root: root_dir.to_path_buf(),
             tmtheme_data: theme.tmtheme_xml.as_bytes().to_vec(),
             mermaid_svgs,
+            remote_images,
         }
     }
 }
@@ -119,6 +123,15 @@ impl World for SilkWorld {
         if path_str.starts_with(super::mermaid::MERMAID_VPATH_PREFIX) {
             if let Some(svg_data) = self.mermaid_svgs.get(path_str.as_ref()) {
                 return Ok(Bytes::new(svg_data.clone()));
+            }
+            return Err(typst::diag::FileError::NotFound(
+                vpath.as_rooted_path().to_path_buf(),
+            ));
+        }
+
+        if path_str.starts_with(super::image::REMOTE_IMAGE_VPATH_PREFIX) {
+            if let Some(image_data) = self.remote_images.get(path_str.as_ref()) {
+                return Ok(Bytes::new(image_data.clone()));
             }
             return Err(typst::diag::FileError::NotFound(
                 vpath.as_rooted_path().to_path_buf(),
@@ -218,6 +231,7 @@ pub fn compile_to_pdf(
     root_dir: &Path,
     font_dirs: &[PathBuf],
     mermaid_svgs: &HashMap<String, Vec<u8>>,
+    remote_images: &HashMap<String, Vec<u8>>,
     _warnings: &mut WarningCollector,
 ) -> Result<Vec<u8>, SilkprintError> {
     // Load bundled fonts (Inter, Source Serif 4, JetBrains Mono)
@@ -257,6 +271,7 @@ pub fn compile_to_pdf(
         root_dir,
         font_data,
         mermaid_svgs.clone(),
+        remote_images.clone(),
     );
 
     // Compile to a paged document

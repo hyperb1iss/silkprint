@@ -113,6 +113,15 @@ pub fn render_to_typst(
     input: &str,
     options: &RenderOptions,
 ) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
+    render_to_typst_with_path(input, None, options)
+}
+
+/// Render markdown to Typst source with an optional input path for asset resolution.
+pub fn render_to_typst_with_path(
+    input: &str,
+    input_path: Option<&Path>,
+    options: &RenderOptions,
+) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
     let mut warnings = WarningCollector::new();
 
     let (front_matter, body) = render::frontmatter::extract(input)?;
@@ -125,6 +134,7 @@ pub fn render_to_typst(
     let typst_source = render::render_to_typst_source(
         &body,
         front_matter.as_ref(),
+        input_path,
         options,
         &resolved_theme,
         &mut warnings,

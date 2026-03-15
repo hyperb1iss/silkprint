@@ -5,6 +5,7 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::NamedTempFile;
+use tempfile::tempdir;
 
 /// Build a `Command` for the silkprint binary with color disabled.
 fn silkprint() -> Command {
@@ -72,6 +73,17 @@ fn test_nonexistent_theme() {
         .stderr(predicate::str::contains("not found"));
 }
 
+#[test]
+fn test_nonexistent_custom_theme_path() {
+    silkprint()
+        .arg("--theme")
+        .arg("missing-theme.toml")
+        .arg("tests/fixtures/basic.md")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("missing-theme.toml"));
+}
+
 // ── Validation & Inspection modes ────────────────────────────────
 
 #[test]
@@ -84,6 +96,15 @@ fn test_check_mode() {
 }
 
 #[test]
+fn test_check_mode_lists_fixture() {
+    silkprint()
+        .arg("--check")
+        .arg("tests/fixtures/lists.md")
+        .assert()
+        .success();
+}
+
+#[test]
 fn test_dump_typst() {
     silkprint()
         .arg("--dump-typst")
@@ -91,6 +112,28 @@ fn test_dump_typst() {
         .assert()
         .success()
         .stdout(predicate::str::contains("#set").or(predicate::str::contains("page")));
+}
+
+#[test]
+fn test_dump_typst_resolves_relative_image_paths() {
+    let dir = tempdir().expect("should create temp dir");
+    let image_path = dir.path().join("badge.svg");
+    let markdown_path = dir.path().join("doc.md");
+
+    std::fs::write(
+        &image_path,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="80" height="20"></svg>"#,
+    )
+    .expect("should write SVG fixture");
+    std::fs::write(&markdown_path, "# Demo\n\n![Badge](badge.svg)\n")
+        .expect("should write markdown fixture");
+
+    silkprint()
+        .arg("--dump-typst")
+        .arg(&markdown_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("image(\"badge.svg\", width: 100%)"));
 }
 
 // ── Render modes ─────────────────────────────────────────────────

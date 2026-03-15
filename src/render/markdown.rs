@@ -8,6 +8,7 @@ use crate::theme::ResolvedTheme;
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
 use super::escape::{escape_typst_content, escape_typst_string};
+use super::image::{PreparedImage, PreparedImages};
 
 /// Configure comrak with all extensions enabled per SPEC Section 8.2.
 pub fn comrak_options() -> Options<'static> {
@@ -55,11 +56,12 @@ pub fn parse<'a>(arena: &'a comrak::Arena<'a>, input: &str) -> &'a AstNode<'a> {
 pub fn emit_typst<'a>(
     root: &'a AstNode<'a>,
     _theme: &ResolvedTheme,
+    images: &'a PreparedImages,
     warnings: &mut WarningCollector,
 ) -> (String, Vec<String>) {
     // First pass: collect footnote definitions by name so we can inline them
     // at the reference site (Typst's #footnote[...] model).
-    let footnotes = collect_footnote_definitions(root, warnings);
+    let footnotes = collect_footnote_definitions(root, images, warnings);
 
     let mut ctx = EmitContext {
         out: String::with_capacity(8192),
@@ -69,6 +71,7 @@ pub fn emit_typst<'a>(
         table_cell_index: 0,
         in_table_header: false,
         in_tight_list: false,
+        images,
         warnings,
         mermaid_sources: Vec::new(),
         mermaid_counter: 0,
@@ -92,6 +95,7 @@ struct EmitContext<'w> {
     table_cell_index: usize,
     in_table_header: bool,
     in_tight_list: bool,
+    images: &'w PreparedImages,
     warnings: &'w mut WarningCollector,
     mermaid_sources: Vec<String>,
     mermaid_counter: usize,
@@ -100,12 +104,6 @@ struct EmitContext<'w> {
 impl EmitContext<'_> {
     fn push(&mut self, s: &str) {
         self.out.push_str(s);
-    }
-
-    fn push_indent(&mut self) {
-        for _ in 0..self.indent {
-            self.out.push_str("  ");
-        }
     }
 
     fn newline(&mut self) {
@@ -145,6 +143,7 @@ enum ExtractedNode {
     },
     Image {
         url: String,
+        title: String,
     },
     WikiLink {
         url: String,
@@ -156,7 +155,9 @@ enum ExtractedNode {
         tight: bool,
         start: usize,
     },
-    Item,
+    Item {
+        number: Option<usize>,
+    },
     TaskItem {
         checked: bool,
     },
@@ -228,7 +229,10 @@ fn extract_node(node: &AstNode<'_>) -> ExtractedNode {
             num_backticks: c.num_backticks,
         },
         NodeValue::Link(l) => ExtractedNode::Link { url: l.url.clone() },
-        NodeValue::Image(l) => ExtractedNode::Image { url: l.url.clone() },
+        NodeValue::Image(l) => ExtractedNode::Image {
+            url: l.url.clone(),
+            title: l.title.clone(),
+        },
         NodeValue::WikiLink(w) => ExtractedNode::WikiLink { url: w.url.clone() },
         NodeValue::BlockQuote => ExtractedNode::BlockQuote,
         NodeValue::MultilineBlockQuote(_) => ExtractedNode::MultilineBlockQuote,
@@ -237,7 +241,9 @@ fn extract_node(node: &AstNode<'_>) -> ExtractedNode {
             tight: list.tight,
             start: list.start,
         },
-        NodeValue::Item(_) => ExtractedNode::Item,
+        NodeValue::Item(list) => ExtractedNode::Item {
+            number: (list.list_type == ListType::Ordered).then_some(list.start),
+        },
         NodeValue::TaskItem(t) => ExtractedNode::TaskItem {
             checked: t.symbol.is_some(),
         },
@@ -414,51 +420,45 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── Image ───────────────────────────────────────────────
-        ExtractedNode::Image { url } => {
-            // Skip remote images (already warned by check_content)
-            if url.starts_with("http://") || url.starts_with("https://") {
-                return;
-            }
+        ExtractedNode::Image { url, title } => {
+            let mut alt_text = String::new();
+            collect_text(node, &mut alt_text);
 
-            // In WASM there's no filesystem — emit a placeholder instead of
-            // a broken #image() that would crash Typst compilation.
-            #[cfg(target_arch = "wasm32")]
-            {
-                let mut alt_text = String::new();
-                collect_text(node, &mut alt_text);
-                let label = if alt_text.is_empty() {
-                    escape_typst_content(&url)
-                } else {
-                    escape_typst_content(&alt_text)
-                };
-                ctx.push("\n#align(center)[\n");
-                ctx.push(
-                    "#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[\n",
-                );
-                let _ = writeln!(
-                    ctx.out,
-                    "#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {label}\\]]]"
-                );
-                ctx.push("]\n]\n");
-            }
+            let label = if !title.is_empty() {
+                title.clone()
+            } else if !alt_text.is_empty() {
+                alt_text.clone()
+            } else {
+                url.clone()
+            };
 
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                ctx.push("\n#figure(\n");
-                let _ = writeln!(
-                    ctx.out,
-                    "  image(\"{}\", width: 100%),",
-                    escape_typst_string(&url)
-                );
+            let standalone = is_standalone_image(node);
 
-                // Collect alt text from children
-                let mut alt_text = String::new();
-                collect_text(node, &mut alt_text);
-                if !alt_text.is_empty() {
-                    let _ = writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&alt_text));
+            let typst_path = match ctx.images.resolve(&url) {
+                Some(PreparedImage::Available { typst_path }) => Some(typst_path.as_str()),
+                None if !super::image::is_remote_image(&url) => Some(url.as_str()),
+                _ => None,
+            };
+
+            if let Some(typst_path) = typst_path {
+                let escaped_path = escape_typst_string(typst_path);
+                if standalone {
+                    ctx.push("\n#figure(\n");
+                    let _ = writeln!(ctx.out, "  image(\"{escaped_path}\", width: 100%),");
+                    if !label.is_empty() {
+                        let _ = writeln!(
+                            ctx.out,
+                            "  caption: [{}],",
+                            escape_typst_content(&label)
+                        );
+                    }
+                    ctx.push(")\n");
                 }
-
-                ctx.push(")\n");
+                else {
+                    let _ = write!(ctx.out, "#image(\"{escaped_path}\", height: 1.1em)");
+                }
+            } else {
+                emit_image_placeholder(ctx, &label, standalone);
             }
         }
 
@@ -476,56 +476,18 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
             tight,
             start,
         } => {
-            let prev_tight = ctx.in_tight_list;
-            ctx.in_tight_list = tight;
-
-            ctx.newline();
-            if is_ordered && start > 1 {
-                let _ = writeln!(ctx.out, "#set enum(start: {start})");
-            }
-
-            for child in node.children() {
-                let child_extracted = extract_node(child);
-                match child_extracted {
-                    ExtractedNode::Item => {
-                        ctx.push_indent();
-                        if is_ordered {
-                            ctx.push("+ ");
-                        } else {
-                            ctx.push("- ");
-                        }
-                        ctx.indent += 1;
-                        emit_list_item_children(child, ctx);
-                        ctx.indent -= 1;
-                        ctx.newline();
-                    }
-                    ExtractedNode::TaskItem { checked } => {
-                        ctx.push_indent();
-                        if checked {
-                            ctx.push("#box[\\u{2611}] ");
-                        } else {
-                            ctx.push("#box[\\u{2610}] ");
-                        }
-                        ctx.indent += 1;
-                        emit_list_item_children(child, ctx);
-                        ctx.indent -= 1;
-                        ctx.newline();
-                    }
-                    _ => {
-                        emit_node(child, ctx);
-                    }
-                }
-            }
-
-            ctx.in_tight_list = prev_tight;
+            emit_list(node, ctx, is_ordered, tight, start);
         }
 
         // ─── Transparent containers (just emit children) ──────────
-        ExtractedNode::Item
+        ExtractedNode::Item { .. }
         | ExtractedNode::TaskItem { .. }
         | ExtractedNode::Document
         | ExtractedNode::Escaped
-        | ExtractedNode::EscapedTag => {
+        | ExtractedNode::EscapedTag
+        | ExtractedNode::DescriptionItem
+        | ExtractedNode::DescriptionTerm
+        | ExtractedNode::DescriptionDetails => {
             emit_children(node, ctx);
         }
 
@@ -561,14 +523,14 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
 
         // ─── HTML block → convert to Typst ──────────────────────
         ExtractedNode::HtmlBlock { literal } => {
-            let typst = super::html::emit_html_block(&literal, ctx.warnings);
+            let typst = super::html::emit_html_block(&literal, ctx.images, ctx.warnings);
             ctx.push(&typst);
         }
 
         // ─── HTML inline → entity decode or convert ─────────────
         ExtractedNode::HtmlInline(html_str) => {
             if html_str.starts_with('<') && html_str.len() > 1 {
-                let typst = super::html::emit_html_inline(&html_str, ctx.warnings);
+                let typst = super::html::emit_html_inline(&html_str, ctx.images, ctx.warnings);
                 ctx.push(&typst);
             } else {
                 let decoded = decode_html_entity(&html_str);
@@ -688,30 +650,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
 
         // ─── Description list ────────────────────────────────────
         ExtractedNode::DescriptionList => {
-            ctx.newline();
-            for child in node.children() {
-                emit_node(child, ctx);
-            }
-        }
-
-        // ─── Description item ────────────────────────────────────
-        ExtractedNode::DescriptionItem => {
-            for child in node.children() {
-                emit_node(child, ctx);
-            }
-        }
-
-        // ─── Description term ────────────────────────────────────
-        ExtractedNode::DescriptionTerm => {
-            ctx.push("\n/ ");
-            emit_children(node, ctx);
-        }
-
-        // ─── Description details ─────────────────────────────────
-        ExtractedNode::DescriptionDetails => {
-            ctx.push(": ");
-            emit_children(node, ctx);
-            ctx.newline();
+            emit_description_list(node, ctx);
         }
 
         // ─── Emoji shortcode (resolved to unicode by comrak) ─────
@@ -768,7 +707,7 @@ fn emit_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                     i += 1;
                 }
 
-                let typst = super::html::emit_html_inline(&buf, ctx.warnings);
+                let typst = super::html::emit_html_inline(&buf, ctx.images, ctx.warnings);
                 ctx.push(&typst);
                 continue;
             }
@@ -794,16 +733,218 @@ fn is_closing_html_tag(s: &str) -> bool {
 }
 
 /// Emit list item children, handling tight vs loose lists.
-fn emit_list_item_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
-    for child in node.children() {
-        let is_paragraph = matches!(extract_node(child), ExtractedNode::Paragraph);
-        if is_paragraph && ctx.in_tight_list {
-            // Tight list: unwrap paragraph, emit content inline
-            emit_children(child, ctx);
-        } else {
-            emit_node(child, ctx);
+fn emit_list<'a>(
+    node: &'a AstNode<'a>,
+    ctx: &mut EmitContext<'_>,
+    is_ordered: bool,
+    tight: bool,
+    start: usize,
+) {
+    ctx.newline();
+
+    let task_only = node
+        .children()
+        .all(|child| matches!(extract_node(child), ExtractedNode::TaskItem { .. }));
+
+    if is_ordered {
+        ctx.push("#enum(\n");
+        if start > 1 {
+            let _ = writeln!(ctx.out, "  start: {start},");
+        }
+        if !tight {
+            ctx.push("  tight: false,\n");
+        }
+    } else if task_only {
+        ctx.push("#list(\n");
+        ctx.push("  marker: [],\n");
+        ctx.push("  tight: false,\n");
+    } else {
+        ctx.push("#list(\n");
+        if !tight {
+            ctx.push("  tight: false,\n");
         }
     }
+
+    let prev_tight = ctx.in_tight_list;
+    ctx.in_tight_list = tight;
+
+    for child in node.children() {
+        match extract_node(child) {
+            ExtractedNode::Item { number } => {
+                let body = render_item_body(child, ctx);
+                if body.is_empty() {
+                    continue;
+                }
+                if is_ordered {
+                    if let Some(number) = number {
+                        let _ = writeln!(ctx.out, "  enum.item({number})[{body}],");
+                    } else {
+                        let _ = writeln!(ctx.out, "  [{body}],");
+                    }
+                } else {
+                    let _ = writeln!(ctx.out, "  [{body}],");
+                }
+            }
+            ExtractedNode::TaskItem { checked } => {
+                let body = render_task_item_body(child, checked, ctx);
+                if body.is_empty() {
+                    continue;
+                }
+                let _ = writeln!(ctx.out, "  [{body}],");
+            }
+            _ => emit_node(child, ctx),
+        }
+    }
+
+    ctx.in_tight_list = prev_tight;
+    ctx.push(")\n");
+}
+
+fn render_item_body<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) -> String {
+    render_fragment(ctx, |ctx| emit_list_item_children(node, ctx))
+}
+
+fn render_task_item_body<'a>(
+    node: &'a AstNode<'a>,
+    checked: bool,
+    ctx: &mut EmitContext<'_>,
+) -> String {
+    let body = render_fragment(ctx, |ctx| emit_list_item_children(node, ctx));
+    if body.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "#silkprint-task-marker({checked})#h(0.2em){body}",
+        checked = if checked { "true" } else { "false" }
+    )
+}
+
+fn emit_list_item_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    let children: Vec<_> = node.children().collect();
+
+    for (index, child) in children.iter().copied().enumerate() {
+        match extract_node(child) {
+            ExtractedNode::Paragraph => emit_children(child, ctx),
+            _ => emit_node(child, ctx),
+        }
+
+        if index + 1 < children.len() && !ctx.out.ends_with("\n\n") {
+            ctx.newline();
+        }
+    }
+}
+
+fn emit_description_list<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    ctx.newline();
+
+    let items: Vec<_> = node
+        .children()
+        .filter_map(|child| {
+            if !matches!(extract_node(child), ExtractedNode::DescriptionItem) {
+                return None;
+            }
+            render_description_item(child, ctx)
+        })
+        .collect();
+
+    for (index, (term, description)) in items.iter().enumerate() {
+        ctx.push("/ ");
+        ctx.push("#silkprint-term[");
+        ctx.push(term.trim());
+        ctx.push("]");
+        ctx.push(": ");
+        ctx.push(&indent_term_description(description.trim()));
+        ctx.newline();
+
+        if index + 1 < items.len() {
+            ctx.newline();
+        }
+    }
+}
+
+fn render_description_item<'a>(
+    node: &'a AstNode<'a>,
+    ctx: &mut EmitContext<'_>,
+) -> Option<(String, String)> {
+    let mut term = None;
+    let mut details = Vec::new();
+
+    for child in node.children() {
+        match extract_node(child) {
+            ExtractedNode::DescriptionTerm => {
+                let rendered = render_fragment(ctx, |ctx| emit_children(child, ctx));
+                if !rendered.is_empty() {
+                    term = Some(rendered);
+                }
+            }
+            ExtractedNode::DescriptionDetails => {
+                let rendered = render_fragment(ctx, |ctx| emit_description_details(child, ctx));
+                if !rendered.is_empty() {
+                    details.push(rendered);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    term.map(|term| (term, details.join("\n")))
+}
+
+fn emit_description_details<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    let children: Vec<_> = node.children().collect();
+
+    for (index, child) in children.iter().copied().enumerate() {
+        match extract_node(child) {
+            ExtractedNode::Paragraph => emit_children(child, ctx),
+            _ => emit_node(child, ctx),
+        }
+
+        if index + 1 < children.len() && !ctx.out.ends_with('\n') {
+            ctx.newline();
+        }
+    }
+}
+
+fn indent_term_description(description: &str) -> String {
+    let mut lines = description.lines();
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+
+    let mut out = first.to_string();
+    for line in lines {
+        out.push('\n');
+        out.push_str("  ");
+        out.push_str(line);
+    }
+    out
+}
+
+fn render_fragment(
+    ctx: &mut EmitContext<'_>,
+    render: impl FnOnce(&mut EmitContext<'_>),
+) -> String {
+    let saved_out = std::mem::take(&mut ctx.out);
+    let saved_indent = ctx.indent;
+    let saved_tight = ctx.in_tight_list;
+    let saved_table_alignments = ctx.table_alignments.clone();
+    let saved_table_cell_index = ctx.table_cell_index;
+    let saved_in_table_header = ctx.in_table_header;
+
+    ctx.out = String::new();
+    render(ctx);
+
+    let fragment = ctx.out.trim().to_string();
+
+    ctx.out = saved_out;
+    ctx.indent = saved_indent;
+    ctx.in_tight_list = saved_tight;
+    ctx.table_alignments = saved_table_alignments;
+    ctx.table_cell_index = saved_table_cell_index;
+    ctx.in_table_header = saved_in_table_header;
+
+    fragment
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -816,6 +957,7 @@ fn emit_list_item_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>)
 /// the definition body. These are inlined at `#footnote[...]` reference sites.
 fn collect_footnote_definitions<'a>(
     root: &'a AstNode<'a>,
+    images: &'a PreparedImages,
     warnings: &mut WarningCollector,
 ) -> HashMap<String, String> {
     let mut map = HashMap::new();
@@ -841,6 +983,7 @@ fn collect_footnote_definitions<'a>(
                 table_cell_index: 0,
                 in_table_header: false,
                 in_tight_list: false,
+                images,
                 warnings,
                 mermaid_sources: Vec::new(),
                 mermaid_counter: 0,
@@ -887,6 +1030,34 @@ fn collect_text<'a>(node: &'a AstNode<'a>, buf: &mut String) {
             buf.push_str(text);
         }
     }
+}
+
+fn emit_image_placeholder(ctx: &mut EmitContext<'_>, label: &str, standalone: bool) {
+    let escaped = escape_typst_content(label);
+
+    if standalone {
+        ctx.push("\n#align(center)[\n");
+        ctx.push("#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[\n");
+        let _ = writeln!(
+            ctx.out,
+            "#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {escaped}\\]]]"
+        );
+        ctx.push("]\n]\n");
+    } else {
+        let _ = write!(ctx.out, "[{escaped}]");
+    }
+}
+
+fn is_standalone_image(node: &AstNode<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+
+    if !matches!(extract_node(parent), ExtractedNode::Paragraph) {
+        return false;
+    }
+
+    parent.children().count() == 1
 }
 
 /// Return a backtick fence long enough to not collide with `content`.
@@ -967,14 +1138,8 @@ pub fn check_content<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector)
 
     for node in root.descendants() {
         let data = node.data.borrow();
-        match &data.value {
-            NodeValue::CodeBlock(code_block) => {
-                check_code_block_language(&code_block.info, warnings);
-            }
-            NodeValue::Image(link) => {
-                check_image_url(&link.url, warnings);
-            }
-            _ => {}
+        if let NodeValue::CodeBlock(code_block) = &data.value {
+            check_code_block_language(&code_block.info, warnings);
         }
     }
 
@@ -1069,15 +1234,6 @@ fn check_code_block_language(info: &str, warnings: &mut WarningCollector) {
     }
 }
 
-/// Warn if an image references a remote URL (not supported in v0.1).
-fn check_image_url(url: &str, warnings: &mut WarningCollector) {
-    if url.starts_with("http://") || url.starts_with("https://") {
-        warnings.push(SilkprintWarning::RemoteImageSkipped {
-            url: url.to_string(),
-        });
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1119,8 +1275,8 @@ mod tests {
         let root = parse(&arena, "![alt](https://example.com/img.png)");
         let mut warnings = WarningCollector::new();
         let clean = check_content(root, &mut warnings);
-        assert!(!clean);
-        assert_eq!(warnings.warnings().len(), 1);
+        assert!(clean);
+        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -1165,8 +1321,9 @@ mod tests {
         let arena = comrak::Arena::new();
         let root = parse(&arena, markdown);
         let theme = test_theme();
+        let images = PreparedImages::default();
         let mut warnings = WarningCollector::new();
-        emit_typst(root, &theme, &mut warnings).0
+        emit_typst(root, &theme, &images, &mut warnings).0
     }
 
     #[test]
@@ -1233,15 +1390,17 @@ mod tests {
     #[test]
     fn emit_unordered_list() {
         let result = emit("- item one\n- item two");
-        assert!(result.contains("- item one"));
-        assert!(result.contains("- item two"));
+        assert!(result.contains("#list("));
+        assert!(result.contains("[item one]"));
+        assert!(result.contains("[item two]"));
     }
 
     #[test]
     fn emit_ordered_list() {
         let result = emit("1. first\n2. second");
-        assert!(result.contains("+ first"));
-        assert!(result.contains("+ second"));
+        assert!(result.contains("#enum("));
+        assert!(result.contains("enum.item(1)[first]"));
+        assert!(result.contains("enum.item(2)[second]"));
     }
 
     #[test]

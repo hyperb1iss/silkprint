@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 34
 expression: typst
 ---
 #set page(
@@ -121,6 +122,21 @@ expression: typst
   underline(it)
 }
 
+#set list(
+  indent: 20pt,
+  body-indent: 0.7em,
+  spacing: 0.15em,
+  marker: depth => if depth == 0 { [#text(fill: rgb("#544c6e"))[•]] } else if depth == 1 { [#text(fill: rgb("#544c6e"))[◦]] } else { [#text(fill: rgb("#544c6e"))[▪]] },
+)
+#set enum(
+  indent: 20pt,
+  body-indent: 0.7em,
+  spacing: 0.15em,
+)
+#set terms(indent: 20pt, hanging-indent: 20pt, spacing: 12pt, separator: h(4pt, weak: true))
+#let silkprint-task-marker(checked) = { let color = if checked { rgb("#256f4a") } else { rgb("#6b6085") }; let glyph = if checked { "☑" } else { "☐" }; box(width: 1.35em)[#text(size: 1.05em, fill: color)[#glyph]] }
+#let silkprint-term(body) = text(font: "Inter", weight: 600, fill: rgb("#a82890"))[#body]
+
 #show figure: set align(center)
 #show figure.caption: set text(font: "Inter", size: 9pt, style: "italic", fill: rgb("#6b6085"))
 #show figure: set figure(placement: none)
@@ -195,7 +211,7 @@ H#sub[2]O is water. E=mc#super[2] is famous.
 
 
 == Remote Image (should show placeholder)
-Build Status
+#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[#align(center)[#text(size: 0.85em, fill: luma(120))[\[image: Build Status\]]]]
 
 == Inline Code
 Use the `silkprint` command to render.

@@ -27,6 +27,10 @@ pub enum SilkprintWarning {
     RemoteImageSkipped {
         url: String,
     },
+    RemoteImageFetchFailed {
+        url: String,
+        message: String,
+    },
     MermaidRenderFailed {
         index: usize,
         message: String,
@@ -72,6 +76,9 @@ impl fmt::Display for SilkprintWarning {
             }
             Self::RemoteImageSkipped { url } => {
                 write!(f, "remote image skipped (not supported in v0.1): {url}")
+            }
+            Self::RemoteImageFetchFailed { url, message } => {
+                write!(f, "remote image fetch failed for '{url}': {message}")
             }
             Self::MermaidRenderFailed { index, message } => {
                 write!(f, "mermaid diagram {index} failed to render: {message}")

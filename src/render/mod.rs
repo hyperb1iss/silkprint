@@ -33,14 +33,21 @@ pub fn render_pipeline(
     let arena = comrak::Arena::new();
     let root = markdown::parse(&arena, body);
 
-    // 1b. Run content checks (remote images, unknown languages)
+    // 1b. Resolve image assets and run content checks.
+    let root_dir = input_path.and_then(Path::parent);
+    let prepared_images = image::PreparedImages::prepare(
+        root,
+        image::ImageMode::Compile,
+        root_dir,
+        warnings,
+    );
     markdown::check_content(root, warnings);
 
     // 2. Generate Typst preamble from theme + front matter + options
     let preamble = preamble::generate(theme, front_matter, options);
 
     // 3. Emit Typst content from AST (mermaid blocks become image refs)
-    let (content, mermaid_sources) = markdown::emit_typst(root, theme, warnings);
+    let (content, mermaid_sources) = markdown::emit_typst(root, theme, &prepared_images, warnings);
 
     // 3b. Render mermaid diagrams to SVGs (native Rust — always available)
     let mermaid_svgs = if mermaid_sources.is_empty() {
@@ -64,6 +71,7 @@ pub fn render_pipeline(
         root_dir,
         &options.font_dirs,
         &mermaid_svgs,
+        prepared_images.remote_assets(),
         warnings,
     )
 }
@@ -72,15 +80,23 @@ pub fn render_pipeline(
 pub fn render_to_typst_source(
     body: &str,
     front_matter: Option<&FrontMatter>,
+    input_path: Option<&Path>,
     options: &RenderOptions,
     theme: &ResolvedTheme,
     warnings: &mut WarningCollector,
 ) -> Result<String, SilkprintError> {
     let arena = comrak::Arena::new();
     let root = markdown::parse(&arena, body);
+    let prepared_images = image::PreparedImages::prepare(
+        root,
+        image::ImageMode::TypstOnly,
+        input_path.and_then(Path::parent),
+        warnings,
+    );
     markdown::check_content(root, warnings);
 
     let preamble = preamble::generate(theme, front_matter, options);
-    let (content, _mermaid_sources) = markdown::emit_typst(root, theme, warnings);
+    let (content, _mermaid_sources) =
+        markdown::emit_typst(root, theme, &prepared_images, warnings);
     Ok(format!("{preamble}\n\n{content}"))
 }

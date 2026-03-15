@@ -339,8 +339,9 @@ fn handle_check(input_path: &std::path::Path, options: &RenderOptions) -> miette
         }
     })?;
 
-    // Run the full pipeline up to Typst source generation (validates everything)
-    let (_typst_source, warnings) = silkprint::render_to_typst(&input, options)?;
+    // Run the full render pipeline so asset resolution and Typst compilation
+    // are validated as well.
+    let (_pdf_bytes, warnings) = silkprint::render(&input, Some(input_path), options)?;
     let elapsed = start.elapsed();
 
     display_warnings(&warnings);
@@ -369,7 +370,8 @@ fn handle_dump_typst(
         }
     })?;
 
-    let (typst_source, warnings) = silkprint::render_to_typst(&input, options)?;
+    let (typst_source, warnings) =
+        silkprint::render_to_typst_with_path(&input, Some(input_path), options)?;
 
     if !quiet {
         display_warnings(&warnings);
@@ -604,7 +606,7 @@ fn estimate_page_count(pdf_bytes: &[u8]) -> usize {
 /// Resolve the `ThemeSource` from the CLI `--theme` argument.
 fn resolve_theme_source(theme_arg: &str) -> ThemeSource {
     let path = std::path::Path::new(theme_arg);
-    if path.extension().is_some_and(|ext| ext == "toml") && path.exists() {
+    if path.extension().is_some_and(|ext| ext == "toml") {
         ThemeSource::Custom(path.to_path_buf())
     } else {
         ThemeSource::BuiltIn(theme_arg.to_string())
