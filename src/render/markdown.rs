@@ -1270,7 +1270,7 @@ mod tests {
     }
 
     #[test]
-    fn check_content_warns_remote_image() {
+    fn check_content_defers_remote_image_warnings() {
         let arena = comrak::Arena::new();
         let root = parse(&arena, "![alt](https://example.com/img.png)");
         let mut warnings = WarningCollector::new();

@@ -75,7 +75,7 @@ impl fmt::Display for SilkprintWarning {
                 )
             }
             Self::RemoteImageSkipped { url } => {
-                write!(f, "remote image skipped (not supported in v0.1): {url}")
+                write!(f, "remote image skipped for this render mode or target: {url}")
             }
             Self::RemoteImageFetchFailed { url, message } => {
                 write!(f, "remote image fetch failed for '{url}': {message}")

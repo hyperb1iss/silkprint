@@ -5,7 +5,7 @@
 //! - **Inline HTML**: `<strong>`, `<a>`, `<br>`, etc.
 //!
 //! This module parses HTML via `scraper` and emits equivalent Typst markup,
-//! pushing warnings for unsupported tags and remote images.
+//! pushing warnings for unsupported tags and image fallbacks when needed.
 
 use std::fmt::Write;
 
