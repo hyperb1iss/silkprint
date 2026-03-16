@@ -447,8 +447,8 @@ fn emit_link_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
 
 fn emit_list_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let indent = default_if_empty(&t.list.indent, "20pt");
-    let body_indent = "0.7em";
-    let item_spacing = "0.15em";
+    let body_indent = "0.9em";
+    let item_spacing = "0.28em";
     let bullet_color = default_if_empty(&t.list.bullet_color, &t.text.color);
     let task_checked_color = default_if_empty(&t.list.task_checked_color, &t.text.color);
     let task_unchecked_color = default_if_empty(&t.list.task_unchecked_color, &t.text.color);
@@ -486,7 +486,7 @@ fn emit_list_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     );
     let _ = writeln!(
         out,
-        "#let silkprint-task-marker(checked) = {{ let color = if checked {{ rgb(\"{task_checked_color}\") }} else {{ rgb(\"{task_unchecked_color}\") }}; let glyph = if checked {{ \"☑\" }} else {{ \"☐\" }}; box(width: 1.35em)[#text(size: 1.05em, fill: color)[#glyph]] }}"
+        "#let silkprint-task-marker(checked) = {{ let color = if checked {{ rgb(\"{task_checked_color}\") }} else {{ rgb(\"{task_unchecked_color}\") }}; let glyph = if checked {{ \"☑\" }} else {{ \"☐\" }}; box(width: 1.5em)[#text(size: 1.1em, fill: color)[#glyph]] }}"
     );
     let _ = writeln!(
         out,
@@ -677,6 +677,8 @@ fn emit_footnote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let num_color = default_if_empty(&t.footnotes.number_color, "#4a5dbd");
 
     out.push_str("#show footnote.entry: it => {\n");
+    out.push_str("  let loc = it.note.location()\n");
+    out.push_str("  let num = numbering(\"1\", ..counter(footnote).at(loc))\n");
     let _ = writeln!(
         out,
         "  line(length: {sep_width}, stroke: 0.5pt + rgb(\"{sep_color}\"))"
@@ -685,7 +687,7 @@ fn emit_footnote_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     let _ = writeln!(out, "  set text(size: {text_size})");
     let _ = writeln!(
         out,
-        "  [#text(fill: rgb(\"{num_color}\"))[#it.note.counter.display()] #it.note.body]"
+        "  [#text(fill: rgb(\"{num_color}\"))[#num] #it.note.body]"
     );
     out.push_str("}\n");
 }

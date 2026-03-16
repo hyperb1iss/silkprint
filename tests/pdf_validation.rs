@@ -103,3 +103,13 @@ fn test_pdf_minimal_renders() {
         "minimal PDF should have at least one page"
     );
 }
+
+#[test]
+fn test_pdf_full_features_renders() {
+    let bytes = render_fixture_to_pdf("full-features.md");
+    let doc = Document::load_mem(&bytes).expect("full-features PDF should parse");
+    assert!(
+        !doc.get_pages().is_empty(),
+        "full-features PDF should have at least one page"
+    );
+}

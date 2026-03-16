@@ -124,17 +124,17 @@ expression: typst
 
 #set list(
   indent: 20pt,
-  body-indent: 0.7em,
-  spacing: 0.15em,
+  body-indent: 0.9em,
+  spacing: 0.28em,
   marker: depth => if depth == 0 { [#text(fill: rgb("#544c6e"))[•]] } else if depth == 1 { [#text(fill: rgb("#544c6e"))[◦]] } else { [#text(fill: rgb("#544c6e"))[▪]] },
 )
 #set enum(
   indent: 20pt,
-  body-indent: 0.7em,
-  spacing: 0.15em,
+  body-indent: 0.9em,
+  spacing: 0.28em,
 )
 #set terms(indent: 20pt, hanging-indent: 20pt, spacing: 12pt, separator: h(4pt, weak: true))
-#let silkprint-task-marker(checked) = { let color = if checked { rgb("#256f4a") } else { rgb("#6b6085") }; let glyph = if checked { "☑" } else { "☐" }; box(width: 1.35em)[#text(size: 1.05em, fill: color)[#glyph]] }
+#let silkprint-task-marker(checked) = { let color = if checked { rgb("#256f4a") } else { rgb("#6b6085") }; let glyph = if checked { "☑" } else { "☐" }; box(width: 1.5em)[#text(size: 1.1em, fill: color)[#glyph]] }
 #let silkprint-term(body) = text(font: "Inter", weight: 600, fill: rgb("#a82890"))[#body]
 
 #show figure: set align(center)
@@ -163,10 +163,12 @@ expression: typst
 #show table.cell.where(y: 0): set table.cell(stroke: (bottom: 1.5pt + rgb("#1565c0")))
 
 #show footnote.entry: it => {
+  let loc = it.note.location()
+  let num = numbering("1", ..counter(footnote).at(loc))
   line(length: 33%, stroke: 0.5pt + rgb("#d8d0ea"))
   v(4pt)
   set text(size: 9pt)
-  [#text(fill: rgb("#1565c0"))[#it.note.counter.display()] #it.note.body]
+  [#text(fill: rgb("#1565c0"))[#num] #it.note.body]
 }
 
 
