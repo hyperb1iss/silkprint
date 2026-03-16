@@ -38,10 +38,123 @@ pub fn comrak_options() -> Options<'static> {
     options
 }
 
+/// Normalize SilkPrint-specific markdown quirks before handing content to Comrak.
+///
+/// Standalone Typst-style display equations written as `$ ... $` on their own
+/// lines are promoted to `$$ ... $$` so Comrak parses them as math blocks
+/// instead of regular paragraphs with escaped dollar signs.
+fn normalize_markdown(input: &str) -> String {
+    let lines: Vec<_> = input.lines().collect();
+    let has_trailing_newline = input.ends_with('\n');
+    let mut normalized = Vec::with_capacity(lines.len());
+    let mut fenced_code_delimiter: Option<&str> = None;
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed_start = line.trim_start();
+
+        if let Some(delimiter) = code_fence_delimiter(trimmed_start) {
+            match fenced_code_delimiter {
+                Some(active) if active == delimiter => fenced_code_delimiter = None,
+                None => fenced_code_delimiter = Some(delimiter),
+                Some(_) => {}
+            }
+            normalized.push(line.to_string());
+            index += 1;
+            continue;
+        }
+
+        if fenced_code_delimiter.is_some() || line.trim().is_empty() {
+            normalized.push(line.to_string());
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        while index < lines.len() {
+            let current = lines[index];
+            if current.trim().is_empty() {
+                break;
+            }
+            if code_fence_delimiter(current.trim_start()).is_some() {
+                break;
+            }
+            index += 1;
+        }
+
+        let block = &lines[start..index];
+        if should_promote_display_math_block(block) {
+            normalized.extend(promote_display_math_block(block));
+        } else {
+            normalized.extend(block.iter().map(|line| (*line).to_string()));
+        }
+    }
+
+    let mut output = normalized.join("\n");
+    if has_trailing_newline {
+        output.push('\n');
+    }
+    output
+}
+
+fn code_fence_delimiter(line: &str) -> Option<&str> {
+    ["```", "~~~"]
+        .into_iter()
+        .find(|delimiter| line.starts_with(delimiter))
+}
+
+fn should_promote_display_math_block(lines: &[&str]) -> bool {
+    let Some(first) = lines.first() else {
+        return false;
+    };
+    let Some(last) = lines.last() else {
+        return false;
+    };
+
+    let first = first.trim_start();
+    let last = last.trim_end();
+
+    if !first.starts_with('$') || !last.ends_with('$') {
+        return false;
+    }
+
+    if first.starts_with("$$") || last.ends_with("$$") {
+        return false;
+    }
+
+    let dollar_count = lines.iter().map(|line| line.matches('$').count()).sum::<usize>();
+    if dollar_count != 2 {
+        return false;
+    }
+    true
+}
+
+fn promote_display_math_block(lines: &[&str]) -> Vec<String> {
+    let mut promoted = lines
+        .iter()
+        .map(|line| (*line).to_string())
+        .collect::<Vec<_>>();
+
+    let first_idx = promoted[0]
+        .find('$')
+        .expect("display math block should start with '$'");
+    promoted[0].replace_range(first_idx..=first_idx, "$$");
+
+    let last_line = promoted.len() - 1;
+    let last_idx = promoted[last_line]
+        .rfind('$')
+        .expect("display math block should end with '$'");
+    promoted[last_line].replace_range(last_idx..=last_idx, "$$");
+
+    promoted
+}
+
 /// Parse markdown into a comrak AST.
 pub fn parse<'a>(arena: &'a comrak::Arena<'a>, input: &str) -> &'a AstNode<'a> {
     let options = comrak_options();
-    comrak::parse_document(arena, input, &options)
+    let normalized = normalize_markdown(input);
+    comrak::parse_document(arena, &normalized, &options)
 }
 
 /// Walk a comrak AST and emit Typst markup.
@@ -1270,6 +1383,32 @@ mod tests {
     }
 
     #[test]
+    fn normalize_promotes_standalone_single_dollar_math() {
+        let input = "Before\n\n$ integral_0^infinity e^(-x) dif x = 1 $\n\nAfter\n";
+        let normalized = normalize_markdown(input);
+        assert!(normalized.contains("$$ integral_0^infinity e^(-x) dif x = 1 $$"));
+    }
+
+    #[test]
+    fn normalize_promotes_multiline_single_dollar_math() {
+        let input = "$ f(x) &= x^2 + 2x + 1 \\\n  &= (x + 1)^2 $\n";
+        let normalized = normalize_markdown(input);
+        assert_eq!(normalized, "$$ f(x) &= x^2 + 2x + 1 \\\n  &= (x + 1)^2 $$\n");
+    }
+
+    #[test]
+    fn normalize_keeps_inline_math_untouched() {
+        let input = "Euler's identity is $e^(i pi) + 1 = 0$.";
+        assert_eq!(normalize_markdown(input), input);
+    }
+
+    #[test]
+    fn normalize_keeps_code_fence_math_untouched() {
+        let input = "```typ\n$ x = y $\n```\n";
+        assert_eq!(normalize_markdown(input), input);
+    }
+
+    #[test]
     fn check_content_defers_remote_image_warnings() {
         let arena = comrak::Arena::new();
         let root = parse(&arena, "![alt](https://example.com/img.png)");
@@ -1405,7 +1544,7 @@ mod tests {
 
     #[test]
     fn emit_inline_math() {
-        let result = emit("$x^2$");
+        let result = emit("Inline math: $x^2$.");
         assert!(result.contains("$x^2$"));
     }
 
@@ -1413,6 +1552,14 @@ mod tests {
     fn emit_display_math() {
         let result = emit("$$\nE = mc^2\n$$");
         assert!(result.contains("$ E = mc^2 $"));
+    }
+
+    #[test]
+    fn emit_standalone_single_dollar_math_as_display() {
+        let result = emit("$ integral_0^infinity e^(-x) dif x = 1 $");
+        assert!(result.contains("$ integral_0^infinity e^(-x) dif x = 1 $"));
+        assert!(!result.contains("\\$"));
+        assert!(!result.contains("#super["));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 mod native {
     use rust_embed::RustEmbed;
 
-    /// Core text fonts (Inter, Source Serif 4, `JetBrains` Mono).
+    /// Core bundled fonts for text, code, and math.
     #[derive(RustEmbed)]
     #[folder = "fonts/core/"]
     struct CoreFonts;

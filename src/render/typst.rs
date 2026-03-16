@@ -234,7 +234,7 @@ pub fn compile_to_pdf(
     remote_images: &HashMap<String, Vec<u8>>,
     _warnings: &mut WarningCollector,
 ) -> Result<Vec<u8>, SilkprintError> {
-    // Load bundled fonts (Inter, Source Serif 4, JetBrains Mono)
+    // Load bundled fonts (text, code, emoji, and math coverage)
     // `mut` needed on native to extend with user font directories.
     #[allow(unused_mut)]
     let mut font_data = crate::fonts::load_bundled_fonts();

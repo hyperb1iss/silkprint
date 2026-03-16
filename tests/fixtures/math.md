@@ -63,7 +63,7 @@ Operators: $plus.minus, times, div, eq.not, lt.eq, gt.eq, approx, prop$.
 
 Arrows: $arrow.r, arrow.l, arrow.r.double, arrow.l.r$.
 
-Sets: $in, in.not, subset, union, sect, emptyset$.
+Sets: $in, in.not, subset, union, inter, emptyset$.
 
 ## Multi-line Equations
 

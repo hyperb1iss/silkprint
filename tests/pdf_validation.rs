@@ -113,3 +113,13 @@ fn test_pdf_full_features_renders() {
         "full-features PDF should have at least one page"
     );
 }
+
+#[test]
+fn test_pdf_math_fixture_renders() {
+    let bytes = render_fixture_to_pdf("math.md");
+    let doc = Document::load_mem(&bytes).expect("math PDF should parse");
+    assert!(
+        !doc.get_pages().is_empty(),
+        "math PDF should have at least one page"
+    );
+}
