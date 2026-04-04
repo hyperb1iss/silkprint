@@ -35,15 +35,25 @@ mod wasm {
     use std::cell::RefCell;
 
     thread_local! {
-        static EXTERNAL_FONTS: RefCell<Vec<Vec<u8>>> = RefCell::new(Vec::new());
+        static EXTERNAL_FONTS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
     }
 
     /// Register a font loaded from JS. Called once per font file before rendering.
     pub fn add_external_font(data: Vec<u8>) {
-        EXTERNAL_FONTS.with(|fonts| fonts.borrow_mut().push(data));
+        EXTERNAL_FONTS.with(|fonts| {
+            let mut fonts = fonts.borrow_mut();
+            if fonts.iter().all(|existing| existing != &data) {
+                fonts.push(data);
+            }
+        });
     }
 
-    /// Drain all externally registered fonts into the Typst font pool.
+    /// Clear all externally registered fonts.
+    pub fn clear_external_fonts() {
+        EXTERNAL_FONTS.with(|fonts| fonts.borrow_mut().clear());
+    }
+
+    /// Clone all externally registered fonts into the Typst font pool.
     pub fn load_bundled_fonts() -> Vec<Vec<u8>> {
         EXTERNAL_FONTS.with(|fonts| {
             let stored = fonts.borrow();
@@ -64,6 +74,14 @@ pub use wasm::load_bundled_fonts;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::add_external_font;
 
+/// Clear previously registered fonts (WASM only — no-op on native).
+#[cfg(target_arch = "wasm32")]
+pub use wasm::clear_external_fonts;
+
 /// No-op on native — fonts are embedded at compile time.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn add_external_font(_data: Vec<u8>) {}
+
+/// No-op on native — fonts are embedded at compile time.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn clear_external_fonts() {}

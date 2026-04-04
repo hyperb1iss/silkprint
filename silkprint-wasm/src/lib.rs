@@ -1,5 +1,5 @@
 use silkprint::error::SilkprintError;
-use silkprint::fonts::add_external_font;
+use silkprint::fonts::{add_external_font, clear_external_fonts};
 use wasm_bindgen::prelude::*;
 
 /// Register a font file for use by the renderer.
@@ -9,6 +9,14 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 pub fn register_font(data: &[u8]) {
     add_external_font(data.to_vec());
+}
+
+/// Clear all previously registered fonts.
+///
+/// Useful for hot reload flows or when swapping font sets at runtime.
+#[wasm_bindgen]
+pub fn reset_fonts() {
+    clear_external_fonts();
 }
 
 /// Format a SilkprintError with full diagnostics for display in the browser.

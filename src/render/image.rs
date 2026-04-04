@@ -9,6 +9,7 @@ use crate::warnings::{SilkprintWarning, WarningCollector};
 /// Virtual path prefix for downloaded remote images served through the Typst world.
 pub const REMOTE_IMAGE_VPATH_PREFIX: &str = "/__remote_image_";
 
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_REMOTE_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +59,7 @@ impl PreparedImages {
                     &mut next_remote_index,
                 ),
                 NodeValue::HtmlInline(html) if html.contains("<img") => {
-                    prepared.prepare_html(html, mode, root_dir, warnings, &mut next_remote_index)
+                    prepared.prepare_html(html, mode, root_dir, warnings, &mut next_remote_index);
                 }
                 _ => {}
             }
@@ -117,15 +118,26 @@ impl PreparedImages {
                 PreparedImage::Missing
             }
         } else {
-            let path = Path::new(src);
-            if path.is_absolute() && !path.exists() {
+            #[cfg(target_arch = "wasm32")]
+            {
                 warnings.push(SilkprintWarning::ImageNotFound {
                     path: src.to_string(),
                 });
                 PreparedImage::Missing
-            } else {
-                PreparedImage::Available {
-                    typst_path: src.to_string(),
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let path = Path::new(src);
+                if path.is_absolute() && !path.exists() {
+                    warnings.push(SilkprintWarning::ImageNotFound {
+                        path: src.to_string(),
+                    });
+                    PreparedImage::Missing
+                } else {
+                    PreparedImage::Available {
+                        typst_path: src.to_string(),
+                    }
                 }
             }
         };
@@ -150,6 +162,7 @@ impl PreparedImages {
             ImageMode::Compile => {
                 #[cfg(target_arch = "wasm32")]
                 {
+                    let _ = next_remote_index;
                     warnings.push(SilkprintWarning::RemoteImageSkipped {
                         url: src.to_string(),
                     });
@@ -260,6 +273,7 @@ fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
     Ok((bytes, ext.to_string()))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn detect_image_extension(bytes: &[u8], content_type: &str, url: &str) -> Option<&'static str> {
     let normalized_content_type = content_type
         .split(';')
@@ -296,6 +310,7 @@ fn detect_image_extension(bytes: &[u8], content_type: &str, url: &str) -> Option
     extension_from_url(url)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn looks_like_svg(bytes: &[u8]) -> bool {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return false;
@@ -305,6 +320,7 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
     trimmed.starts_with("<svg") || (trimmed.starts_with("<?xml") && trimmed.contains("<svg"))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extension_from_url(url: &str) -> Option<&'static str> {
     let without_fragment = url.split('#').next().unwrap_or(url);
     let without_query = without_fragment

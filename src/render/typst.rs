@@ -240,6 +240,14 @@ pub fn compile_to_pdf(
     let mut font_data = crate::fonts::load_bundled_fonts();
     tracing::debug!(font_files = font_data.len(), "loaded bundled font files");
 
+    #[cfg(target_arch = "wasm32")]
+    if font_data.is_empty() {
+        return Err(SilkprintError::RenderFailed {
+            details: "no fonts registered for the WASM renderer".to_string(),
+            hint: "Call register_font(...) for the active theme fonts before rendering. Built-in themes expect Inter, Source Serif 4, and JetBrains Mono.".to_string(),
+        });
+    }
+
     // Load fonts from user-specified directories (not available on WASM)
     #[cfg(not(target_arch = "wasm32"))]
     for dir in font_dirs {

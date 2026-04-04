@@ -304,8 +304,7 @@ fn emit_image(
     out: &mut String,
     images: &PreparedImages,
     warnings: &mut WarningCollector,
-    #[cfg(not(target_arch = "wasm32"))] ctx: Context,
-    #[cfg(target_arch = "wasm32")] _ctx: Context,
+    ctx: Context,
 ) {
     let src = el.attr("src").unwrap_or("");
     let alt = el.attr("alt").unwrap_or("");
@@ -565,7 +564,6 @@ fn heading_level(tag: &str) -> usize {
 ///
 /// A4 text area with 25mm margins is ~160mm = ~454pt. Values above this
 /// would overflow the page, so we clamp them to `100%` instead.
-#[cfg(not(target_arch = "wasm32"))]
 const MAX_IMAGE_PT: f64 = 454.0;
 
 /// Parse the `width` attribute of an `<img>` into a Typst width expression.
@@ -573,7 +571,6 @@ const MAX_IMAGE_PT: f64 = 454.0;
 /// - `"50%"` -> `Some("50%")`
 /// - `"200"` or `"200px"` -> `Some("200pt")` (capped at page width)
 /// - absent -> `None` (image uses its natural size, capped by available width)
-#[cfg(not(target_arch = "wasm32"))]
 fn parse_image_width(el: &Element) -> Option<String> {
     let raw = el.attr("width")?;
     let trimmed = raw.trim();
