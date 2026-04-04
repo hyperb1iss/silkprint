@@ -17,6 +17,7 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageCanvases, setPageCanvases] = useState<HTMLCanvasElement[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const pdfBytesRef = useRef<Uint8Array | null>(null);
 
   const renderPdf = useCallback(async (bytes: Uint8Array) => {
     try {
@@ -33,7 +34,8 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
       const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
       const canvases: HTMLCanvasElement[] = [];
 
-      const containerWidth = containerRef.current?.clientWidth ?? 600;
+      const containerWidth = containerRef.current?.clientWidth ?? 0;
+      if (containerWidth === 0) return;
       // Tighter padding on small containers (mobile)
       const padding = containerWidth < 480 ? 16 : 32;
       const targetWidth = containerWidth - padding;
@@ -49,8 +51,8 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
         const canvas = document.createElement('canvas');
         canvas.width = scaledViewport.width * 2; // 2x for retina
         canvas.height = scaledViewport.height * 2;
-        canvas.style.width = `${scaledViewport.width}px`;
-        canvas.style.height = `${scaledViewport.height}px`;
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -72,6 +74,11 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
     }
   }, []);
 
+  // Keep a ref to latest bytes for resize re-renders
+  useEffect(() => {
+    pdfBytesRef.current = pdfBytes;
+  }, [pdfBytes]);
+
   useEffect(() => {
     if (pdfBytes && pdfBytes.length > 0) {
       renderPdf(pdfBytes);
@@ -79,6 +86,29 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
       setPageCanvases([]);
     }
   }, [pdfBytes, renderPdf]);
+
+  // Re-render on container resize (orientation change, viewport resize)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const bytes = pdfBytesRef.current;
+        if (bytes && bytes.length > 0) {
+          renderPdf(bytes);
+        }
+      }, 200);
+    });
+    observer.observe(el);
+
+    return () => {
+      clearTimeout(debounceTimer);
+      observer.disconnect();
+    };
+  }, [renderPdf]);
 
   if (error) {
     return (
@@ -92,15 +122,15 @@ export function PdfPreview({ pdfBytes, className = '' }: PdfPreviewProps) {
   }
 
   if (pageCanvases.length === 0) {
-    return null;
+    return <div ref={containerRef} className={className} />;
   }
 
   return (
-    <div ref={containerRef} className={`flex flex-col items-center gap-4 ${className}`}>
+    <div ref={containerRef} className={`flex w-full flex-col items-center gap-4 ${className}`}>
       {pageCanvases.map((canvas, i) => (
         <div
           key={i}
-          className="overflow-hidden rounded shadow-xl"
+          className="w-full max-w-full overflow-hidden rounded shadow-xl"
           ref={el => {
             if (el && !el.contains(canvas)) {
               el.innerHTML = '';

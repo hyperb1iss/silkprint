@@ -7,7 +7,7 @@ import { ThemeGallery } from '@/components/theme-gallery';
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-sc-bg">
+    <div className="min-h-screen overflow-x-hidden bg-sc-bg">
       <Header />
       <Hero />
       <Editor />

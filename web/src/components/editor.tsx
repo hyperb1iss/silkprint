@@ -193,7 +193,7 @@ export function Editor() {
       {/* Editor / Preview split */}
       <div className="glow-border grid grid-cols-1 overflow-hidden rounded-xl bg-sc-bg-dark sm:rounded-2xl lg:grid-cols-2">
         {/* Markdown input */}
-        <div className="flex flex-col border-b border-sc-cyan/10 lg:border-b-0 lg:border-r">
+        <div className="flex min-w-0 flex-col border-b border-sc-cyan/10 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between border-b border-sc-cyan/10 px-3 py-2 sm:px-4 sm:py-2.5">
             <div className="flex items-center gap-2">
               <div className="hidden gap-1.5 sm:flex">
@@ -245,7 +245,7 @@ export function Editor() {
         </div>
 
         {/* Preview panel */}
-        <div className="flex flex-col">
+        <div className="flex min-w-0 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b border-sc-cyan/10 px-3 py-2 sm:px-4 sm:py-2.5">
             <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
               <span className="shrink-0 text-xs font-medium text-sc-fg-dim">Preview</span>
@@ -283,7 +283,7 @@ export function Editor() {
           </div>
 
           {/* Preview content */}
-          <div className="editor-scrollbar h-[40vh] overflow-y-auto md:h-[50vh] lg:h-[70vh]">
+          <div className="editor-scrollbar h-[40vh] overflow-x-hidden overflow-y-auto md:h-[50vh] lg:h-[70vh]">
             {engineState.status === 'loading' && (
               <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
                 <LoadingSpinner />
