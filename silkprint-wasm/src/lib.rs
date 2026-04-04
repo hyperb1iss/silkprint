@@ -1,6 +1,17 @@
+use serde::Serialize;
 use silkprint::error::SilkprintError;
 use silkprint::fonts::{add_external_font, clear_external_fonts};
 use wasm_bindgen::prelude::*;
+
+#[derive(Debug, Serialize)]
+struct WasmThemeInfo<'a> {
+    name: &'a str,
+    variant: &'a str,
+    description: &'a str,
+    family: &'a str,
+    #[serde(rename = "printSafe")]
+    print_safe: bool,
+}
 
 /// Register a font file for use by the renderer.
 ///
@@ -33,6 +44,34 @@ fn format_error(e: &SilkprintError) -> String {
         }
         other => other.to_string(),
     }
+}
+
+fn to_js_value<T>(value: &T) -> Result<JsValue, JsError>
+where
+    T: Serialize,
+{
+    serde_wasm_bindgen::to_value(value)
+        .map_err(|err| JsError::new(&format!("failed to serialize WASM value: {err}")))
+}
+
+fn theme_names() -> Vec<&'static str> {
+    silkprint::theme::builtin::list_themes()
+        .iter()
+        .map(|theme| theme.name)
+        .collect()
+}
+
+fn detailed_themes() -> Vec<WasmThemeInfo<'static>> {
+    silkprint::theme::builtin::list_themes()
+        .iter()
+        .map(|theme| WasmThemeInfo {
+            name: theme.name,
+            variant: theme.variant,
+            description: theme.description,
+            family: theme.family,
+            print_safe: theme.print_safe,
+        })
+        .collect()
 }
 
 /// Render markdown to PDF bytes using a built-in theme.
@@ -92,14 +131,26 @@ pub fn render_to_typst(markdown: &str, theme_name: &str) -> Result<String, JsErr
     Ok(typst_source)
 }
 
+/// Get all available theme names as a JavaScript array.
+#[wasm_bindgen]
+pub fn list_themes() -> Result<JsValue, JsError> {
+    to_js_value(&theme_names())
+}
+
+/// Get detailed theme metadata as structured JavaScript objects.
+#[wasm_bindgen]
+pub fn list_themes_structured() -> Result<JsValue, JsError> {
+    to_js_value(&detailed_themes())
+}
+
 /// Get all available theme names as a JSON array string.
 ///
 /// Returns `["silk-light","silk-dark","silkcircuit-neon",...]`
 #[wasm_bindgen]
 pub fn list_themes_json() -> String {
-    let themes = silkprint::theme::builtin::list_themes();
-    let entries: Vec<String> = themes.iter().map(|t| format!("\"{}\"", t.name)).collect();
-    format!("[{}]", entries.join(","))
+    serde_json::to_string(&theme_names())
+        .ok()
+        .unwrap_or_else(|| "[]".to_string())
 }
 
 /// Get detailed theme metadata as JSON.
@@ -107,18 +158,7 @@ pub fn list_themes_json() -> String {
 /// Returns an array of `{name, variant, description, print_safe}` objects.
 #[wasm_bindgen]
 pub fn list_themes_detailed() -> String {
-    let themes = silkprint::theme::builtin::list_themes();
-    let entries: Vec<String> = themes
-        .iter()
-        .map(|t| {
-            format!(
-                "{{\"name\":\"{}\",\"variant\":\"{}\",\"description\":\"{}\",\"printSafe\":{}}}",
-                t.name,
-                t.variant,
-                t.description.replace('"', "\\\""),
-                t.print_safe,
-            )
-        })
-        .collect();
-    format!("[{}]", entries.join(","))
+    serde_json::to_string(&detailed_themes())
+        .ok()
+        .unwrap_or_else(|| "[]".to_string())
 }

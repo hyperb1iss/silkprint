@@ -6,29 +6,56 @@ let initPromise: Promise<InitOutput> | null = null;
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 const FONT_FILES = [
-  'inter/Inter-Regular.ttf',
-  'inter/Inter-Medium.ttf',
-  'inter/Inter-SemiBold.ttf',
-  'inter/Inter-Bold.ttf',
-  'source-serif/SourceSerif4-Regular.ttf',
-  'source-serif/SourceSerif4-Italic.ttf',
-  'source-serif/SourceSerif4-SemiBold.ttf',
-  'source-serif/SourceSerif4-Bold.ttf',
-  'jetbrains-mono/JetBrainsMono-Regular.ttf',
-  'jetbrains-mono/JetBrainsMono-Italic.ttf',
-  'jetbrains-mono/JetBrainsMono-Bold.ttf',
-  'jetbrains-mono/JetBrainsMono-BoldItalic.ttf',
-  'noto-emoji/NotoColorEmoji.ttf',
-];
+  { path: 'inter/Inter-Regular.ttf', required: true },
+  { path: 'inter/Inter-Medium.ttf', required: true },
+  { path: 'inter/Inter-SemiBold.ttf', required: true },
+  { path: 'inter/Inter-Bold.ttf', required: true },
+  { path: 'source-serif/SourceSerif4-Regular.ttf', required: true },
+  { path: 'source-serif/SourceSerif4-Italic.ttf', required: true },
+  { path: 'source-serif/SourceSerif4-SemiBold.ttf', required: true },
+  { path: 'source-serif/SourceSerif4-Bold.ttf', required: true },
+  { path: 'jetbrains-mono/JetBrainsMono-Regular.ttf', required: true },
+  { path: 'jetbrains-mono/JetBrainsMono-Italic.ttf', required: true },
+  { path: 'jetbrains-mono/JetBrainsMono-Bold.ttf', required: true },
+  { path: 'jetbrains-mono/JetBrainsMono-BoldItalic.ttf', required: true },
+  { path: 'noto-emoji/NotoColorEmoji.ttf', required: false },
+] as const;
+
+async function fetchRequired(url: string): Promise<Response> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+  }
+
+  return response;
+}
+
+async function fetchArrayBuffer(url: string): Promise<ArrayBuffer> {
+  const response = await fetchRequired(url);
+  return response.arrayBuffer();
+}
+
+async function fetchOptionalArrayBuffer(url: string): Promise<ArrayBuffer | null> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.arrayBuffer();
+}
 
 // Pre-warm: start all fetches immediately on module load.
-// WASM + 12 fonts download in parallel over HTTP/2.
+// WASM + bundled fonts download in parallel over HTTP/2.
 const wasmFetchPromise: Promise<Response> | null =
-  typeof window !== 'undefined' ? fetch(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`) : null;
+  typeof window !== 'undefined' ? fetchRequired(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`) : null;
 
-const fontFetchPromises: Promise<ArrayBuffer>[] =
+const fontFetchPromises: Promise<ArrayBuffer | null>[] =
   typeof window !== 'undefined'
-    ? FONT_FILES.map(f => fetch(`${BASE_PATH}/fonts/${f}`).then(r => r.arrayBuffer()))
+    ? FONT_FILES.map(async ({ path, required }) => {
+        const url = `${BASE_PATH}/fonts/${path}`;
+        const buffer = required ? await fetchArrayBuffer(url) : await fetchOptionalArrayBuffer(url);
+        return buffer;
+      })
     : [];
 
 /**
@@ -42,21 +69,31 @@ async function ensureInit(): Promise<InitOutput> {
 
   if (!initPromise) {
     initPromise = (async () => {
-      const [wasm, fontBuffers] = await Promise.all([
-        import('./wasm/silkprint_wasm'),
-        Promise.all(fontFetchPromises),
-      ]);
+      try {
+        const [wasm, fontBuffers] = await Promise.all([
+          import('./wasm/silkprint_wasm'),
+          Promise.all(fontFetchPromises),
+        ]);
 
-      const source = wasmFetchPromise ?? fetch(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`);
-      const output = await wasm.default({ module_or_path: await source });
+        const source =
+          wasmFetchPromise ?? fetchRequired(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`);
+        const output = await wasm.default({ module_or_path: await source });
 
-      // Register all fonts before first render
-      for (const buf of fontBuffers) {
-        wasm.register_font(new Uint8Array(buf));
+        // Reset first so retries or hot reloads don't accumulate duplicate blobs.
+        wasm.reset_fonts();
+
+        for (const buf of fontBuffers) {
+          if (!buf) continue;
+          wasm.register_font(new Uint8Array(buf));
+        }
+
+        wasmModule = output;
+        return output;
+      } catch (error) {
+        initPromise = null;
+        wasmModule = null;
+        throw error;
       }
-
-      wasmModule = output;
-      return output;
     })();
   }
 
@@ -98,7 +135,8 @@ export interface ThemeInfo {
   name: string;
   variant: string;
   description: string;
-  print_safe: boolean;
+  family: string;
+  printSafe: boolean;
 }
 
 /**
@@ -107,7 +145,7 @@ export interface ThemeInfo {
 export async function listThemes(): Promise<string[]> {
   await ensureInit();
   const wasm = await import('./wasm/silkprint_wasm');
-  return JSON.parse(wasm.list_themes_json()) as string[];
+  return wasm.list_themes() as string[];
 }
 
 /**
@@ -116,5 +154,5 @@ export async function listThemes(): Promise<string[]> {
 export async function listThemesDetailed(): Promise<ThemeInfo[]> {
   await ensureInit();
   const wasm = await import('./wasm/silkprint_wasm');
-  return JSON.parse(wasm.list_themes_detailed()) as ThemeInfo[];
+  return wasm.list_themes_structured() as ThemeInfo[];
 }
