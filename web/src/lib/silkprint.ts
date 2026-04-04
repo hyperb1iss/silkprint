@@ -18,6 +18,7 @@ const FONT_FILES = [
   'jetbrains-mono/JetBrainsMono-Italic.ttf',
   'jetbrains-mono/JetBrainsMono-Bold.ttf',
   'jetbrains-mono/JetBrainsMono-BoldItalic.ttf',
+  'noto-emoji/NotoColorEmoji.ttf',
 ];
 
 // Pre-warm: start all fetches immediately on module load.

@@ -35,12 +35,8 @@ pub fn render_pipeline(
 
     // 1b. Resolve image assets and run content checks.
     let root_dir = input_path.and_then(Path::parent);
-    let prepared_images = image::PreparedImages::prepare(
-        root,
-        image::ImageMode::Compile,
-        root_dir,
-        warnings,
-    );
+    let prepared_images =
+        image::PreparedImages::prepare(root, image::ImageMode::Compile, root_dir, warnings);
     markdown::check_content(root, warnings);
 
     // 2. Generate Typst preamble from theme + front matter + options
@@ -96,7 +92,6 @@ pub fn render_to_typst_source(
     markdown::check_content(root, warnings);
 
     let preamble = preamble::generate(theme, front_matter, options);
-    let (content, _mermaid_sources) =
-        markdown::emit_typst(root, theme, &prepared_images, warnings);
+    let (content, _mermaid_sources) = markdown::emit_typst(root, theme, &prepared_images, warnings);
     Ok(format!("{preamble}\n\n{content}"))
 }

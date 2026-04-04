@@ -203,7 +203,7 @@ This has *bold* and _italic_ text.
 
 
 == Line Break and Horizontal Rule
-Line one\
+Line one#linebreak()
 Line two
 
 #line(length: 100%)

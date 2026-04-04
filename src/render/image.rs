@@ -57,13 +57,9 @@ impl PreparedImages {
                     warnings,
                     &mut next_remote_index,
                 ),
-                NodeValue::HtmlInline(html) if html.contains("<img") => prepared.prepare_html(
-                    html,
-                    mode,
-                    root_dir,
-                    warnings,
-                    &mut next_remote_index,
-                ),
+                NodeValue::HtmlInline(html) if html.contains("<img") => {
+                    prepared.prepare_html(html, mode, root_dir, warnings, &mut next_remote_index)
+                }
                 _ => {}
             }
         }
@@ -164,9 +160,8 @@ impl PreparedImages {
                 {
                     match fetch_remote_image(src) {
                         Ok((bytes, ext)) => {
-                            let vpath = format!(
-                                "{REMOTE_IMAGE_VPATH_PREFIX}{next_remote_index}.{ext}"
-                            );
+                            let vpath =
+                                format!("{REMOTE_IMAGE_VPATH_PREFIX}{next_remote_index}.{ext}");
                             *next_remote_index += 1;
                             self.remote_assets.insert(vpath.clone(), bytes);
                             self.images.insert(
@@ -238,7 +233,10 @@ fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
 
     let mut response = agent
         .get(url)
-        .header("User-Agent", concat!("silkprint/", env!("CARGO_PKG_VERSION")))
+        .header(
+            "User-Agent",
+            concat!("silkprint/", env!("CARGO_PKG_VERSION")),
+        )
         .call()
         .map_err(|err| err.to_string())?;
 
@@ -304,13 +302,15 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
     };
 
     let trimmed = text.trim_start();
-    trimmed.starts_with("<svg")
-        || (trimmed.starts_with("<?xml") && trimmed.contains("<svg"))
+    trimmed.starts_with("<svg") || (trimmed.starts_with("<?xml") && trimmed.contains("<svg"))
 }
 
 fn extension_from_url(url: &str) -> Option<&'static str> {
     let without_fragment = url.split('#').next().unwrap_or(url);
-    let without_query = without_fragment.split('?').next().unwrap_or(without_fragment);
+    let without_query = without_fragment
+        .split('?')
+        .next()
+        .unwrap_or(without_fragment);
     let path = without_query.rsplit('/').next().unwrap_or(without_query);
     let extension = Path::new(path)
         .extension()
@@ -357,7 +357,11 @@ mod tests {
     fn detects_png_extension_from_signature() {
         let bytes = b"\x89PNG\r\n\x1a\nrest";
         assert_eq!(
-            detect_image_extension(bytes, "application/octet-stream", "https://example.com/file"),
+            detect_image_extension(
+                bytes,
+                "application/octet-stream",
+                "https://example.com/file"
+            ),
             Some("png")
         );
     }

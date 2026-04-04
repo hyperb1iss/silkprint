@@ -175,8 +175,7 @@ fn emit_element(
 
         // ─── Line break ─────────────────────────────────────────
         "br" => {
-            out.push('\\');
-            out.push('\n');
+            out.push_str("#linebreak()\n");
         }
 
         // ─── Horizontal rule ────────────────────────────────────
@@ -345,7 +344,9 @@ fn emit_image(
     } else {
         emit_image_placeholder(out, label, ctx);
 
-        if images.resolve(src).is_none() && (src.starts_with("http://") || src.starts_with("https://")) {
+        if images.resolve(src).is_none()
+            && (src.starts_with("http://") || src.starts_with("https://"))
+        {
             warnings.push(SilkprintWarning::RemoteImageSkipped {
                 url: src.to_string(),
             });
@@ -462,7 +463,13 @@ fn emit_table_row(
             let tag = el.name();
             if matches!(tag, "td" | "th") {
                 let mut cell_content = String::new();
-                emit_children(child, &mut cell_content, images, warnings, Context::TableCell);
+                emit_children(
+                    child,
+                    &mut cell_content,
+                    images,
+                    warnings,
+                    Context::TableCell,
+                );
 
                 let align = parse_alignment(el);
 
@@ -523,13 +530,13 @@ fn collect_text(node: NodeRef<'_, Node>, out: &mut String) {
     }
 }
 
-/// Strip Typst line breaks (`\` + newline) and collapse whitespace in heading content.
+/// Strip Typst line break primitives and collapse whitespace in heading content.
 ///
 /// HTML headings often contain `<br>` tags for layout purposes (e.g., GitHub README
-/// headers like `<h1><br>Title<br></h1>`). These produce `\` line breaks that look
-/// terrible inside Typst headings. We strip them and collapse runs of whitespace.
+/// headers like `<h1><br>Title<br></h1>`). These produce explicit line breaks that
+/// look terrible inside Typst headings. We strip them and collapse runs of whitespace.
 fn clean_heading_content(s: &str) -> String {
-    s.replace("\\\n", " ")
+    s.replace("#linebreak()", " ")
         .replace('\n', " ")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -685,7 +692,11 @@ mod tests {
     #[test]
     fn test_link() {
         let mut w = WarningCollector::new();
-        let result = emit_html_inline("<a href=\"https://example.com\">Click</a>", &images(), &mut w);
+        let result = emit_html_inline(
+            "<a href=\"https://example.com\">Click</a>",
+            &images(),
+            &mut w,
+        );
         assert!(
             result.contains("#link(\"https://example.com\")[Click]"),
             "got: {result}"
@@ -733,14 +744,14 @@ mod tests {
     fn test_br() {
         let mut w = WarningCollector::new();
         let result = emit_html_inline("before<br>after", &images(), &mut w);
-        assert!(result.contains('\\'), "got: {result}");
+        assert!(result.contains("#linebreak()"), "got: {result}");
     }
 
     #[test]
     fn test_br_self_closing() {
         let mut w = WarningCollector::new();
         let result = emit_html_inline("before<br/>after", &images(), &mut w);
-        assert!(result.contains('\\'), "got: {result}");
+        assert!(result.contains("#linebreak()"), "got: {result}");
     }
 
     #[test]

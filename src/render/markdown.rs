@@ -123,7 +123,10 @@ fn should_promote_display_math_block(lines: &[&str]) -> bool {
         return false;
     }
 
-    let dollar_count = lines.iter().map(|line| line.matches('$').count()).sum::<usize>();
+    let dollar_count = lines
+        .iter()
+        .map(|line| line.matches('$').count())
+        .sum::<usize>();
     if dollar_count != 2 {
         return false;
     }
@@ -188,6 +191,7 @@ pub fn emit_typst<'a>(
         warnings,
         mermaid_sources: Vec::new(),
         mermaid_counter: 0,
+        soft_break_mode: SoftBreakMode::Collapse,
     };
 
     emit_node(root, &mut ctx);
@@ -212,6 +216,7 @@ struct EmitContext<'w> {
     warnings: &'w mut WarningCollector,
     mermaid_sources: Vec<String>,
     mermaid_counter: usize,
+    soft_break_mode: SoftBreakMode,
 }
 
 impl EmitContext<'_> {
@@ -222,6 +227,12 @@ impl EmitContext<'_> {
     fn newline(&mut self) {
         self.out.push('\n');
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SoftBreakMode {
+    Collapse,
+    HardBreak,
 }
 
 /// Extract data we need from a node, cloning what's necessary to avoid
@@ -423,7 +434,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
             if !ctx.in_tight_list {
                 ctx.newline();
             }
-            emit_children(node, ctx);
+            emit_paragraph_contents(node, ctx);
             if !ctx.in_tight_list {
                 ctx.newline();
             }
@@ -453,13 +464,14 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── Soft break ──────────────────────────────────────────
-        ExtractedNode::SoftBreak => {
-            ctx.push("\n");
-        }
+        ExtractedNode::SoftBreak => match ctx.soft_break_mode {
+            SoftBreakMode::Collapse => ctx.push("\n"),
+            SoftBreakMode::HardBreak => ctx.push(" #linebreak()\n"),
+        },
 
         // ─── Hard break ──────────────────────────────────────────
         ExtractedNode::LineBreak => {
-            ctx.push(" \\\n");
+            ctx.push(" #linebreak()\n");
         }
 
         // ─── Strong (bold) ───────────────────────────────────────
@@ -559,15 +571,10 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                     ctx.push("\n#figure(\n");
                     let _ = writeln!(ctx.out, "  image(\"{escaped_path}\"),");
                     if !label.is_empty() {
-                        let _ = writeln!(
-                            ctx.out,
-                            "  caption: [{}],",
-                            escape_typst_content(&label)
-                        );
+                        let _ = writeln!(ctx.out, "  caption: [{}],", escape_typst_content(&label));
                     }
                     ctx.push(")\n");
-                }
-                else {
+                } else {
                     let _ = write!(ctx.out, "#box(image(\"{escaped_path}\", height: 1.1em))");
                 }
             } else {
@@ -831,6 +838,91 @@ fn emit_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
     }
 }
 
+/// Emit a paragraph body, preserving stacked metadata lines as hard breaks.
+fn emit_paragraph_contents<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
+    let uses_field_layout = paragraph_uses_stacked_field_layout(node);
+    let previous_mode = ctx.soft_break_mode;
+
+    if uses_field_layout {
+        ctx.push("#block(width: 100%)[\n");
+        // Metadata-style field stacks should stay left-aligned instead of
+        // stretching short lines across the full measure under justification.
+        ctx.push("#set par(justify: false)\n");
+        ctx.soft_break_mode = SoftBreakMode::HardBreak;
+    } else {
+        ctx.soft_break_mode = SoftBreakMode::Collapse;
+    }
+
+    emit_children(node, ctx);
+    ctx.soft_break_mode = previous_mode;
+
+    if uses_field_layout {
+        ctx.push("\n]");
+    }
+}
+
+/// Detect paragraphs that are really a stack of label/value fields.
+fn paragraph_uses_stacked_field_layout<'a>(node: &'a AstNode<'a>) -> bool {
+    let mut lines: Vec<Vec<&'a AstNode<'a>>> = Vec::new();
+    let mut current_line = Vec::new();
+    let mut saw_soft_break = false;
+
+    for child in node.children() {
+        if matches!(extract_node(child), ExtractedNode::SoftBreak) {
+            saw_soft_break = true;
+            lines.push(current_line);
+            current_line = Vec::new();
+        } else {
+            current_line.push(child);
+        }
+    }
+    lines.push(current_line);
+
+    if !saw_soft_break {
+        return false;
+    }
+
+    let nonempty_lines: Vec<_> = lines
+        .into_iter()
+        .filter(|line| !line_is_blank(line))
+        .collect();
+
+    nonempty_lines.len() >= 2
+        && nonempty_lines
+            .iter()
+            .all(|line| line_starts_with_field_label(line))
+}
+
+fn line_is_blank<'a>(line: &[&'a AstNode<'a>]) -> bool {
+    line.iter().all(|node| match extract_node(node) {
+        ExtractedNode::Text(text) => text.trim().is_empty(),
+        _ => false,
+    })
+}
+
+fn line_starts_with_field_label<'a>(line: &[&'a AstNode<'a>]) -> bool {
+    let Some(first) = first_significant_line_node(line) else {
+        return false;
+    };
+
+    if !matches!(extract_node(first), ExtractedNode::Strong) {
+        return false;
+    }
+
+    let mut label = String::new();
+    collect_text(first, &mut label);
+    let label = label.trim();
+
+    label.ends_with(':') && label.len() <= 40
+}
+
+fn first_significant_line_node<'a>(line: &[&'a AstNode<'a>]) -> Option<&'a AstNode<'a>> {
+    line.iter().copied().find(|node| match extract_node(node) {
+        ExtractedNode::Text(text) => !text.trim().is_empty(),
+        _ => true,
+    })
+}
+
 /// Check if a string looks like an opening HTML tag (e.g., `<strong>`).
 fn is_opening_html_tag(s: &str) -> bool {
     s.starts_with('<')
@@ -938,7 +1030,7 @@ fn emit_list_item_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>)
 
     for (index, child) in children.iter().copied().enumerate() {
         match extract_node(child) {
-            ExtractedNode::Paragraph => emit_children(child, ctx),
+            ExtractedNode::Paragraph => emit_paragraph_contents(child, ctx),
             _ => emit_node(child, ctx),
         }
 
@@ -1034,10 +1126,7 @@ fn indent_term_description(description: &str) -> String {
     out
 }
 
-fn render_fragment(
-    ctx: &mut EmitContext<'_>,
-    render: impl FnOnce(&mut EmitContext<'_>),
-) -> String {
+fn render_fragment(ctx: &mut EmitContext<'_>, render: impl FnOnce(&mut EmitContext<'_>)) -> String {
     let saved_out = std::mem::take(&mut ctx.out);
     let saved_indent = ctx.indent;
     let saved_tight = ctx.in_tight_list;
@@ -1100,6 +1189,7 @@ fn collect_footnote_definitions<'a>(
                 warnings,
                 mermaid_sources: Vec::new(),
                 mermaid_counter: 0,
+                soft_break_mode: SoftBreakMode::Collapse,
             };
             emit_children(node, &mut fn_ctx);
             map.insert(name, fn_ctx.out);
@@ -1393,7 +1483,10 @@ mod tests {
     fn normalize_promotes_multiline_single_dollar_math() {
         let input = "$ f(x) &= x^2 + 2x + 1 \\\n  &= (x + 1)^2 $\n";
         let normalized = normalize_markdown(input);
-        assert_eq!(normalized, "$$ f(x) &= x^2 + 2x + 1 \\\n  &= (x + 1)^2 $$\n");
+        assert_eq!(
+            normalized,
+            "$$ f(x) &= x^2 + 2x + 1 \\\n  &= (x + 1)^2 $$\n"
+        );
     }
 
     #[test]
@@ -1576,8 +1669,35 @@ mod tests {
     }
 
     #[test]
+    fn emit_field_stack_preserves_soft_breaks() {
+        let result = emit(
+            "**Repo:** Example\n**Section:** Apps -> networking/infra\n**Format:** `- [NAME](URL) - DESCRIPTION.`",
+        );
+        assert!(
+            result.contains(
+                "*Repo:* Example #linebreak()\n*Section:* Apps -\\> networking/infra #linebreak()\n*Format:*"
+            )
+        );
+    }
+
+    #[test]
+    fn emit_tight_list_field_stack_preserves_soft_breaks() {
+        let result = emit("- **Repo:** Example\n  **Section:** Apps");
+        assert!(result.contains(
+            "#list(\n  [#block(width: 100%)[\n#set par(justify: false)\n*Repo:* Example #linebreak()\n*Section:* Apps\n]],"
+        ));
+    }
+
+    #[test]
+    fn emit_regular_soft_breaks_as_plain_newlines() {
+        let result = emit("This line wraps\ninto the same paragraph.");
+        assert!(result.contains("This line wraps\ninto the same paragraph."));
+        assert!(!result.contains("This line wraps #linebreak()\ninto the same paragraph."));
+    }
+
+    #[test]
     fn emit_hard_break() {
         let result = emit("line one  \nline two");
-        assert!(result.contains("\\\n"));
+        assert!(result.contains("#linebreak()"));
     }
 }

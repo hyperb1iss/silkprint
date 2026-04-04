@@ -137,6 +137,7 @@ jobs:
           cp wasm-out/silkprint_wasm.js wasm-out/silkprint_wasm.d.ts web/src/lib/wasm/
           cp wasm-out/silkprint_wasm_bg.wasm web/public/wasm/
           cp -r fonts/core/* web/public/fonts/
+          cp -r fonts/emoji/* web/public/fonts/
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: web/package.json
@@ -185,6 +186,7 @@ jobs:
           cp wasm-out/silkprint_wasm.js wasm-out/silkprint_wasm.d.ts web/src/lib/wasm/
           cp wasm-out/silkprint_wasm_bg.wasm web/public/wasm/
           cp -r fonts/core/* web/public/fonts/
+          cp -r fonts/emoji/* web/public/fonts/
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: web/package.json
