@@ -138,6 +138,7 @@ expression: typst
 #let silkprint-term(body) = text(font: "Inter", weight: 600, fill: rgb("#a82890"))[#body]
 
 #show figure: set align(center)
+#show figure.caption: it => it.body
 #show figure.caption: set text(font: "Inter", size: 9pt, style: "italic", fill: rgb("#6b6085"))
 #show figure: set figure(placement: none)
 #show figure.caption: set align(center)

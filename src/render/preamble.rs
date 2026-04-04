@@ -515,6 +515,9 @@ fn emit_image_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
     // Figure alignment
     let _ = writeln!(out, "#show figure: set align({alignment})");
 
+    // Strip "Figure N:" prefix — markdown alt text is a caption, not an academic label
+    out.push_str("#show figure.caption: it => it.body\n");
+
     // Figure caption styling
     let style = if t.images.caption_italic {
         "\"italic\""

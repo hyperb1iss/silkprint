@@ -133,7 +133,7 @@ fn test_dump_typst_resolves_relative_image_paths() {
         .arg(&markdown_path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("image(\"badge.svg\", width: 100%)"));
+        .stdout(predicate::str::contains("image(\"badge.svg\")"));
 }
 
 // ── Render modes ─────────────────────────────────────────────────

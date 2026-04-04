@@ -274,19 +274,22 @@ fn emit_aligned_block(
 }
 
 /// Emit an `<a>` link as `#link("url")[text]`.
+///
+/// Links are inline elements — children are always emitted in inline context
+/// so that images inside links render as inline badges, not block figures.
 fn emit_link(
     node: NodeRef<'_, Node>,
     el: &Element,
     out: &mut String,
     images: &PreparedImages,
     warnings: &mut WarningCollector,
-    ctx: Context,
+    _ctx: Context,
 ) {
     let href = el.attr("href").unwrap_or("");
     let _ = write!(out, "#link(\"{}\")", escape_typst_string(href));
 
     let mut content = String::new();
-    emit_children(node, &mut content, images, warnings, ctx);
+    emit_children(node, &mut content, images, warnings, Context::Inline);
 
     if !content.is_empty() {
         let _ = write!(out, "[{content}]");
@@ -323,18 +326,20 @@ fn emit_image(
     };
 
     if let Some(typst_path) = typst_path {
-        let width = parse_image_width(el);
+        let width_arg = parse_image_width(el)
+            .map(|w| format!(", width: {w}"))
+            .unwrap_or_default();
         let escaped_src = escape_typst_string(typst_path);
         let escaped_label = escape_typst_content(label);
 
         if matches!(ctx, Context::Inline | Context::TableCell) {
-            let _ = write!(out, "#image(\"{escaped_src}\", width: {width})");
+            let _ = write!(out, "#box(image(\"{escaped_src}\"{width_arg}))");
         } else if escaped_label.is_empty() {
-            let _ = write!(out, "#figure(image(\"{escaped_src}\", width: {width}))");
+            let _ = write!(out, "#figure(image(\"{escaped_src}\"{width_arg}))");
         } else {
             let _ = write!(
                 out,
-                "#figure(image(\"{escaped_src}\", width: {width}), caption: [{escaped_label}])"
+                "#figure(image(\"{escaped_src}\"{width_arg}), caption: [{escaped_label}])"
             );
         }
     } else {
@@ -558,19 +563,16 @@ const MAX_IMAGE_PT: f64 = 454.0;
 
 /// Parse the `width` attribute of an `<img>` into a Typst width expression.
 ///
-/// - `"50%"` -> `"50%"`
-/// - `"200"` or `"200px"` -> `"200pt"` (capped at page width)
-/// - absent -> `"100%"`
+/// - `"50%"` -> `Some("50%")`
+/// - `"200"` or `"200px"` -> `Some("200pt")` (capped at page width)
+/// - absent -> `None` (image uses its natural size, capped by available width)
 #[cfg(not(target_arch = "wasm32"))]
-fn parse_image_width(el: &Element) -> String {
-    let Some(raw) = el.attr("width") else {
-        return "100%".to_string();
-    };
-
+fn parse_image_width(el: &Element) -> Option<String> {
+    let raw = el.attr("width")?;
     let trimmed = raw.trim();
 
     if trimmed.ends_with('%') {
-        return trimmed.to_string();
+        return Some(trimmed.to_string());
     }
 
     // Strip trailing "px" if present, then treat as pt
@@ -581,12 +583,12 @@ fn parse_image_width(el: &Element) -> String {
         // from consuming entire pages in PDF output.
         if let Ok(val) = numeric.parse::<f64>() {
             if val > MAX_IMAGE_PT {
-                return "80%".to_string();
+                return Some("80%".to_string());
             }
         }
-        format!("{numeric}pt")
+        Some(format!("{numeric}pt"))
     } else {
-        "100%".to_string()
+        None
     }
 }
 
@@ -662,7 +664,9 @@ mod tests {
     fn test_image_default_width() {
         let mut w = WarningCollector::new();
         let result = emit_html_block("<img src=\"photo.jpg\">", &images(), &mut w);
-        assert!(result.contains("width: 100%"), "got: {result}");
+        // No explicit width attr → image uses natural size (no width param)
+        assert!(!result.contains("width:"), "got: {result}");
+        assert!(result.contains("image(\"photo.jpg\")"), "got: {result}");
     }
 
     #[test]

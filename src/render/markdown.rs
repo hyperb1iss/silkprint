@@ -557,7 +557,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 let escaped_path = escape_typst_string(typst_path);
                 if standalone {
                     ctx.push("\n#figure(\n");
-                    let _ = writeln!(ctx.out, "  image(\"{escaped_path}\", width: 100%),");
+                    let _ = writeln!(ctx.out, "  image(\"{escaped_path}\"),");
                     if !label.is_empty() {
                         let _ = writeln!(
                             ctx.out,
@@ -568,7 +568,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                     ctx.push(")\n");
                 }
                 else {
-                    let _ = write!(ctx.out, "#image(\"{escaped_path}\", height: 1.1em)");
+                    let _ = write!(ctx.out, "#box(image(\"{escaped_path}\", height: 1.1em))");
                 }
             } else {
                 emit_image_placeholder(ctx, &label, standalone);
