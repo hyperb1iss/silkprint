@@ -5,7 +5,7 @@
 
 [meta]
 name        = "SilkCircuit Dawn"
-version     = "1"
+version     = "2"
 variant     = "light"
 description = "Electric blue & magenta on warm cream — the default"
 print_safe  = true
@@ -15,21 +15,21 @@ extends     = ""
 
 [colors]
 white          = "#ffffff"
-background     = "#faf8ff"
-surface        = "#f1ecff"
-surface_alt    = "#e8e2f5"
-border_light   = "#d8d0ea"
-border_strong  = "#c0b6d6"
-text_primary   = "#2b2540"
-text_secondary = "#544c6e"
-text_muted     = "#6b6085"
-accent_blue    = "#1565c0"
-accent_purple  = "#7b1fa2"
-accent_magenta = "#a82890"
-accent_teal    = "#006874"
-accent_green   = "#256f4a"
-accent_amber   = "#7a6200"
-accent_red     = "#a8222a"
+background     = "#fdf9ee"
+surface        = "#f5ecd9"
+surface_alt    = "#ebe0c6"
+border_light   = "#e2d6b6"
+border_strong  = "#bfae84"
+text_primary   = "#1d1a2e"
+text_secondary = "#463e5c"
+text_muted     = "#6a5f7e"
+accent_blue    = "#0a5fd1"
+accent_purple  = "#6d1caa"
+accent_magenta = "#b31e7f"
+accent_teal    = "#00665e"
+accent_green   = "#1f6a36"
+accent_amber   = "#7a5400"
+accent_red     = "#ab1d28"
 
 [fonts]
 heading          = "Inter"
@@ -46,33 +46,33 @@ body_fallback    = ["Inter", "Helvetica Neue", "Arial"]
 mono_fallback    = ["JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code"]
 
 [font_sizes]
-body   = "9.5pt"
-small  = "7.5pt"
-code   = "8.5pt"
-h1     = "16pt"
-h2     = "13pt"
-h3     = "11pt"
-h4     = "10pt"
-h5     = "9pt"
-h6     = "8.5pt"
+body   = "10pt"
+small  = "8pt"
+code   = "9pt"
+h1     = "22pt"
+h2     = "15pt"
+h3     = "12pt"
+h4     = "10.5pt"
+h5     = "9.5pt"
+h6     = "9pt"
 
 # ─── Layer 2: Semantic ────────────────────────────────────────
 
 [page]
 background     = "background"
-margin_top     = "25mm"
+margin_top     = "26mm"
 margin_bottom  = "30mm"
-margin_left    = "20mm"
-margin_right   = "20mm"
+margin_left    = "22mm"
+margin_right   = "22mm"
 paper          = "a4"
 columns        = 1
 column_gap     = "12mm"
 
 [text]
 color           = "text_primary"
-line_height     = 1.35
-paragraph_gap   = "0.6em"
-justification   = "justify"
+line_height     = 1.45
+paragraph_gap   = "0.75em"
+justification   = "left"
 spacing_mode    = "gap"
 first_line_indent = "0pt"
 orphan_lines    = 2
@@ -85,60 +85,62 @@ line_height    = 1.2
 letter_spacing = "-0.015em"
 
 [headings.h1]
+color            = "accent_magenta"
 weight           = 700
 line_height      = 1.1
 border           = true
-above            = "20pt"
-below            = "10pt"
+above            = "22pt"
+below            = "12pt"
 page_break_before = false
 
 [headings.h2]
 weight           = 600
 line_height      = 1.15
 border           = true
-above            = "16pt"
-below            = "8pt"
+above            = "20pt"
+below            = "9pt"
 page_break_before = false
 
 [headings.h3]
 weight         = 600
 line_height    = 1.2
-above          = "14pt"
+above          = "16pt"
 below          = "6pt"
 
 [headings.h4]
 weight         = 500
 line_height    = 1.2
-above          = "12pt"
+above          = "14pt"
 below          = "5pt"
 
 [headings.h5]
 weight         = 500
 line_height    = 1.25
-above          = "10pt"
+above          = "12pt"
 below          = "4pt"
 
 [headings.h6]
+color          = "accent_magenta"
 weight         = 600
 line_height    = 1.25
 above          = "10pt"
 below          = "4pt"
 uppercase      = true
-letter_spacing = "0.05em"
+letter_spacing = "0.08em"
 
 [code_block]
 background        = "surface"
 border_color      = "border_light"
-border_radius     = "6pt"
+border_radius     = "5pt"
 padding_vertical  = "12pt"
 padding_horizontal = "14pt"
-line_height       = 1.45
-left_accent       = false
-left_accent_color = "accent_purple"
+line_height       = 1.5
+left_accent       = true
+left_accent_color = "accent_magenta"
 line_numbers      = false
 language_label    = true
-language_label_color = "text_muted"
-language_label_size  = "8pt"
+language_label_color = "accent_magenta"
+language_label_size  = "7.5pt"
 wrap              = true
 
 [code_inline]
@@ -148,12 +150,12 @@ border_radius  = "3pt"
 
 [blockquote]
 border_color      = "accent_magenta"
-border_width      = "2.5pt"
-background        = "accent_magenta"
-background_opacity = 0.0
+border_width      = "3pt"
+background        = "surface"
+background_opacity = 0.45
 text_color        = "text_secondary"
 italic            = true
-left_padding      = "14pt"
+left_padding      = "16pt"
 
 [table]
 header_background   = "accent_blue"
@@ -164,15 +166,15 @@ header_font         = "heading"
 header_weight       = 600
 row_border_color    = "border_light"
 row_border_width    = "0.5pt"
-stripe_background   = "surface_alt"
+stripe_background   = "surface"
 vertical_lines      = false
-font_size           = "7.5pt"
-cell_padding        = "5pt 8pt"
+font_size           = "8pt"
+cell_padding        = "6pt 9pt"
 
 [horizontal_rule]
-color     = "border_light"
-width     = "60%"
-thickness = "0.5pt"
+color     = "accent_magenta"
+width     = "100%"
+thickness = "0.75pt"
 style     = "line"
 
 [links]
@@ -211,7 +213,7 @@ important_color     = "accent_magenta"
 warning_color       = "accent_amber"
 caution_color       = "accent_red"
 border_width        = "3pt"
-background_opacity  = 0.08
+background_opacity  = 0.1
 show_icon           = true
 show_label          = true
 
@@ -236,7 +238,7 @@ first_page = false
 [title_page]
 enabled          = true
 title_font       = "heading"
-title_size       = "32pt"
+title_size       = "36pt"
 title_color      = "accent_magenta"
 subtitle_color   = "text_secondary"
 author_color     = "text_secondary"
@@ -272,58 +274,57 @@ background = "surface"
 color = "text_primary"
 
 [syntax.keyword]
-color  = "#1565c0"
+color  = "accent_blue"
 bold   = true
 
 [syntax.string]
-color  = "#8b1a7a"
+color  = "accent_magenta"
 italic = true
 
 [syntax.number]
-color = "#a32070"
+color = "accent_amber"
 
 [syntax.function]
-color  = "#006874"
+color  = "accent_teal"
 bold   = true
-italic = true
 
 [syntax.type]
-color = "#7a6200"
+color = "accent_purple"
 
 [syntax.comment]
-color  = "#6b6085"
+color  = "text_muted"
 italic = true
 
 [syntax.constant]
-color = "#a32070"
+color = "accent_magenta"
 
 [syntax.boolean]
-color = "#1565c0"
+color = "accent_blue"
 bold  = true
 
 [syntax.operator]
 color = "text_primary"
 
 [syntax.property]
-color = "#006874"
+color = "accent_teal"
 
 [syntax.tag]
-color = "#1565c0"
+color = "accent_blue"
 bold  = true
 
 [syntax.attribute]
-color = "#7a6200"
+color = "accent_amber"
 
 [syntax.variable]
-color = "#a32070"
+color = "accent_purple"
 
 [syntax.builtin]
-color  = "#006874"
+color  = "accent_teal"
 bold   = true
 
 [syntax.punctuation]
 color = "text_muted"
 
 [syntax.escape]
-color = "#7a6200"
+color = "accent_amber"
 bold  = true

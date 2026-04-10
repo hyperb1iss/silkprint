@@ -191,7 +191,6 @@ pub fn emit_typst<'a>(
         warnings,
         mermaid_sources: Vec::new(),
         mermaid_counter: 0,
-        soft_break_mode: SoftBreakMode::Collapse,
     };
 
     emit_node(root, &mut ctx);
@@ -216,7 +215,6 @@ struct EmitContext<'w> {
     warnings: &'w mut WarningCollector,
     mermaid_sources: Vec<String>,
     mermaid_counter: usize,
-    soft_break_mode: SoftBreakMode,
 }
 
 impl EmitContext<'_> {
@@ -227,12 +225,6 @@ impl EmitContext<'_> {
     fn newline(&mut self) {
         self.out.push('\n');
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SoftBreakMode {
-    Collapse,
-    HardBreak,
 }
 
 /// Extract data we need from a node, cloning what's necessary to avoid
@@ -464,10 +456,11 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── Soft break ──────────────────────────────────────────
-        ExtractedNode::SoftBreak => match ctx.soft_break_mode {
-            SoftBreakMode::Collapse => ctx.push("\n"),
-            SoftBreakMode::HardBreak => ctx.push(" #linebreak()\n"),
-        },
+        // A soft break (a plain newline inside a paragraph) always collapses
+        // to a single newline, which Typst treats as whitespace. Hard breaks
+        // from stacked-field paragraphs are handled inline by
+        // `emit_paragraph_contents` instead of routing through this arm.
+        ExtractedNode::SoftBreak => ctx.push("\n"),
 
         // ─── Hard break ──────────────────────────────────────────
         ExtractedNode::LineBreak => {
@@ -839,58 +832,86 @@ fn emit_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
 }
 
 /// Emit a paragraph body, preserving stacked metadata lines as hard breaks.
+///
+/// A "stacked field layout" is a run of `**Label:** value` lines that happens
+/// to live in a single markdown paragraph (no blank lines between them). A
+/// label line may wrap onto one or more continuation lines that don't start
+/// with a label — those join the preceding field as a soft-wrapped run.
 fn emit_paragraph_contents<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
-    let uses_field_layout = paragraph_uses_stacked_field_layout(node);
-    let previous_mode = ctx.soft_break_mode;
+    let children: Vec<&'a AstNode<'a>> = node.children().collect();
 
-    if uses_field_layout {
-        ctx.push("#block(width: 100%)[\n");
-        // Metadata-style field stacks should stay left-aligned instead of
-        // stretching short lines across the full measure under justification.
-        ctx.push("#set par(justify: false)\n");
-        ctx.soft_break_mode = SoftBreakMode::HardBreak;
-    } else {
-        ctx.soft_break_mode = SoftBreakMode::Collapse;
-    }
+    let Some(lines) = try_split_field_stack(&children) else {
+        emit_children(node, ctx);
+        return;
+    };
 
-    emit_children(node, ctx);
-    ctx.soft_break_mode = previous_mode;
+    ctx.push("#block(width: 100%)[\n");
+    // Field stacks look best left-aligned — the short label/value pairs
+    // stretch horribly under justification.
+    ctx.push("#set par(justify: false)\n");
 
-    if uses_field_layout {
-        ctx.push("\n]");
-    }
-}
-
-/// Detect paragraphs that are really a stack of label/value fields.
-fn paragraph_uses_stacked_field_layout<'a>(node: &'a AstNode<'a>) -> bool {
-    let mut lines: Vec<Vec<&'a AstNode<'a>>> = Vec::new();
-    let mut current_line = Vec::new();
-    let mut saw_soft_break = false;
-
-    for child in node.children() {
-        if matches!(extract_node(child), ExtractedNode::SoftBreak) {
-            saw_soft_break = true;
-            lines.push(current_line);
-            current_line = Vec::new();
-        } else {
-            current_line.push(child);
+    for (index, line) in lines.iter().enumerate() {
+        if index > 0 {
+            if line_starts_with_field_label(line) {
+                ctx.push(" #linebreak()\n");
+            } else {
+                // Wrapped continuation of the previous label — emit a
+                // single space so the tokens flow naturally.
+                ctx.push(" ");
+            }
+        }
+        for &child in line {
+            emit_node(child, ctx);
         }
     }
-    lines.push(current_line);
+
+    ctx.push("\n]");
+}
+
+/// If `children` represents a stacked field layout, return its physical
+/// (soft-break-delimited) non-blank lines. Otherwise return `None`.
+fn try_split_field_stack<'a>(
+    children: &[&'a AstNode<'a>],
+) -> Option<Vec<Vec<&'a AstNode<'a>>>> {
+    let mut lines: Vec<Vec<&'a AstNode<'a>>> = Vec::new();
+    let mut current: Vec<&'a AstNode<'a>> = Vec::new();
+    let mut saw_soft_break = false;
+
+    for &child in children {
+        if matches!(extract_node(child), ExtractedNode::SoftBreak) {
+            saw_soft_break = true;
+            lines.push(std::mem::take(&mut current));
+        } else {
+            current.push(child);
+        }
+    }
+    lines.push(current);
 
     if !saw_soft_break {
-        return false;
+        return None;
     }
 
-    let nonempty_lines: Vec<_> = lines
+    let nonblank: Vec<Vec<&'a AstNode<'a>>> = lines
         .into_iter()
         .filter(|line| !line_is_blank(line))
         .collect();
 
-    nonempty_lines.len() >= 2
-        && nonempty_lines
-            .iter()
-            .all(|line| line_starts_with_field_label(line))
+    // First line must anchor the stack with a label, and we need at least
+    // two labelled lines total — otherwise it's just a regular paragraph
+    // that happens to start with a bolded lead-in.
+    let first = nonblank.first()?;
+    if !line_starts_with_field_label(first) {
+        return None;
+    }
+    let label_lines = nonblank
+        .iter()
+        .filter(|line| line_starts_with_field_label(line))
+        .count();
+    if label_lines < 2 {
+        return None;
+    }
+
+    Some(nonblank)
 }
 
 fn line_is_blank<'a>(line: &[&'a AstNode<'a>]) -> bool {
@@ -1189,7 +1210,6 @@ fn collect_footnote_definitions<'a>(
                 warnings,
                 mermaid_sources: Vec::new(),
                 mermaid_counter: 0,
-                soft_break_mode: SoftBreakMode::Collapse,
             };
             emit_children(node, &mut fn_ctx);
             map.insert(name, fn_ctx.out);
@@ -1686,6 +1706,48 @@ mod tests {
         assert!(result.contains(
             "#list(\n  [#block(width: 100%)[\n#set par(justify: false)\n*Repo:* Example #linebreak()\n*Section:* Apps\n]],"
         ));
+    }
+
+    #[test]
+    fn emit_field_stack_joins_wrapped_continuation_lines() {
+        // Regression: long field values that wrap onto continuation lines used
+        // to break field-stack detection (the continuation line doesn't start
+        // with a label). The fix treats continuation lines as part of the
+        // previous field and joins them with a space.
+        let result = emit(
+            "**Status:** Living document\n\
+             **Scope:** `foo::bar`, `foo::baz`,\n\
+             `foo::qux`\n\
+             **Related:** `docs/one.md`,\n\
+             `docs/two.md`",
+        );
+        assert!(result.contains("#block(width: 100%)["), "got: {result}");
+        assert!(result.contains("#set par(justify: false)"), "got: {result}");
+        assert!(
+            result.contains("*Status:* Living document #linebreak()"),
+            "got: {result}"
+        );
+        assert!(
+            result.contains("`foo::bar`, `foo::baz`, `foo::qux`"),
+            "continuation should join with a space; got: {result}"
+        );
+        assert!(
+            result.contains("`docs/one.md`, `docs/two.md`"),
+            "got: {result}"
+        );
+        assert!(
+            result.contains("#linebreak()\n*Related:*"),
+            "Related should be its own line; got: {result}"
+        );
+    }
+
+    #[test]
+    fn emit_regular_paragraph_with_bold_lead_is_not_field_stack() {
+        // A single bolded lead-in followed by normal wrapped prose is NOT a
+        // field stack — it's just a paragraph. Needs the 2+ label requirement.
+        let result = emit("**Note:** this wraps\nonto a second line of prose.");
+        assert!(!result.contains("#block(width: 100%)["), "got: {result}");
+        assert!(!result.contains("#linebreak()"), "got: {result}");
     }
 
     #[test]

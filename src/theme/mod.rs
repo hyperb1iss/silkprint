@@ -313,6 +313,12 @@ fn resolve_token_colors(tokens: &mut ThemeTokens) {
 
     // Headings
     r(&mut tokens.headings.color);
+    r(&mut tokens.headings.h1.color);
+    r(&mut tokens.headings.h2.color);
+    r(&mut tokens.headings.h3.color);
+    r(&mut tokens.headings.h4.color);
+    r(&mut tokens.headings.h5.color);
+    r(&mut tokens.headings.h6.color);
 
     // Code block
     r(&mut tokens.code_block.background);

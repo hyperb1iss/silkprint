@@ -193,7 +193,10 @@ fn emit_text_setup(
 }
 
 fn emit_paragraph_setup(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
-    let justify = t.text.justification != "left";
+    // Opt-in justify: only the explicit `"justify"` token turns it on. An
+    // empty / unset value stays left-aligned, which is the only sane default
+    // for technical documents full of inline code spans that can't break.
+    let justify = t.text.justification == "justify";
     let line_height = if t.text.line_height > 0.0 {
         t.text.line_height
     } else {
@@ -333,8 +336,16 @@ fn emit_heading_rules(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
                 }
             });
 
+        // Per-level color override (e.g. a magenta H1 over blue H2-H6).
+        // Falls back to the shared heading color when empty.
+        let level_color = if hl.tokens.color.is_empty() {
+            heading_color
+        } else {
+            hl.tokens.color.as_str()
+        };
+
         let mut text_args = format!(
-            "font: \"{heading_font}\", size: {}, weight: {weight}, fill: rgb(\"{heading_color}\")",
+            "font: \"{heading_font}\", size: {}, weight: {weight}, fill: rgb(\"{level_color}\")",
             hl.size
         );
         if !letter_spacing.is_empty() {

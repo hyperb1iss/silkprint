@@ -1,12 +1,11 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 34
 expression: typst
 ---
 #set page(
   paper: "a4",
-  margin: (top: 25mm, bottom: 30mm, left: 20mm, right: 20mm),
-  fill: rgb("#faf8ff"),
+  margin: (top: 26mm, bottom: 30mm, left: 22mm, right: 22mm),
+  fill: rgb("#fdf9ee"),
   numbering: "1",
   number-align: center + bottom,
 )
@@ -15,45 +14,45 @@ expression: typst
 
 #set text(
   font: ("Inter", "Inter", "Helvetica Neue", "Arial"),
-  size: 9.5pt,
-  fill: rgb("#2b2540"),
+  size: 10pt,
+  fill: rgb("#1d1a2e"),
   lang: "en",
   hyphenate: true,
   ligatures: true,
 )
 
 #set par(
-  justify: true,
-  leading: 0.35em,
-  spacing: 0.6em,
+  justify: false,
+  leading: 0.45em,
+  spacing: 0.75em,
 )
 
 #show heading.where(level: 1): it => {
-  v(20pt)
-  block(below: 10pt)[
-    #set text(font: "Inter", size: 16pt, weight: 700, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(22pt)
+  block(below: 12pt)[
+    #set text(font: "Inter", size: 22pt, weight: 700, fill: rgb("#b31e7f"), tracking: -0.015em)
     #set par(leading: 0.10em)
     #show raw.where(block: false): r => r
     #it.body
   ]
-  line(length: 100%, stroke: 0.5pt + rgb("#d8d0ea"))
+  line(length: 100%, stroke: 0.5pt + rgb("#b31e7f"))
 }
 
 #show heading.where(level: 2): it => {
-  v(16pt)
-  block(below: 8pt)[
-    #set text(font: "Inter", size: 13pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
+  v(20pt)
+  block(below: 9pt)[
+    #set text(font: "Inter", size: 15pt, weight: 600, fill: rgb("#0a5fd1"), tracking: -0.015em)
     #set par(leading: 0.15em)
     #show raw.where(block: false): r => r
     #it.body
   ]
-  line(length: 100%, stroke: 0.5pt + rgb("#d8d0ea"))
+  line(length: 100%, stroke: 0.5pt + rgb("#b31e7f"))
 }
 
 #show heading.where(level: 3): it => {
-  v(14pt)
+  v(16pt)
   block(below: 6pt)[
-    #set text(font: "Inter", size: 11pt, weight: 600, fill: rgb("#1565c0"), tracking: -0.015em)
+    #set text(font: "Inter", size: 12pt, weight: 600, fill: rgb("#0a5fd1"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #show raw.where(block: false): r => r
     #it.body
@@ -61,9 +60,9 @@ expression: typst
 }
 
 #show heading.where(level: 4): it => {
-  v(12pt)
+  v(14pt)
   block(below: 5pt)[
-    #set text(font: "Inter", size: 10pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
+    #set text(font: "Inter", size: 10.5pt, weight: 500, fill: rgb("#0a5fd1"), tracking: -0.015em)
     #set par(leading: 0.20em)
     #show raw.where(block: false): r => r
     #it.body
@@ -71,9 +70,9 @@ expression: typst
 }
 
 #show heading.where(level: 5): it => {
-  v(10pt)
+  v(12pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 9pt, weight: 500, fill: rgb("#1565c0"), tracking: -0.015em)
+    #set text(font: "Inter", size: 9.5pt, weight: 500, fill: rgb("#0a5fd1"), tracking: -0.015em)
     #set par(leading: 0.25em)
     #show raw.where(block: false): r => r
     #it.body
@@ -83,7 +82,7 @@ expression: typst
 #show heading.where(level: 6): it => {
   v(10pt)
   block(below: 4pt)[
-    #set text(font: "Inter", size: 8.5pt, weight: 600, fill: rgb("#1565c0"), tracking: 0.05em)
+    #set text(font: "Inter", size: 9pt, weight: 600, fill: rgb("#b31e7f"), tracking: 0.08em)
     #set par(leading: 0.25em)
     #show raw.where(block: false): r => r
     #upper(it.body)
@@ -92,33 +91,33 @@ expression: typst
 
 #show raw.where(block: true): it => {
   block(
-    fill: rgb("#f1ecff"),
-    stroke: 0.5pt + rgb("#d8d0ea"),
-    radius: 6pt,
+    fill: rgb("#f5ecd9"),
+    stroke: 0.5pt + rgb("#e2d6b6"),
+    radius: 5pt,
     inset: (x: 14pt, y: 12pt),
     width: 100%,
     breakable: true,
   )[
-    #set text(font: "JetBrains Mono", size: 8.5pt, ligatures: false)
-    #set par(justify: false, leading: 0.45em)
+    #set text(font: "JetBrains Mono", size: 9pt, ligatures: false)
+    #set par(justify: false, leading: 0.50em)
     #it
   ]
 }
 
 #show raw.where(block: false): it => {
   box(
-    fill: rgb("#f1ecff"),
-    stroke: 0.5pt + rgb("#d8d0ea"),
+    fill: rgb("#f5ecd9"),
+    stroke: 0.5pt + rgb("#e2d6b6"),
     radius: 3pt,
     inset: (x: 3pt, y: 1.5pt),
   )[
-    #set text(font: "JetBrains Mono", size: 8.5pt, ligatures: false)
+    #set text(font: "JetBrains Mono", size: 9pt, ligatures: false)
     #it
   ]
 }
 
 #show link: it => {
-  set text(fill: rgb("#1565c0"), ligatures: false)
+  set text(fill: rgb("#0a5fd1"), ligatures: false)
   underline(it)
 }
 
@@ -126,7 +125,7 @@ expression: typst
   indent: 20pt,
   body-indent: 0.9em,
   spacing: 0.28em,
-  marker: depth => if depth == 0 { [#text(fill: rgb("#544c6e"))[•]] } else if depth == 1 { [#text(fill: rgb("#544c6e"))[◦]] } else { [#text(fill: rgb("#544c6e"))[▪]] },
+  marker: depth => if depth == 0 { [#text(fill: rgb("#463e5c"))[•]] } else if depth == 1 { [#text(fill: rgb("#463e5c"))[◦]] } else { [#text(fill: rgb("#463e5c"))[▪]] },
 )
 #set enum(
   indent: 20pt,
@@ -134,42 +133,42 @@ expression: typst
   spacing: 0.28em,
 )
 #set terms(indent: 20pt, hanging-indent: 20pt, spacing: 12pt, separator: h(4pt, weak: true))
-#let silkprint-task-marker(checked) = { let color = if checked { rgb("#256f4a") } else { rgb("#6b6085") }; let glyph = if checked { "☑" } else { "☐" }; box(width: 1.5em)[#text(size: 1.1em, fill: color)[#glyph]] }
-#let silkprint-term(body) = text(font: "Inter", weight: 600, fill: rgb("#a82890"))[#body]
+#let silkprint-task-marker(checked) = { let color = if checked { rgb("#1f6a36") } else { rgb("#6a5f7e") }; let glyph = if checked { "☑" } else { "☐" }; box(width: 1.5em)[#text(size: 1.1em, fill: color)[#glyph]] }
+#let silkprint-term(body) = text(font: "Inter", weight: 600, fill: rgb("#b31e7f"))[#body]
 
 #show figure: set align(center)
 #show figure.caption: it => it.body
-#show figure.caption: set text(font: "Inter", size: 9pt, style: "italic", fill: rgb("#6b6085"))
+#show figure.caption: set text(font: "Inter", size: 9pt, style: "italic", fill: rgb("#6a5f7e"))
 #show figure: set figure(placement: none)
 #show figure.caption: set align(center)
 
 #show quote.where(block: true): it => {
   block(
-    stroke: (left: 2.5pt + rgb("#a82890")),
-    inset: (left: 14pt, y: 8pt, right: 8pt),
+    stroke: (left: 3pt + rgb("#b31e7f")),
+    inset: (left: 16pt, y: 8pt, right: 8pt),
     width: 100%,
   )[
-    #set text(fill: rgb("#544c6e"))
+    #set text(fill: rgb("#463e5c"))
     #emph(it.body)
   ]
 }
 
 #set table(
-  stroke: (x: none, y: 0.5pt + rgb("#d8d0ea")),
-  inset: (x: 8pt, y: 5pt),
-  fill: (_, y) => if y == 0 { rgb("#1565c0") } else if calc.even(y) { rgb("#e8e2f5") },
+  stroke: (x: none, y: 0.5pt + rgb("#e2d6b6")),
+  inset: (x: 9pt, y: 6pt),
+  fill: (_, y) => if y == 0 { rgb("#0a5fd1") } else if calc.even(y) { rgb("#f5ecd9") },
 )
-#show table: set text(size: 7.5pt)
+#show table: set text(size: 8pt)
 #show table.cell.where(y: 0): set text(font: "Inter", weight: 600, fill: rgb("#ffffff"))
-#show table.cell.where(y: 0): set table.cell(stroke: (bottom: 1.5pt + rgb("#1565c0")))
+#show table.cell.where(y: 0): set table.cell(stroke: (bottom: 1.5pt + rgb("#0a5fd1")))
 
 #show footnote.entry: it => {
   let loc = it.note.location()
   let num = numbering("1", ..counter(footnote).at(loc))
-  line(length: 33%, stroke: 0.5pt + rgb("#d8d0ea"))
+  line(length: 33%, stroke: 0.5pt + rgb("#e2d6b6"))
   v(4pt)
   set text(size: 9pt)
-  [#text(fill: rgb("#1565c0"))[#num] #it.note.body]
+  [#text(fill: rgb("#0a5fd1"))[#num] #it.note.body]
 }
 
 

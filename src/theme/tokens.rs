@@ -118,6 +118,10 @@ pub struct HeadingTokens {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct HeadingLevelTokens {
+    /// Optional per-level color override. Falls back to `[headings].color`
+    /// when empty. Resolves through the `[colors]` table just like other
+    /// semantic color tokens.
+    pub color: String,
     pub weight: u16,
     pub line_height: Option<f64>,
     pub border: Option<bool>,
