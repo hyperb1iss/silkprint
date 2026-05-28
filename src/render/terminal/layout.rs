@@ -4,6 +4,8 @@
 //! richer per-(width, caps, theme) `LaidOutDoc` with screen-coordinate hit
 //! regions belongs to the TUI wave and is layered on top of these primitives.
 
+use std::borrow::Cow;
+
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::model::Span;
@@ -11,6 +13,24 @@ use super::model::Span;
 /// Display width of a string in terminal cells.
 pub fn display_width(s: &str) -> usize {
     UnicodeWidthStr::width(s)
+}
+
+/// Strip terminal control characters from untrusted content.
+///
+/// A markdown reader renders untrusted files, so any `ESC`/C0/C1/DEL bytes
+/// embedded in the source (which could smuggle escape sequences like OSC 52
+/// clipboard writes straight to the terminal) must be removed before the text
+/// is interpolated into our own ANSI output. Tab is preserved.
+pub fn sanitize(s: &str) -> Cow<'_, str> {
+    if s.chars().any(is_unsafe_control) {
+        Cow::Owned(s.chars().filter(|c| !is_unsafe_control(*c)).collect())
+    } else {
+        Cow::Borrowed(s)
+    }
+}
+
+fn is_unsafe_control(c: char) -> bool {
+    c.is_control() && c != '\t'
 }
 
 /// Truncate a string to at most `max` display cells, appending `ellipsis` if it
@@ -187,5 +207,20 @@ mod tests {
     fn truncate_respects_width() {
         assert_eq!(truncate("hello world", 8, "\u{2026}"), "hello w\u{2026}");
         assert_eq!(truncate("short", 10, "\u{2026}"), "short");
+    }
+
+    #[test]
+    fn sanitize_strips_terminal_escapes() {
+        // An OSC 52 clipboard-write smuggled into markdown text.
+        let evil = "before\u{1b}]52;c;ZXZpbA==\u{7}after\u{1b}[31m";
+        let clean = sanitize(evil);
+        assert!(!clean.contains('\u{1b}'), "ESC must be stripped");
+        assert!(!clean.contains('\u{7}'), "BEL must be stripped");
+        assert!(clean.contains("before") && clean.contains("after"));
+    }
+
+    #[test]
+    fn sanitize_keeps_clean_text_borrowed() {
+        assert!(matches!(sanitize("plain\ttext"), Cow::Borrowed(_)));
     }
 }

@@ -666,10 +666,13 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
     })?;
 
     let glyph_tier = args.glyphs.as_deref().and_then(silkprint::GlyphTier::parse);
+    let options = build_render_options(cli)?;
 
-    // Interactive TTY → TUI; piped or --plain → one-shot.
+    // Interactive TTY → TUI; piped or --plain → one-shot. Both resolve the
+    // effective theme the same way (front matter / path / builtin).
     if io::stdout().is_terminal() && !args.plain {
-        silkprint::run_terminal_tui(&input, &cli.theme, glyph_tier).map_err(|e| {
+        let (theme, theme_name, _warnings) = silkprint::resolve_terminal_theme(&input, &options)?;
+        silkprint::run_terminal_tui(&input, theme, &theme_name, glyph_tier).map_err(|e| {
             silkprint::error::SilkprintError::RenderFailed {
                 details: e.to_string(),
                 hint: "the terminal reader could not start".to_string(),
@@ -678,7 +681,6 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
         return Ok(());
     }
 
-    let options = build_render_options(cli)?;
     let terminal_options = silkprint::TerminalRenderOptions {
         color: silkprint::ColorChoice::parse(&cli.color),
         glyphs: glyph_tier,

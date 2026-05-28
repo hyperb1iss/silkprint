@@ -153,7 +153,8 @@ impl Renderer<'_> {
             let painted = self.paint(&span.text, style);
             match span.link.and_then(|id| self.links.get(id)) {
                 Some(LinkTarget::Url(url)) if self.caps.is_tty => {
-                    let _ = write!(out, "\x1b]8;;{url}\x1b\\{painted}\x1b]8;;\x1b\\");
+                    let safe = super::layout::sanitize(url);
+                    let _ = write!(out, "\x1b]8;;{safe}\x1b\\{painted}\x1b]8;;\x1b\\");
                 }
                 _ => out.push_str(&painted),
             }
@@ -318,7 +319,7 @@ impl Renderer<'_> {
         let title_extra = if title.eq_ignore_ascii_case(label) {
             String::new()
         } else {
-            format!("  {title}")
+            format!("  {}", super::layout::sanitize(title))
         };
 
         let mut out = vec![format!("{bar} {heading}{title_extra}")];
@@ -352,8 +353,9 @@ impl Renderer<'_> {
                 ..Style::default()
             },
         );
-        if self.caps.is_tty && (src.starts_with("http") || !src.is_empty()) {
-            vec![format!("\x1b]8;;{src}\x1b\\{painted}\x1b]8;;\x1b\\")]
+        if self.caps.is_tty && !src.is_empty() {
+            let safe_src = super::layout::sanitize(src);
+            vec![format!("\x1b]8;;{safe_src}\x1b\\{painted}\x1b]8;;\x1b\\")]
         } else {
             vec![painted]
         }
@@ -423,9 +425,10 @@ impl Renderer<'_> {
     // ─── SGR painting ────────────────────────────────────────────
 
     pub(super) fn paint(&self, text: &str, style: Style) -> String {
+        let text = super::layout::sanitize(text);
         let open = self.sgr(style);
         if open.is_empty() {
-            return text.to_string();
+            return text.into_owned();
         }
         format!("{open}{text}{RESET}")
     }

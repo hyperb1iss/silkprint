@@ -42,8 +42,13 @@ enum Mode {
 
 /// Launch the interactive reader. Sets up and tears down the terminal
 /// (panic-safe via ratatui's restore hook) and runs the event loop.
-pub fn run(body: &str, theme_name: &str, glyph_override: Option<GlyphTier>) -> io::Result<()> {
-    let mut app = App::new(body, theme_name, glyph_override);
+pub fn run(
+    body: &str,
+    theme: ResolvedTheme,
+    theme_name: &str,
+    glyph_override: Option<GlyphTier>,
+) -> io::Result<()> {
+    let mut app = App::new(body, theme, theme_name, glyph_override);
     let mut terminal = ratatui::init();
     let result = app.run_loop(&mut terminal);
     ratatui::restore();
@@ -87,14 +92,18 @@ struct App {
 }
 
 impl App {
-    fn new(body: &str, theme_name: &str, glyph_override: Option<GlyphTier>) -> Self {
+    fn new(
+        body: &str,
+        theme: ResolvedTheme,
+        theme_name: &str,
+        glyph_override: Option<GlyphTier>,
+    ) -> Self {
         let arena = comrak::Arena::new();
         let root = crate::render::markdown::parse(&arena, body);
         let mut warnings = WarningCollector::new();
         crate::render::markdown::check_content(root, &mut warnings);
         let doc = super::walk::walk(root, &mut warnings);
 
-        let theme = load_theme_or_default(theme_name);
         let theme_names: Vec<String> = crate::theme::builtin::list_themes()
             .into_iter()
             .map(|t| t.name.to_string())
@@ -104,10 +113,8 @@ impl App {
             .position(|n| n == theme_name)
             .unwrap_or(0);
 
-        let title = doc
-            .title
-            .clone()
-            .unwrap_or_else(|| "silkprint".to_string());
+        let title =
+            super::layout::sanitize(doc.title.as_deref().unwrap_or("silkprint")).into_owned();
         let glyphs = Glyphs::new(glyph_override.unwrap_or(GlyphTier::NerdFont));
 
         let mut outline_state = ListState::default();
@@ -448,7 +455,10 @@ impl App {
                 ListItem::new(Line::from(vec![
                     Span::styled(indent, Style::default()),
                     Span::styled(format!("{marker} "), Style::default().fg(self.chrome.accent)),
-                    Span::styled(item.title.clone(), Style::default().fg(self.chrome.text)),
+                    Span::styled(
+                        super::layout::sanitize(&item.title).into_owned(),
+                        Style::default().fg(self.chrome.text),
+                    ),
                 ]))
             })
             .collect();
@@ -647,7 +657,8 @@ mod tests {
 
     fn sample() -> App {
         let body = "# Title\n\nSome **bold** text.\n\n## Section\n\n- a\n- b\n\n```rust\nfn main() {}\n```\n";
-        App::new(body, "silk-light", Some(GlyphTier::Unicode))
+        let theme = load_theme_or_default("silk-light");
+        App::new(body, theme, "silk-light", Some(GlyphTier::Unicode))
     }
 
     #[test]

@@ -135,6 +135,28 @@ pub fn render_to_terminal(
     Ok((output, warnings.into_warnings()))
 }
 
+/// Resolve the effective theme for terminal rendering, honoring the same
+/// precedence as [`render_to_terminal`] (CLI explicit > front matter > default)
+/// and returning a display name for the TUI's chrome and theme picker.
+#[cfg(feature = "terminal")]
+pub fn resolve_terminal_theme(
+    input: &str,
+    options: &RenderOptions,
+) -> Result<(theme::ResolvedTheme, String, Vec<warnings::SilkprintWarning>), SilkprintError> {
+    let mut warnings = WarningCollector::new();
+    let (front_matter, _body) = render::frontmatter::extract(input)?;
+    if let Some(fm) = &front_matter {
+        render::frontmatter::warn_unknown_fields(fm, &mut warnings);
+    }
+    let source = resolve_effective_theme(options, front_matter.as_ref());
+    let resolved = theme::load_theme(&source, &mut warnings)?;
+    let name = match &source {
+        ThemeSource::BuiltIn(n) => n.clone(),
+        _ => resolved.tokens.meta.name.clone(),
+    };
+    Ok((resolved, name, warnings.into_warnings()))
+}
+
 #[cfg(feature = "terminal")]
 pub use render::terminal::TerminalRenderOptions;
 #[cfg(feature = "terminal")]
