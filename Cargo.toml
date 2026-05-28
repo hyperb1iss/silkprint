@@ -25,7 +25,7 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [features]
-default = ["cli"]
+default = ["cli", "terminal"]
 cli = [
     "dep:clap",
     "dep:directories",
@@ -34,6 +34,16 @@ cli = [
     "dep:owo-colors",
     "dep:tracing-subscriber",
     "miette/fancy",
+]
+# Terminal/TUI reader. Off for `default-features = false` consumers
+# (silkprint-wasm) so ratatui/syntect/opaline never reach the wasm target.
+terminal = [
+    "dep:syntect",
+    "dep:unicode-width",
+    "dep:ratatui",
+    "dep:ratatui-image",
+    "dep:image",
+    "dep:opaline",
 ]
 
 [dependencies]
@@ -56,6 +66,16 @@ typst = "0.14"
 typst-pdf = "0.14"
 scraper = { version = "0.25.0", default-features = false }
 ego-tree = "0.10.0"
+
+# Terminal reader stack (feature = "terminal"). Pure-Rust syntect regex
+# (default-fancy) avoids the oniguruma C build. ratatui-image pinned with
+# default-features off so its default crossterm feature is explicit.
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"], optional = true }
+unicode-width = { version = "0.2", optional = true }
+ratatui = { version = "0.30", optional = true }
+ratatui-image = { version = "11", optional = true }
+image = { version = "0.25", default-features = false, optional = true }
+opaline = { version = "0.4", default-features = false, features = ["builtin-themes", "gradients", "widgets"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = "3.2.0"
