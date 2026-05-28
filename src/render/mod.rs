@@ -6,6 +6,8 @@ pub mod image;
 pub mod markdown;
 pub mod mermaid;
 pub mod preamble;
+#[cfg(feature = "terminal")]
+pub mod terminal;
 pub mod typst;
 
 use std::path::Path;

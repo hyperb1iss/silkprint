@@ -35,7 +35,7 @@ pub struct Cli {
     pub output: Option<String>,
 
     /// Theme name or path to .toml file.
-    #[arg(short, long, default_value = "silkcircuit-dawn", value_name = "NAME")]
+    #[arg(short, long, global = true, default_value = "silkcircuit-dawn", value_name = "NAME")]
     pub theme: String,
 
     /// Paper size: a4, letter, a5, legal (case-insensitive).
@@ -75,16 +75,52 @@ pub struct Cli {
     pub font_dir: Option<PathBuf>,
 
     /// Color output: auto, always, never.
-    #[arg(long, default_value = "auto", value_name = "WHEN")]
+    #[arg(long, global = true, default_value = "auto", value_name = "WHEN")]
     pub color: String,
 
     /// Increase verbosity (-v, -vv, -vvv).
-    #[arg(short, long, action = clap::ArgAction::Count)]
+    #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
 
     /// Suppress all output except errors.
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub quiet: bool,
+
+    /// Subcommand. Absent → render the positional input to PDF (default).
+    #[cfg(feature = "terminal")]
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+/// Subcommands beyond the default PDF render.
+#[cfg(feature = "terminal")]
+#[derive(Debug, clap::Subcommand)]
+pub enum Command {
+    /// Read a Markdown file in the terminal with full styling.
+    ///
+    /// Emits styled ANSI to stdout (pipe-friendly). A scrollable TUI lands in a
+    /// later wave; for now `read` always produces one-shot output.
+    Read(ReadArgs),
+}
+
+/// Arguments for the `read` subcommand.
+#[cfg(feature = "terminal")]
+#[derive(Debug, clap::Args)]
+pub struct ReadArgs {
+    /// Path to the Markdown file to read.
+    pub input: Option<PathBuf>,
+
+    /// Force one-shot styled output even in an interactive terminal.
+    #[arg(long)]
+    pub plain: bool,
+
+    /// Glyph set: nerdfont (default), unicode, ascii.
+    #[arg(long, value_name = "MODE")]
+    pub glyphs: Option<String>,
+
+    /// Disable inline image rendering.
+    #[arg(long)]
+    pub no_images: bool,
 }
 
 impl Cli {

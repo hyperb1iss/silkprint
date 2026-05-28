@@ -41,8 +41,6 @@ terminal = [
     "dep:syntect",
     "dep:unicode-width",
     "dep:ratatui",
-    "dep:ratatui-image",
-    "dep:image",
     "dep:opaline",
 ]
 
@@ -68,13 +66,11 @@ scraper = { version = "0.25.0", default-features = false }
 ego-tree = "0.10.0"
 
 # Terminal reader stack (feature = "terminal"). Pure-Rust syntect regex
-# (default-fancy) avoids the oniguruma C build. ratatui-image pinned with
-# default-features off so its default crossterm feature is explicit.
+# (default-fancy) avoids the oniguruma C build. ratatui-image / image are added
+# in the image wave (they pull a chafa C-library probe at build time).
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"], optional = true }
 unicode-width = { version = "0.2", optional = true }
 ratatui = { version = "0.30", optional = true }
-ratatui-image = { version = "11", optional = true }
-image = { version = "0.25", default-features = false, optional = true }
 opaline = { version = "0.4", default-features = false, features = ["builtin-themes", "gradients", "widgets"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -108,6 +108,38 @@ pub fn render(
     Ok((pdf_bytes, warnings.into_warnings()))
 }
 
+/// Render markdown to a styled terminal string (one-shot ANSI).
+///
+/// Sibling to [`render`] / [`render_to_typst`]; shares the upstream front
+/// matter + theme resolution so terminal content tracks the PDF's theme.
+#[cfg(feature = "terminal")]
+pub fn render_to_terminal(
+    input: &str,
+    input_path: Option<&Path>,
+    options: &RenderOptions,
+    terminal_options: &render::terminal::TerminalRenderOptions,
+) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
+    // input_path is reserved for image/asset resolution in a later wave.
+    let _ = input_path;
+    let mut warnings = WarningCollector::new();
+
+    let (front_matter, body) = render::frontmatter::extract(input)?;
+    if let Some(fm) = &front_matter {
+        render::frontmatter::warn_unknown_fields(fm, &mut warnings);
+    }
+    let effective_theme_source = resolve_effective_theme(options, front_matter.as_ref());
+    let resolved_theme = theme::load_theme(&effective_theme_source, &mut warnings)?;
+
+    let output =
+        render::terminal::render_to_string(&body, &resolved_theme, terminal_options, &mut warnings)?;
+    Ok((output, warnings.into_warnings()))
+}
+
+#[cfg(feature = "terminal")]
+pub use render::terminal::TerminalRenderOptions;
+#[cfg(feature = "terminal")]
+pub use render::terminal::caps::{ColorChoice, GlyphTier};
+
 /// Render markdown to Typst source (intermediate representation).
 pub fn render_to_typst(
     input: &str,

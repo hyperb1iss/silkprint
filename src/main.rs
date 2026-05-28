@@ -640,6 +640,55 @@ fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
     })
 }
 
+/// Handle the `read` subcommand: render Markdown to styled terminal output.
+///
+/// Wave 0 always produces one-shot styled ANSI; a scrollable TUI arrives in a
+/// later wave, at which point a tty will launch it unless `--plain` is set.
+#[cfg(feature = "terminal")]
+fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()> {
+    let input_path = args.input.clone().ok_or_else(|| {
+        miette::miette!("No input file specified. Usage: silkprint read <FILE>")
+    })?;
+
+    if !input_path.exists() {
+        return Err(silkprint::error::SilkprintError::InputRead {
+            path: input_path.display().to_string(),
+            source: io::Error::new(io::ErrorKind::NotFound, "file not found"),
+        }
+        .into());
+    }
+
+    let input = std::fs::read_to_string(&input_path).map_err(|e| {
+        silkprint::error::SilkprintError::InputRead {
+            path: input_path.display().to_string(),
+            source: e,
+        }
+    })?;
+
+    let options = build_render_options(cli)?;
+    let terminal_options = silkprint::TerminalRenderOptions {
+        color: silkprint::ColorChoice::parse(&cli.color),
+        glyphs: args
+            .glyphs
+            .as_deref()
+            .and_then(silkprint::GlyphTier::parse),
+        images: !args.no_images,
+        width: None,
+    };
+    let _ = args.plain; // honored once the TUI lands (Wave 1)
+
+    let (output, warnings) =
+        silkprint::render_to_terminal(&input, Some(input_path.as_path()), &options, &terminal_options)?;
+
+    print!("{output}");
+    io::stdout().flush().ok();
+
+    if !cli.quiet {
+        display_warnings(&warnings);
+    }
+    Ok(())
+}
+
 // ── Entrypoint ─────────────────────────────────────────────────
 
 fn main() -> miette::Result<()> {
@@ -661,6 +710,13 @@ fn main() -> miette::Result<()> {
         return Ok(());
     }
 
+    // `read` subcommand: terminal reader. Dispatched before the PDF input
+    // requirement since its input lives on the subcommand.
+    #[cfg(feature = "terminal")]
+    if let Some(silkprint::cli::Command::Read(args)) = &cli.command {
+        return handle_read(&cli, args);
+    }
+
     // All other modes require an input file
     let input_path = cli.input.clone().ok_or_else(|| {
         miette::miette!("No input file specified. Run `silkprint --help` for usage.")
@@ -680,6 +736,8 @@ fn main() -> miette::Result<()> {
     if cli.check {
         return handle_check(&input_path, &options);
     }
+
+    // (the `read` subcommand is dispatched earlier, before this point)
 
     // --dump-typst: emit Typst source
     if cli.dump_typst {
