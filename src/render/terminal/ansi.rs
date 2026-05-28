@@ -29,6 +29,19 @@ pub fn render(
     caps: &Capabilities,
     glyphs: Glyphs,
 ) -> String {
+    render_with_offsets(doc, theme, caps, glyphs).0
+}
+
+/// Render, also returning the starting output line of each top-level block.
+///
+/// The offsets (one per `doc.blocks` entry) let the TUI map outline headings to
+/// scroll positions.
+pub fn render_with_offsets(
+    doc: &RenderedDoc,
+    theme: &ResolvedTheme,
+    caps: &Capabilities,
+    glyphs: Glyphs,
+) -> (String, Vec<usize>) {
     let renderer = Renderer {
         resolver: ContentStyleResolver::new(theme),
         theme,
@@ -38,23 +51,29 @@ pub fn render(
     };
     let width = renderer.content_width();
     let mut out = String::new();
+    let mut offsets = vec![0usize; doc.blocks.len()];
+    let mut line_no = 0usize;
     let mut first = true;
-    for block in &doc.blocks {
+    for (idx, block) in doc.blocks.iter().enumerate() {
         let lines = renderer.block_lines(block, width);
         if lines.is_empty() {
+            offsets[idx] = line_no;
             continue;
         }
         if !first {
             out.push('\n');
+            line_no += 1;
         }
         first = false;
+        offsets[idx] = line_no;
         for line in lines {
             out.push_str(MARGIN);
             out.push_str(&line);
             out.push('\n');
+            line_no += 1;
         }
     }
-    out
+    (out, offsets)
 }
 
 pub(super) struct Renderer<'a> {

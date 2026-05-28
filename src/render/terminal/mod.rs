@@ -13,6 +13,7 @@ pub mod layout;
 pub mod model;
 pub mod style;
 pub mod table;
+pub mod tui;
 pub mod walk;
 
 use crate::error::SilkprintError;

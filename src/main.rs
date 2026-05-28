@@ -642,8 +642,8 @@ fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
 
 /// Handle the `read` subcommand: render Markdown to styled terminal output.
 ///
-/// Wave 0 always produces one-shot styled ANSI; a scrollable TUI arrives in a
-/// later wave, at which point a tty will launch it unless `--plain` is set.
+/// In an interactive terminal it launches the scrollable TUI; when piped, or
+/// with `--plain`, it emits one-shot styled ANSI.
 #[cfg(feature = "terminal")]
 fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()> {
     let input_path = args.input.clone().ok_or_else(|| {
@@ -665,17 +665,26 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
         }
     })?;
 
+    let glyph_tier = args.glyphs.as_deref().and_then(silkprint::GlyphTier::parse);
+
+    // Interactive TTY → TUI; piped or --plain → one-shot.
+    if io::stdout().is_terminal() && !args.plain {
+        silkprint::run_terminal_tui(&input, &cli.theme, glyph_tier).map_err(|e| {
+            silkprint::error::SilkprintError::RenderFailed {
+                details: e.to_string(),
+                hint: "the terminal reader could not start".to_string(),
+            }
+        })?;
+        return Ok(());
+    }
+
     let options = build_render_options(cli)?;
     let terminal_options = silkprint::TerminalRenderOptions {
         color: silkprint::ColorChoice::parse(&cli.color),
-        glyphs: args
-            .glyphs
-            .as_deref()
-            .and_then(silkprint::GlyphTier::parse),
+        glyphs: glyph_tier,
         images: !args.no_images,
         width: None,
     };
-    let _ = args.plain; // honored once the TUI lands (Wave 1)
 
     let (output, warnings) =
         silkprint::render_to_terminal(&input, Some(input_path.as_path()), &options, &terminal_options)?;

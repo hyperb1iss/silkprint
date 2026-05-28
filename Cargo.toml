@@ -41,6 +41,7 @@ terminal = [
     "dep:syntect",
     "dep:unicode-width",
     "dep:ratatui",
+    "dep:ansi-to-tui",
     "dep:opaline",
 ]
 
@@ -71,6 +72,7 @@ ego-tree = "0.10.0"
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"], optional = true }
 unicode-width = { version = "0.2", optional = true }
 ratatui = { version = "0.30", optional = true }
+ansi-to-tui = { version = "8", optional = true }
 opaline = { version = "0.4", default-features = false, features = ["builtin-themes", "gradients", "widgets"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
