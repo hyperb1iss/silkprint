@@ -1,0 +1,183 @@
+---
+source: tests/terminal_snapshots.rs
+expression: "render_fixture(\"full-features.md\")"
+---
+  [1mHeading [0m[1mLevel [0m[1m1[0m
+  ------------------------------------------------------------------------------
+
+  [1mHeading [0m[1mLevel [0m[1m2[0m
+  [2m------------------------------------------------[0m
+
+  [1mHeading [0m[1mLevel [0m[1m3[0m
+
+  [1mHeading [0m[1mLevel [0m[1m4[0m
+
+  [1mHeading [0m[1mLevel [0m[1m5[0m
+
+  [1mHeading [0m[1mLevel [0m[1m6[0m
+
+  [1mText [0m[1mFormatting[0m
+  [2m------------------------------------------------[0m
+
+  This paragraph has [1mbold[0m, [3mitalic[0m, [1;3mbold [0m[1;3mitalic[0m, [9mstrikethrough[0m, inline code, and
+  highlighted text. You can also do [1mbold [0m[1mwith [0m[1;3mnested [0m[1;3mitalic [0m[1minside [0mand [3mitalic[0m
+  [3mwith [0m[1;3mnested [0m[1;3mbold [0m[3minside[0m.
+
+  [1mLinks[0m
+  [2m------------------------------------------------[0m
+
+  An inline link: [4mSilkPrint [0m[4mon [0m[4mGitHub[0m
+
+  An autolink: [4mhttps://example.com[0m
+
+  A reference link: [4mTypst [0m[4mdocumentation[0m
+
+  [1mImages[0m
+  [2m------------------------------------------------[0m
+
+  [2m[image: SilkPrint Logo][0m
+
+  Reference-style image:
+
+  [2m[image: Architecture][0m
+
+  [1mUnordered [0m[1mList[0m
+  [2m------------------------------------------------[0m
+
+  * First item with [1mbold[0m
+  * Second item with [3mitalic[0m
+    
+    * Nested item A
+    * Nested item B
+      
+      * Deep nested
+  * Third item
+
+  [1mOrdered [0m[1mList[0m
+  [2m------------------------------------------------[0m
+
+  [1m1.[0m Parse Markdown
+  [1m2.[0m Resolve theme
+  [1m3.[0m Emit Typst markup
+  [1m4.[0m Compile to PDF
+  [1m5.[0m Write output
+
+  [1mTask [0m[1mList[0m
+  [2m------------------------------------------------[0m
+
+  [x] Markdown parsing
+  [x] Theme engine
+  [x] Typst emission
+  [ ] HTML output
+  [ ] Live preview
+
+  [1mDescription [0m[1mList[0m
+  [2m------------------------------------------------[0m
+
+  [1mSilkPrint[0m
+    Markdown to PDF converter
+  
+  [1mTypst[0m
+    Modern typesetting engine
+  
+  [1mcomrak[0m
+    GFM-compatible Markdown parser
+
+  [1mCode [0m[1mBlock[0m
+  [2m------------------------------------------------[0m
+
+  [2mrust[0m
+  ┃ [1mfn[0m [1;3mmain[0m() {
+  ┃     let theme = Theme::load("[3msilk-light[0m").[1;3mexpect[0m("[3mtheme not found[0m");
+  ┃     let pdf = silkprint::render("[3m# Hello[0m", &theme).[1;3mexpect[0m("[3mrender failed[0m");
+  ┃     std::fs::write("[3moutput.pdf[0m", pdf).[1;3mexpect[0m("[3mwrite failed[0m");
+  ┃ }
+
+  [1mBlockquote[0m
+  [2m------------------------------------------------[0m
+
+  | "Any sufficiently advanced technology is indistinguishable from magic."
+  | 
+  | --- Arthur C. Clarke
+
+  [1mTable[0m
+  [2m------------------------------------------------[0m
+
+  [2m+------------+---------+------------+---------------------------+[0m
+  [2m|[0m [1mTheme[0m      [2m|[0m [1mVariant[0m [2m|[0m [1mPrint-Safe[0m [2m|[0m [1mDescription[0m               [2m|[0m
+  [2m+------------+---------+------------+---------------------------+[0m
+  [2m|[0m silk-light [2m|[0m light   [2m|[0m    Yes     [2m|[0m Clean, warm, professional [2m|[0m
+  [2m|[0m silk-dark  [2m|[0m dark    [2m|[0m     No     [2m|[0m Deep navy-black elegance  [2m|[0m
+  [2m|[0m manuscript [2m|[0m light   [2m|[0m    Yes     [2m|[0m Old-world serif feel      [2m|[0m
+  [2m|[0m monochrome [2m|[0m light   [2m|[0m    Yes     [2m|[0m Pure black on white       [2m|[0m
+  [2m+------------+---------+------------+---------------------------+[0m
+
+  [1mHorizontal [0m[1mRule[0m
+  [2m------------------------------------------------[0m
+
+  [2m------------------------------------------------------------------------------[0m
+
+  [1mFootnotes[0m
+  [2m------------------------------------------------[0m
+
+  SilkPrint supports footnotes[2m[1] [0mfor academic and technical writing. Multiple
+  references[2m[2] [0mwork independently.
+
+  [1mAlerts[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1mi NOTE[0m
+  ┃ This is a note callout for supplementary information.
+
+  ┃ [1m* TIP[0m
+  ┃ Use --theme to switch between 40 built-in themes.
+
+  ┃ [1m! IMPORTANT[0m
+  ┃ Always use serde_yaml_ng instead of serde_yml.
+
+  ┃ [1m! WARNING[0m
+  ┃ The --force flag overwrites files without confirmation.
+
+  ┃ [1m! CAUTION[0m
+  ┃ Do not use unsafe code --- it is forbidden in this project.
+
+  [1mMath [0m[1m(Typst-Native)[0m
+  [2m------------------------------------------------[0m
+
+  Inline math: x^2 + y^2 = z^2 and sum_(i=1)^n i = (n(n+1))/2.
+
+  Display math:
+
+    x = (-b plus.minus sqrt(b^2 - 4a c)) / (2a)
+
+  [1mEmoji [0m[1mShortcodes[0m
+  [2m------------------------------------------------[0m
+
+  This feature is ✨ amazing 🚀 and we ❤️ it!
+
+  [1mHighlighted [0m[1mText[0m
+  [2m------------------------------------------------[0m
+
+  This sentence has highlighted words that should render with a colored
+  background.
+
+  [1mWikilinks[0m
+  [2m------------------------------------------------[0m
+
+  See [4mgetting-started [0mfor setup instructions, or check the [4mAPI [0m[4mReference [0mfor
+  detailed usage.
+
+  [1mSuperscript [0m[1mand [0m[1mSubscript[0m
+  [2m------------------------------------------------[0m
+
+  Water is H2O. Einstein's equation: E = mc2.
+
+  [2m------------------------------------------------------------------------------[0m
+
+  [3mEnd [0m[3mof [0m[3mfull [0m[3mfeature [0m[3mshowcase.[0m
+
+  [2m------------------------------------------------------------------------------[0m
+
+  [2m[1] [0mFootnotes are rendered using Typst's native #footnote() function.
+
+  [2m[2] [0mEach footnote is automatically numbered and placed at the page bottom.

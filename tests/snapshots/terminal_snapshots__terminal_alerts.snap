@@ -1,0 +1,80 @@
+---
+source: tests/terminal_snapshots.rs
+expression: "render_fixture(\"alerts.md\")"
+---
+  [1mAlerts[0m
+  ------------------------------------------------------------------------------
+
+  GitHub-style alert callouts using the > [!TYPE] syntax.
+
+  [1mNote[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1mi NOTE[0m
+  ┃ This is a [1mnote [0malert. Notes are used to highlight information that users
+  ┃ should take into account, even when skimming.
+  ┃ 
+  ┃ They can contain [3mmultiple [0m[3mparagraphs [0mof text.
+
+  [1mTip[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1m* TIP[0m
+  ┃ Use the --theme flag to switch between built-in themes:
+  ┃ 
+  ┃ [2mbash[0m
+  ┃ ┃ [1msilkprint[0m[1m input.md[0m --theme[1m silk-dark[0m -o[1m output.pdf[0m
+  ┃ 
+  ┃ There are [1m40 [0m[1mbuilt-in [0m[1mthemes [0macross 8 aesthetic families.
+
+  [1mImportant[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1m! IMPORTANT[0m
+  ┃ The comrak extension field is called alerts, [1mnot [0madmonitions. Using the
+  ┃ wrong field name will silently disable alert parsing.
+  ┃ 
+  ┃ Always verify your extension configuration with:
+  ┃ 
+  ┃ [2mrust[0m
+  ┃ ┃ let [1mmut[0m options = Options::default();
+  ┃ ┃ options.extension.alerts = true;
+
+  [1mWarning[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1m! WARNING[0m
+  ┃ Do [3mnot [0muse serde_yml for YAML front matter parsing. It has an active [1mRustSec[0m
+  ┃ [1madvisory [0m(RUSTSEC-2025-0068).
+  ┃ 
+  ┃ Use serde_yaml_ng instead --- it's a maintained fork with the same API
+  ┃ surface.
+
+  [1mCaution[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1m! CAUTION[0m
+  ┃ Running silkprint with --force will [1moverwrite [0mexisting output files without
+  ┃ confirmation. This action is [3mirreversible[0m.
+  ┃ 
+  ┃ Always double-check your -o path before using --force.
+
+  [1mAlert [0m[1mwith [0m[1mComplex [0m[1mContent[0m
+  [2m------------------------------------------------[0m
+
+  ┃ [1mi NOTE[0m
+  ┃ Alerts can contain various formatting:
+  ┃ 
+  ┃ * [1mBold [0mitems in a list
+  ┃ * [3mItalic [0mitems
+  ┃ * Code spans inline
+  ┃ * [4mLinks [0mtoo
+  ┃ 
+  ┃ And even tables:
+  ┃ 
+  ┃ [2m+---------+-----------+[0m
+  ┃ [2m|[0m [1mFeature[0m [2m|[0m [1mSupported[0m [2m|[0m
+  ┃ [2m+---------+-----------+[0m
+  ┃ [2m|[0m Bold    [2m|[0m Yes       [2m|[0m
+  ┃ [2m|[0m Code    [2m|[0m Yes       [2m|[0m
+  ┃ [2m+---------+-----------+[0m

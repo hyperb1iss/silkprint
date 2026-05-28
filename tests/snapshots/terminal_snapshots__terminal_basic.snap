@@ -1,0 +1,61 @@
+---
+source: tests/terminal_snapshots.rs
+expression: "render_fixture(\"basic.md\")"
+---
+  [1mHello, [0m[1mSilkPrint![0m
+  ------------------------------------------------------------------------------
+
+  This is a [1mbasic [0mtest document that exercises the core rendering pipeline.
+
+  [1mText [0m[1mFormatting[0m
+  [2m------------------------------------------------[0m
+
+  Here's some [3mitalic[0m, [1mbold[0m, and [1;3mbold [0m[1;3mitalic [0mtext. You can also use [9mstrikethrough[0m
+  and inline code.
+
+  [1mLists[0m
+  [2m------------------------------------------------[0m
+
+  * First item
+  * Second item
+    
+    * Nested item
+    * Another nested
+  * Third item
+
+  [1m1.[0m Ordered first
+  [1m2.[0m Ordered second
+  [1m3.[0m Ordered third
+
+  [1mCode [0m[1mBlock[0m
+  [2m------------------------------------------------[0m
+
+  [2mrust[0m
+  ┃ [1mfn[0m [1mmain[0m() {
+  ┃     println!("[3mHello from SilkPrint![0m");
+  ┃ }
+
+  [1mBlockquote[0m
+  [2m------------------------------------------------[0m
+
+  | This is a blockquote. It can span multiple lines.
+
+  [1mLinks[0m
+  [2m------------------------------------------------[0m
+
+  Visit [4mSilkPrint [0mfor more.
+
+  [1mTable[0m
+  [2m------------------------------------------------[0m
+
+  [2m+------------+--------+[0m
+  [2m|[0m [1mFeature[0m    [2m|[0m [1mStatus[0m [2m|[0m
+  [2m+------------+--------+[0m
+  [2m|[0m Markdown   [2m|[0m Done   [2m|[0m
+  [2m|[0m Themes     [2m|[0m Done   [2m|[0m
+  [2m|[0m PDF Export [2m|[0m Done   [2m|[0m
+  [2m+------------+--------+[0m
+
+  [2m------------------------------------------------------------------------------[0m
+
+  [3mThat's [0m[3mall [0m[3mfor [0m[3mthe [0m[3mbasic [0m[3mtest![0m

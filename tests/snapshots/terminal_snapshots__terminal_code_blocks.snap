@@ -1,0 +1,212 @@
+---
+source: tests/terminal_snapshots.rs
+expression: "render_fixture(\"code-blocks.md\")"
+---
+  [1mCode [0m[1mBlocks[0m
+  ------------------------------------------------------------------------------
+
+  [1mRust[0m
+  [2m------------------------------------------------[0m
+
+  [2mrust[0m
+  ┃ [1muse[0m std::collections::HashMap;
+  ┃ 
+  ┃ [1mfn[0m [1mfibonacci[0m(n: u64) -> u64 {
+  ┃     [1mmatch[0m n {
+  ┃         0 => 0,
+  ┃         1 => 1,
+  ┃         _ => [1mfibonacci[0m(n - 1) + [1mfibonacci[0m(n - 2),
+  ┃     }
+  ┃ }
+  ┃ 
+  ┃ [1mfn[0m [1mmain[0m() {
+  ┃     let [1mmut[0m cache: HashMap<String, Vec<u8>> = HashMap::new();
+  ┃     cache.[1minsert[0m("[3mhello[0m".[1mto_string[0m(), vec![1, 2, 3]);
+  ┃     println!("[3mfib(10) = [0m[1m{}[0m", [1mfibonacci[0m(10));
+  ┃ }
+
+  [1mPython[0m
+  [2m------------------------------------------------[0m
+
+  [2mpython[0m
+  ┃ [1mfrom[0m dataclasses [1mimport[0m dataclass
+  ┃ [1mfrom[0m typing [1mimport[0m Optional
+  ┃ 
+  ┃ @dataclass
+  ┃ [1mclass[0m Document:
+  ┃     title: str
+  ┃     content: str
+  ┃     theme: Optional[str] = None
+  ┃ 
+  ┃     [1mdef[0m [1mrender[0m(self) -> str:
+  ┃         [1mreturn[0m f"[3m# [0m{self.title}[1m\n[0m[1m\n[0m{self.content}"
+  ┃ 
+  ┃ docs = [[1mDocument[0m("[3mHello[0m",[1m [0m"[3mWorld[0m"), [1mDocument[0m("[3mTest[0m",[1m [0m"[3mContent[0m",[1m [0m"[3msilk-dark[0m")…
+  ┃ [1mfor[0m doc [1min[0m docs:
+  ┃     [1mprint[0m([1mdoc[0m.[1mrender[0m())
+
+  [1mJavaScript[0m
+  [2m------------------------------------------------[0m
+
+  [2mjavascript[0m
+  ┃ const [1mrenderMarkdown[0m = async (input, options = {}) [1m=>[0m {
+  ┃   const { theme = "[3msilk-light[0m", toc = false } = options;
+  ┃ 
+  ┃   const ast = [1mparse[0m(input);
+  ┃   const typst = [1memit[0m(ast,[1m [0m{[1m [0mtheme,[1m [0mtoc[1m [0m});
+  ┃ 
+  ┃   [1mreturn[0m await [1mcompile[0m(typst);
+  ┃ };
+  ┃ 
+  ┃ //[3m Arrow functions and template literals[0m
+  ┃ const [1mgreet[0m = (name) [1m=>[0m `[3mHello, [0m${name}[3m![0m`;
+  ┃ console.[1mlog[0m([1mgreet[0m("[3mSilkPrint[0m"));
+
+  [1mBash[0m
+  [2m------------------------------------------------[0m
+
+  [2mbash[0m
+  ┃ #[3m!/usr/bin/env bash[0m
+  ┃ [1mset[0m[1m -euo pipefail[0m
+  ┃ 
+  ┃ THEMES_DIR="[3m./themes[0m"
+  ┃ OUTPUT_DIR="[3m/tmp/silkprint-output[0m"
+  ┃ 
+  ┃ [1mfor[0m theme [1min[0m "$THEMES_DIR"/*.toml; [1mdo[0m
+  ┃     name=$([1mbasename[0m[1m [0m"$theme"[1m .toml[0m)
+  ┃     [1mecho[0m[1m [0m"[3mRendering with theme: [0m$name"
+  ┃     [1msilkprint[0m[1m input.md[0m -t[1m [0m"$name" -o[1m [0m"$OUTPUT_DIR[3m/[0m${name}[3m.pdf[0m"
+  ┃ [1mdone[0m
+  ┃ 
+  ┃ [1mecho[0m[1m [0m"[3mDone! Rendered [0m${#themes[@]}[3m PDFs.[0m"
+
+  [1mJSON[0m
+  [2m------------------------------------------------[0m
+
+  [2mjson[0m
+  ┃ {
+  ┃   "[3mname[0m": "[3msilkprint[0m",
+  ┃   "[3mversion[0m": "[3m0.1.0[0m",
+  ┃   "[3mthemes[0m": [
+  ┃     { "[3mid[0m": "[3msilk-light[0m", "[3mvariant[0m": "[3mlight[0m", "[3mprint_safe[0m": true },
+  ┃     { "[3mid[0m": "[3msilk-dark[0m", "[3mvariant[0m": "[3mdark[0m", "[3mprint_safe[0m": false }
+  ┃   ],
+  ┃   "[3mconfig[0m": {
+  ┃     "[3mdefault_theme[0m": "[3msilk-light[0m",
+  ┃     "[3mfont_embedding[0m": true,
+  ┃     "[3mpdf_version[0m": "[3m1.7[0m"
+  ┃   }
+  ┃ }
+
+  [1mYAML[0m
+  [2m------------------------------------------------[0m
+
+  [2myaml[0m
+  ┃ [1mmeta[0m:
+  ┃   [1mname[0m: [3mSilk Light[0m
+  ┃   [1mversion[0m: "[3m1[0m"
+  ┃   [1mvariant[0m: [3mlight[0m
+  ┃ 
+  ┃ [1mcolors[0m:
+  ┃   [1mprimary[0m: "[3m#4a5dbd[0m"
+  ┃   [1msecondary[0m: "[3m#555570[0m"
+  ┃   [1mbackground[0m: "[3m#ffffff[0m"
+  ┃ 
+  ┃ [1mfonts[0m:
+  ┃   [1mheading[0m: [3mInter[0m
+  ┃   [1mbody[0m: [3mSource Serif 4[0m
+  ┃   [1mmono[0m: [3mJetBrains Mono[0m
+
+  [1mTOML[0m
+  [2m------------------------------------------------[0m
+
+  [2mtoml[0m
+  ┃ [meta]
+  ┃ name = "Custom Theme"
+  ┃ variant = "light"
+  ┃ 
+  ┃ [colors]
+  ┃ accent = "#e135ff"
+  ┃ background = "#1a1a2e"
+  ┃ 
+  ┃ [fonts]
+  ┃ heading = "Inter"
+  ┃ body = "Source Serif 4"
+
+  [1mGo[0m
+  [2m------------------------------------------------[0m
+
+  [2mgo[0m
+  ┃ [1mpackage[0m main
+  ┃ 
+  ┃ [1mimport[0m (
+  ┃ 	"[3mfmt[0m"
+  ┃ 	"[3mstrings[0m"
+  ┃ )
+  ┃ 
+  ┃ type Theme struct {
+  ┃ 	Name    string
+  ┃ 	Variant string
+  ┃ 	Colors  map[string]string
+  ┃ }
+  ┃ 
+  ┃ func (t *Theme) [1mResolve[0m(key string) string {
+  ┃ 	[1mif[0m val, ok := t.Colors[key]; ok {
+  ┃ 		[1mreturn[0m val
+  ┃ 	}
+  ┃ 	[1mreturn[0m "[3m#000000[0m"
+  ┃ }
+  ┃ 
+  ┃ func [1mmain[0m() {
+  ┃ 	theme := &Theme{
+  ┃ 		Name:    "[3msilk-light[0m",
+  ┃ 		Variant: "[3mlight[0m",
+  ┃ 		Colors:  map[string]string{"[3mprimary[0m": "[3m#4a5dbd[0m"},
+  ┃ 	}
+  ┃ 	fmt.[1mPrintln[0m([1mstrings[0m.[1mToUpper[0m([1mtheme[0m.Name))
+  ┃ }
+
+  [1mTypeScript[0m
+  [2m------------------------------------------------[0m
+
+  [2mtypescript[0m
+  ┃ interface ThemeConfig {
+  ┃   meta: { name: string; variant: "light" | "dark" };
+  ┃   colors: Record<string, string>;
+  ┃   fonts: {
+  ┃     heading: string;
+  ┃     body: string;
+  ┃     mono: string;
+  ┃   };
+  ┃ }
+  ┃ 
+  ┃ async function loadTheme(name: string): Promise<ThemeConfig> {
+  ┃   const response = await fetch(`/themes/${name}.toml`);
+  ┃   const toml = await response.text();
+  ┃   return parseToml<ThemeConfig>(toml);
+  ┃ }
+
+  [1mInline [0m[1mCode[0m
+  [2m------------------------------------------------[0m
+
+  You can use inline code in the middle of a sentence. Variables like font_size
+  and functions like resolve_color() render in monospace. A longer inline code
+  span: HashMap<String, Vec<Box<dyn Trait + Send + 'static>>>.
+
+  [1mLong [0m[1mLines [0m[1m(Wrapping [0m[1mTest)[0m
+  [2m------------------------------------------------[0m
+
+  [2mrust[0m
+  ┃ [1mfn[0m [1mthis_function_has_a_very_long_signature_that_should_test_line_wrapping_b…[0m
+  ┃     todo!("[3mThis line is intentionally very long to test how code blocks han…[0m
+  ┃ }
+
+  [1mEmpty [0m[1mCode [0m[1mBlock[0m
+  [2m------------------------------------------------[0m
+
+  [1mNo [0m[1mLanguage [0m[1mSpecified[0m
+  [2m------------------------------------------------[0m
+
+  ┃ This is a code block with no language identifier.
+  ┃ It should render as plain preformatted text.
+  ┃ No syntax highlighting should be applied.
