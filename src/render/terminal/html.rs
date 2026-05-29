@@ -11,7 +11,9 @@ use ego_tree::NodeRef;
 use scraper::Html;
 use scraper::node::{Element, Node};
 
-use super::model::{Block, ItemMarker, LinkTarget, ListBlock, ListItem, Mods, Role, Span};
+use super::model::{
+    Align, Block, ItemMarker, LinkTarget, ListBlock, ListItem, Mods, Role, Span, TableBlock,
+};
 
 /// Convert an HTML fragment into blocks, registering link targets.
 pub fn to_blocks(html: &str, links: &mut Vec<LinkTarget>) -> Vec<Block> {
@@ -142,6 +144,10 @@ impl Builder<'_> {
                 self.flush();
                 self.list(node, el.name() == "ol");
             }
+            "table" => {
+                self.flush();
+                self.table(node);
+            }
             "blockquote" => {
                 self.flush();
                 let mut sub = Builder {
@@ -155,8 +161,7 @@ impl Builder<'_> {
             }
             // Block containers: flush surrounding inline, recurse, flush again.
             "p" | "div" | "section" | "article" | "header" | "footer" | "main" | "center"
-            | "figure" | "figcaption" | "nav" | "details" | "summary" | "aside" | "table"
-            | "tbody" | "thead" | "tr" => {
+            | "figure" | "figcaption" | "nav" | "details" | "summary" | "aside" => {
                 self.flush();
                 self.children(node, mods, role, link);
                 self.flush();
@@ -207,6 +212,59 @@ impl Builder<'_> {
                 items,
             }));
         }
+    }
+
+    fn table(&mut self, node: NodeRef<'_, Node>) {
+        let mut header: Vec<Vec<Span>> = Vec::new();
+        let mut rows: Vec<Vec<Vec<Span>>> = Vec::new();
+
+        for row in node.descendants() {
+            let Node::Element(el) = row.value() else {
+                continue;
+            };
+            if el.name() != "tr" {
+                continue;
+            }
+            let mut cells = Vec::new();
+            let mut is_header = false;
+            for cell in row.children() {
+                let Node::Element(cell_el) = cell.value() else {
+                    continue;
+                };
+                match cell_el.name() {
+                    "th" => is_header = true,
+                    "td" => {}
+                    _ => continue,
+                }
+                let mut sub = Builder {
+                    blocks: Vec::new(),
+                    inline: Vec::new(),
+                    links: self.links,
+                };
+                sub.children(cell, Mods::default(), Role::Body, None);
+                cells.push(sub.inline);
+            }
+            if cells.is_empty() {
+                continue;
+            }
+            if is_header && header.is_empty() {
+                header = cells;
+            } else {
+                rows.push(cells);
+            }
+        }
+
+        if header.is_empty() && rows.is_empty() {
+            return;
+        }
+        let ncols = header
+            .len()
+            .max(rows.iter().map(Vec::len).max().unwrap_or(0));
+        self.blocks.push(Block::Table(TableBlock {
+            aligns: vec![Align::None; ncols],
+            header,
+            rows,
+        }));
     }
 }
 
@@ -271,6 +329,22 @@ mod tests {
         assert!(text.contains("[Logo]"), "image alt should render: {text}");
         assert!(text.contains("link"), "link text should render: {text}");
         assert_eq!(links.len(), 1, "one link registered");
+    }
+
+    #[test]
+    fn lowers_html_table() {
+        let mut links = Vec::new();
+        let blocks = to_blocks(
+            "<table><tr><th>Feature</th><th>Status</th></tr><tr><td>Parsing</td><td>Done</td></tr></table>",
+            &mut links,
+        );
+        let table = blocks
+            .iter()
+            .find_map(|b| if let Block::Table(t) = b { Some(t) } else { None })
+            .expect("a table block");
+        assert_eq!(table.header.len(), 2, "two header cells");
+        assert_eq!(table.rows.len(), 1, "one data row");
+        assert_eq!(table.rows[0].len(), 2, "two cells in the row");
     }
 
     #[test]
