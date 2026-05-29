@@ -375,6 +375,7 @@ impl App {
         };
 
         let theme = self.theme.clone();
+        let cell = self.images.cell();
         let mut inserted = 0usize;
         for (block_index, spec) in bands {
             let (orig_start, block_height) = self.block_spans[block_index];
@@ -408,7 +409,7 @@ impl App {
             };
             // The band must be at least as tall as the block it covers, so the
             // block's own text (heading underline, mermaid source) is hidden.
-            let img_rows = images::reserved_rows(w, h, content_width);
+            let img_rows = images::reserved_rows(w, h, content_width, cell);
             let band_rows = img_rows.max(u16::try_from(block_height).unwrap_or(u16::MAX));
             let start = orig_start + inserted;
             let extra = usize::from(band_rows) - block_height;

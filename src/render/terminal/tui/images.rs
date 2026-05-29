@@ -35,20 +35,32 @@ pub struct ImageStore {
     picker: Option<Picker>,
     base_dir: Option<PathBuf>,
     cache: HashMap<String, Option<Loaded>>,
+    /// Terminal cell size in pixels, for sizing reserved row bands.
+    cell: (u32, u32),
 }
 
 impl ImageStore {
     pub fn new(picker: Option<Picker>, base_dir: Option<PathBuf>) -> Self {
+        let cell = picker.as_ref().map_or((8, 16), |p| {
+            let fs = p.font_size();
+            (u32::from(fs.width.max(1)), u32::from(fs.height.max(1)))
+        });
         Self {
             picker,
             base_dir,
             cache: HashMap::new(),
+            cell,
         }
     }
 
     /// Whether a graphics-capable picker is available.
     pub fn enabled(&self) -> bool {
         self.picker.is_some()
+    }
+
+    /// Terminal cell size in pixels.
+    pub fn cell(&self) -> (u32, u32) {
+        self.cell
     }
 
     /// Drop cached protocols (e.g. on live reload, where images may have changed).
@@ -147,13 +159,21 @@ fn resolve(src: &str, base: Option<&Path>) -> Option<PathBuf> {
     candidate.starts_with(&canon_base).then_some(candidate)
 }
 
-/// Reserve a row band sized to the image's aspect ratio, assuming a terminal
-/// cell is roughly twice as tall as it is wide. Integer math; capped.
-pub(super) fn reserved_rows(width: u32, height: u32, content_width: u16) -> u16 {
-    let width = u64::from(width.max(1));
-    let height = u64::from(height);
-    let rows = u64::from(content_width) * height / width / 2;
-    u16::try_from(rows.clamp(1, u64::from(MAX_IMAGE_ROWS))).unwrap_or(MAX_IMAGE_ROWS)
+/// Reserve the number of rows the image will actually occupy: its natural cell
+/// size (pixels / `cell`), downscaled to fit `content_width` (never upscaled),
+/// matching how ratatui-image's `Fit` renders. This avoids the huge blank bands
+/// that resulted from always stretching to full width.
+pub(super) fn reserved_rows(width: u32, height: u32, content_width: u16, cell: (u32, u32)) -> u16 {
+    let (cell_w, cell_h) = (cell.0.max(1), cell.1.max(1));
+    let natural_cols = width.max(1).div_ceil(cell_w).max(1);
+    let natural_rows = height.max(1).div_ceil(cell_h).max(1);
+    let limit = u32::from(content_width).max(1);
+    let rows = if natural_cols <= limit {
+        natural_rows
+    } else {
+        (natural_rows * limit / natural_cols).max(1)
+    };
+    u16::try_from(rows.min(u32::from(MAX_IMAGE_ROWS))).unwrap_or(MAX_IMAGE_ROWS)
 }
 
 #[cfg(test)]
@@ -161,13 +181,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reserved_rows_scales_with_aspect_and_caps() {
-        // Square image at width 40 → ~20 rows, capped at MAX.
-        assert_eq!(reserved_rows(100, 100, 40), MAX_IMAGE_ROWS);
-        // Wide banner stays short.
-        assert!(reserved_rows(1000, 100, 60) < 6);
+    fn reserved_rows_use_natural_size_then_downscale() {
+        let cell = (8, 16);
+        // 100x100 px at 8x16 cells → ~13 cols x 7 rows; fits in 40 cols → 7 rows.
+        assert_eq!(reserved_rows(100, 100, 40, cell), 7);
+        // Wide banner (1000x100 → 125 cols) exceeds 60 → downscaled to a few rows.
+        assert!(reserved_rows(1000, 100, 60, cell) <= 4);
         // Never zero.
-        assert!(reserved_rows(100, 1, 80) >= 1);
+        assert!(reserved_rows(100, 1, 80, cell) >= 1);
     }
 
     #[test]
