@@ -533,7 +533,13 @@ impl App {
     }
 
     fn draw_content(&mut self, frame: &mut Frame, area: Rect) {
-        let para = Paragraph::new(self.content.clone())
+        let content = if self.search_query.is_empty() {
+            self.content.clone()
+        } else {
+            let needle: Vec<char> = self.search_query.to_lowercase().chars().collect();
+            highlight_matches(&self.content, &needle)
+        };
+        let para = Paragraph::new(content)
             .style(Style::default().fg(self.content_fg).bg(self.content_bg))
             .scroll((self.scroll, 0));
         frame.render_widget(para, area);
@@ -735,6 +741,77 @@ impl App {
 
 fn rgb_to_color(rgb: Rgb) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
+}
+
+/// Return a copy of `text` with every (case-insensitive) occurrence of `needle`
+/// highlighted. `needle` is pre-lowercased characters.
+fn highlight_matches(text: &Text<'static>, needle: &[char]) -> Text<'static> {
+    if needle.is_empty() {
+        return text.clone();
+    }
+    let hl = Style::default()
+        .bg(Color::Rgb(241, 250, 140))
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let lines: Vec<Line<'static>> = text
+        .lines
+        .iter()
+        .map(|line| highlight_line(line, needle, hl))
+        .collect();
+    Text::from(lines)
+}
+
+fn highlight_line(line: &Line<'static>, needle: &[char], hl: Style) -> Line<'static> {
+    let cells: Vec<(char, Style)> = line
+        .spans
+        .iter()
+        .flat_map(|span| span.content.chars().map(move |ch| (ch, span.style)))
+        .collect();
+    if cells.len() < needle.len() {
+        return line.clone();
+    }
+
+    let lower: Vec<char> = cells
+        .iter()
+        .map(|(c, _)| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
+    let mut marks = vec![false; cells.len()];
+    let nlen = needle.len();
+    let mut i = 0;
+    while i + nlen <= lower.len() {
+        if lower[i..i + nlen] == *needle {
+            for mark in &mut marks[i..i + nlen] {
+                *mark = true;
+            }
+            i += nlen;
+        } else {
+            i += 1;
+        }
+    }
+    if !marks.iter().any(|m| *m) {
+        return line.clone();
+    }
+
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let mut current: Option<(Style, bool)> = None;
+    for (idx, (ch, style)) in cells.iter().enumerate() {
+        let key = (*style, marks[idx]);
+        if current != Some(key) {
+            if let Some((st, marked)) = current.take() {
+                spans.push(Span::styled(
+                    std::mem::take(&mut buf),
+                    if marked { st.patch(hl) } else { st },
+                ));
+            }
+            current = Some(key);
+        }
+        buf.push(*ch);
+    }
+    if let Some((st, marked)) = current {
+        spans.push(Span::styled(buf, if marked { st.patch(hl) } else { st }));
+    }
+    Line::from(spans)
 }
 
 fn load_theme_or_default(name: &str) -> ResolvedTheme {
