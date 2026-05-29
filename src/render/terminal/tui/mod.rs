@@ -73,12 +73,13 @@ pub fn run(
     theme: ResolvedTheme,
     theme_name: &str,
     glyph_override: Option<GlyphTier>,
+    images: bool,
     base_dir: Option<PathBuf>,
     watch_path: Option<PathBuf>,
 ) -> io::Result<()> {
     // Query the terminal's graphics protocol + font size before entering the
-    // alternate screen. `None` falls back to text-only (image placeholders).
-    let picker = Picker::from_query_stdio().ok();
+    // alternate screen. `None` (or `--no-images`) falls back to text-only.
+    let picker = images.then(Picker::from_query_stdio).and_then(Result::ok);
     let mut app = App::new(body, theme, theme_name, glyph_override, picker, base_dir, watch_path);
     let mut terminal = ratatui::init();
     let result = app.run_loop(&mut terminal);
@@ -778,7 +779,7 @@ impl App {
             .unwrap_or_default();
 
         let hint = if self.mode == Mode::Search {
-            format!("/{}", self.search_query)
+            format!("/{}", super::layout::sanitize(&self.search_query))
         } else if !self.matches.is_empty() {
             format!(
                 "match {}/{}  /search ?help t theme o outline q quit",

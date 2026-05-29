@@ -8,6 +8,9 @@ use image::{DynamicImage, Rgba, RgbaImage};
 use super::super::model::Rgb;
 
 const PAD: f32 = 6.0;
+/// Cap rasterized heading length so a pathological heading can't allocate a
+/// gigantic image.
+const MAX_HEADING_CHARS: usize = 200;
 
 /// Rasterize `text` at a size scaled to the heading `level`, with `fg` glyphs
 /// over a `bg` fill. Returns `None` if the font is unavailable or text is empty.
@@ -24,6 +27,7 @@ pub fn rasterize(text: &str, level: u8, fg: Rgb, bg: Rgb) -> Option<DynamicImage
     if trimmed.is_empty() {
         return None;
     }
+    let trimmed: String = trimmed.chars().take(MAX_HEADING_CHARS).collect();
 
     let bytes = crate::fonts::font_by_path("source-serif/SourceSerif4-Bold.ttf")?;
     let font = FontVec::try_from_vec(bytes).ok()?;

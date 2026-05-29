@@ -239,6 +239,13 @@ fn image_typst_path(original_src: &str, resolved_path: &Path) -> String {
 pub(crate) fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
     use std::time::Duration;
 
+    // SSRF guard: only fetch hosts that resolve entirely to public addresses,
+    // since the source URL may come from an untrusted document. (A redirect to
+    // an internal host is a residual risk — full per-hop validation is TODO.)
+    if !is_public_host(url) {
+        return Err("blocked non-public or unresolvable host".to_string());
+    }
+
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(20)))
         .build()
@@ -271,6 +278,73 @@ pub(crate) fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String>
         .ok_or_else(|| "unsupported or unknown image format".to_string())?;
 
     Ok((bytes, ext.to_string()))
+}
+
+/// Whether a URL's host resolves entirely to globally-routable addresses.
+///
+/// Rejects `localhost`, `*.local`, unresolvable hosts, and any host resolving
+/// to a loopback/private/link-local/unique-local address (blocks the obvious
+/// SSRF and cloud-metadata vectors).
+#[cfg(not(target_arch = "wasm32"))]
+fn is_public_host(url: &str) -> bool {
+    use std::net::ToSocketAddrs;
+
+    let authority = url
+        .split("://")
+        .nth(1)
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+        .map(|auth| auth.rsplit('@').next().unwrap_or(auth))
+        .unwrap_or_default();
+    let host = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split(']').next().unwrap_or(authority)
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
+    let lower = host.to_ascii_lowercase();
+    let last_label = lower.rsplit('.').next().unwrap_or(lower.as_str());
+    if lower.is_empty() || last_label == "localhost" || last_label == "local" {
+        return false;
+    }
+
+    match (host, 443u16).to_socket_addrs() {
+        Ok(addrs) => {
+            let mut resolved = false;
+            for addr in addrs {
+                resolved = true;
+                if !is_global_ip(addr.ip()) {
+                    return false;
+                }
+            }
+            resolved
+        }
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_global_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (o[1] & 0xc0) == 64))
+        }
+        IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -350,6 +424,20 @@ mod tests {
 
     use super::*;
     use crate::render::markdown;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn ssrf_guard_blocks_local_and_private_hosts() {
+        // IP literals + localhost/.local resolve (or short-circuit) without network.
+        assert!(!is_public_host("http://localhost/x.png"));
+        assert!(!is_public_host("http://127.0.0.1/x.png"));
+        assert!(!is_public_host("http://169.254.169.254/latest/meta-data"));
+        assert!(!is_public_host("http://10.0.0.5/x"));
+        assert!(!is_public_host("http://192.168.1.1/x"));
+        assert!(!is_public_host("http://[::1]/x"));
+        assert!(!is_public_host("https://printer.local/x"));
+        assert!(!is_public_host("http:///no-host"));
+    }
 
     #[test]
     fn collects_html_image_sources_from_nested_markup() {

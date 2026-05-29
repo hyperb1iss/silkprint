@@ -575,10 +575,19 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
 // ── Helpers ────────────────────────────────────────────────────
 
 /// Display warnings to stderr with `SilkCircuit` styling.
+///
+/// Warning text can echo attacker-controlled markdown (a fence language,
+/// footnote name, or HTML tag from an untrusted file), so control characters
+/// are stripped before printing to neutralize terminal escape injection.
 fn display_warnings(warnings: &[SilkprintWarning]) {
     for w in warnings {
-        eprintln!("  {} {}", yellow("\u{26a0}"), w);
+        eprintln!("  {} {}", yellow("\u{26a0}"), strip_control(&w.to_string()));
     }
+}
+
+/// Remove terminal control characters (keeping tab) from untrusted text.
+fn strip_control(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control() || *c == '\t').collect()
 }
 
 /// Estimate page count from PDF bytes by counting page object markers.
@@ -665,6 +674,24 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
         }
     })?;
 
+    // `read` is its own mode; PDF-only flags don't apply.
+    if cli.check || cli.open || cli.dump_typst || cli.output.is_some() {
+        return Err(silkprint::error::SilkprintError::ConflictingOptions {
+            details: "--check, --open, --dump-typst, and --output do not apply to `read`"
+                .to_string(),
+        }
+        .into());
+    }
+    // Reject an unrecognized --glyphs value instead of silently falling back.
+    if let Some(value) = args.glyphs.as_deref()
+        && silkprint::GlyphTier::parse(value).is_none()
+    {
+        return Err(silkprint::error::SilkprintError::ConflictingOptions {
+            details: format!("unknown --glyphs '{value}' (expected nerdfont, unicode, or ascii)"),
+        }
+        .into());
+    }
+
     // Saved reader preferences fill in where no flag was given (CLI explicit
     // theme/glyphs still win).
     let reader_config = silkprint::render::terminal::config::load();
@@ -695,6 +722,7 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
             theme,
             &theme_name,
             glyph_tier,
+            !args.no_images,
             base_dir,
             Some(input_path.clone()),
         )
