@@ -690,12 +690,18 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
     if io::stdout().is_terminal() && !args.plain {
         let (theme, theme_name, _warnings) = silkprint::resolve_terminal_theme(&input, &options)?;
         let base_dir = input_path.parent().map(std::path::Path::to_path_buf);
-        silkprint::run_terminal_tui(&input, theme, &theme_name, glyph_tier, base_dir).map_err(
-            |e| silkprint::error::SilkprintError::RenderFailed {
-                details: e.to_string(),
-                hint: "the terminal reader could not start".to_string(),
-            },
-        )?;
+        silkprint::run_terminal_tui(
+            &input,
+            theme,
+            &theme_name,
+            glyph_tier,
+            base_dir,
+            Some(input_path.clone()),
+        )
+        .map_err(|e| silkprint::error::SilkprintError::RenderFailed {
+            details: e.to_string(),
+            hint: "the terminal reader could not start".to_string(),
+        })?;
         return Ok(());
     }
 

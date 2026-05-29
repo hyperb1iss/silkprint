@@ -10,8 +10,10 @@ mod images;
 
 use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use ansi_to_tui::IntoText;
+use notify::Watcher;
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -54,11 +56,12 @@ pub fn run(
     theme_name: &str,
     glyph_override: Option<GlyphTier>,
     base_dir: Option<PathBuf>,
+    watch_path: Option<PathBuf>,
 ) -> io::Result<()> {
     // Query the terminal's graphics protocol + font size before entering the
     // alternate screen. `None` falls back to text-only (image placeholders).
     let picker = Picker::from_query_stdio().ok();
-    let mut app = App::new(body, theme, theme_name, glyph_override, picker, base_dir);
+    let mut app = App::new(body, theme, theme_name, glyph_override, picker, base_dir, watch_path);
     let mut terminal = ratatui::init();
     let result = app.run_loop(&mut terminal);
     ratatui::restore();
@@ -104,6 +107,7 @@ struct App {
 
     images: ImageStore,
     image_placements: Vec<Placement>,
+    path: Option<PathBuf>,
 }
 
 impl App {
@@ -114,6 +118,7 @@ impl App {
         glyph_override: Option<GlyphTier>,
         picker: Option<Picker>,
         base_dir: Option<PathBuf>,
+        watch_path: Option<PathBuf>,
     ) -> Self {
         let arena = comrak::Arena::new();
         let root = crate::render::markdown::parse(&arena, body);
@@ -172,20 +177,70 @@ impl App {
             quit: false,
             images: ImageStore::new(picker, base_dir),
             image_placements: Vec::new(),
+            path: watch_path,
         }
     }
 
     fn run_loop(&mut self, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
+        // Watch the input file's directory for changes (robust to editors that
+        // save via atomic rename). `_watcher` must stay alive for the loop.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _watcher = self.path.clone().and_then(|path| {
+            let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if res.is_ok() {
+                    let _ = tx.send(());
+                }
+            })
+            .ok()?;
+            let target = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(path.as_path());
+            watcher.watch(target, notify::RecursiveMode::NonRecursive).ok()?;
+            Some(watcher)
+        });
+
         while !self.quit {
             terminal.draw(|frame| self.draw(frame))?;
-            if let Event::Key(key) = event::read()?
+            if event::poll(Duration::from_millis(200))?
+                && let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
             {
                 self.on_key(key.code, key.modifiers);
             }
+            if rx.try_iter().count() > 0 {
+                self.reload();
+            }
         }
         self.save_config();
         Ok(())
+    }
+
+    /// Re-read and re-walk the watched file (live reload).
+    fn reload(&mut self) {
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let arena = comrak::Arena::new();
+        let root = crate::render::markdown::parse(&arena, &body);
+        let mut warnings = WarningCollector::new();
+        crate::render::markdown::check_content(root, &mut warnings);
+        self.doc = super::walk::walk(root, &mut warnings);
+        self.title =
+            super::layout::sanitize(self.doc.title.as_deref().unwrap_or("silkprint")).into_owned();
+        self.images.clear_cache();
+        self.image_placements.clear();
+        match self.outline_state.selected() {
+            Some(sel) if sel >= self.doc.outline.len() => {
+                self.outline_state.select((!self.doc.outline.is_empty()).then_some(0));
+            }
+            None if !self.doc.outline.is_empty() => self.outline_state.select(Some(0)),
+            _ => {}
+        }
+        self.theme_dirty = true; // force ensure_content to re-render
     }
 
     fn save_config(&self) {
@@ -910,6 +965,7 @@ mod tests {
             Some(GlyphTier::Unicode),
             None,
             None,
+            None,
         )
     }
 
@@ -920,6 +976,27 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
         assert!(app.content_len() > 0, "content should render some lines");
+    }
+
+    #[test]
+    fn reload_rereads_the_watched_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("doc.md");
+        std::fs::write(&path, "# One\n").expect("write");
+        let theme = load_theme_or_default("silk-light");
+        let mut app = App::new(
+            "# One\n",
+            theme,
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            Some(path.clone()),
+        );
+        assert_eq!(app.doc.outline.len(), 1);
+        std::fs::write(&path, "# One\n\n## Two\n").expect("rewrite");
+        app.reload();
+        assert_eq!(app.doc.outline.len(), 2, "reload should pick up the new heading");
     }
 
     #[test]

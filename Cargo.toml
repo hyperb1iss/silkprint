@@ -46,6 +46,7 @@ terminal = [
     "dep:image",
     "dep:opaline",
     "dep:directories",
+    "dep:notify",
 ]
 
 [dependencies]
@@ -80,6 +81,7 @@ ansi-to-tui = { version = "8", optional = true }
 # probe); ratatui-image keeps Kitty/iTerm2/Sixel + its own halfblock fallback.
 ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
 image = { version = "0.25", default-features = false, optional = true }
+notify = { version = "8", optional = true }
 opaline = { version = "0.4", default-features = false, features = ["builtin-themes", "gradients", "widgets"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

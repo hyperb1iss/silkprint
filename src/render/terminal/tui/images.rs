@@ -48,6 +48,11 @@ impl ImageStore {
         self.picker.is_some()
     }
 
+    /// Drop cached protocols (e.g. on live reload, where images may have changed).
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
     /// Get a cached image (loading it on first request). `None` if the source
     /// is remote, missing, or undecodable.
     pub fn get(&mut self, src: &str, content_width: u16) -> Option<&mut Loaded> {
