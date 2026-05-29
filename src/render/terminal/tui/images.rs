@@ -60,20 +60,36 @@ impl ImageStore {
 
     fn load(&self, src: &str, content_width: u16) -> Option<Loaded> {
         let picker = self.picker.as_ref()?;
-        if src.starts_with("http://") || src.starts_with("https://") {
-            return None; // remote images deferred
-        }
-        let path = resolve(src, self.base_dir.as_deref())?;
-        let image = image::ImageReader::open(&path)
-            .ok()?
-            .with_guessed_format()
-            .ok()?
-            .decode()
-            .ok()?;
+        let image = if src.starts_with("http://") || src.starts_with("https://") {
+            let bytes = fetch_remote(src)?;
+            image::load_from_memory(&bytes).ok()?
+        } else {
+            let path = resolve(src, self.base_dir.as_deref())?;
+            image::ImageReader::open(&path)
+                .ok()?
+                .with_guessed_format()
+                .ok()?
+                .decode()
+                .ok()?
+        };
         let rows = reserved_rows(image.width(), image.height(), content_width);
         let protocol = picker.new_resize_protocol(image);
         Some(Loaded { protocol, rows })
     }
+}
+
+/// Fetch a remote image's bytes, reusing the PDF pipeline's downloader.
+/// (SVG bytes won't decode as a raster — those stay placeholders for now.)
+#[cfg(not(target_arch = "wasm32"))]
+fn fetch_remote(url: &str) -> Option<Vec<u8>> {
+    crate::render::image::fetch_remote_image(url)
+        .ok()
+        .map(|(bytes, _ext)| bytes)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn fetch_remote(_url: &str) -> Option<Vec<u8>> {
+    None
 }
 
 fn resolve(src: &str, base: Option<&Path>) -> Option<PathBuf> {

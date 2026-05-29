@@ -236,7 +236,7 @@ fn image_typst_path(original_src: &str, resolved_path: &Path) -> String {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
+pub(crate) fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
     use std::time::Duration;
 
     let agent: ureq::Agent = ureq::Agent::config_builder()
