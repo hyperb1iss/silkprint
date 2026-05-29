@@ -191,6 +191,10 @@ pub enum Block {
         lines: Vec<Vec<Span>>,
     },
     Quote(Vec<Block>),
+    /// Center-aligned content (from HTML `align="center"`, `<center>`, or an
+    /// inline `text-align:center` style). Each rendered line of the contained
+    /// blocks is horizontally centered within the available width.
+    Center(Vec<Block>),
     List(ListBlock),
     Table(TableBlock),
     Alert {

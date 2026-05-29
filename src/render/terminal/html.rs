@@ -4,8 +4,10 @@
 //! HTML (`<div align=center>`, `<img>`, `<a>`, `<picture>`). comrak hands these
 //! through as `HtmlBlock`/`HtmlInline` nodes; here we walk the fragment DOM with
 //! scraper and produce the same block model as the markdown path so the content
-//! actually renders instead of vanishing. Alignment and styling attributes are
-//! ignored — content, links, and structure are what matter in a reader.
+//! actually renders instead of vanishing. Center alignment (`align="center"`,
+//! `<center>`, `text-align:center`) is honored via [`Block::Center`]; other
+//! styling attributes are ignored — content, links, and structure are what
+//! matter in a reader.
 
 use ego_tree::NodeRef;
 use scraper::Html;
@@ -130,11 +132,16 @@ impl Builder<'_> {
                 sub.children(node, mods, Role::Heading(level), link);
                 let spans = sub.inline;
                 let anchor = slug(&spans_text(&spans));
-                self.blocks.push(Block::Heading {
+                let heading = Block::Heading {
                     level,
                     spans,
                     anchor,
-                });
+                };
+                if is_centered(el) {
+                    self.blocks.push(Block::Center(vec![heading]));
+                } else {
+                    self.blocks.push(heading);
+                }
             }
             "hr" => {
                 self.flush();
@@ -163,8 +170,21 @@ impl Builder<'_> {
             "p" | "div" | "section" | "article" | "header" | "footer" | "main" | "center"
             | "figure" | "figcaption" | "nav" | "details" | "summary" | "aside" => {
                 self.flush();
-                self.children(node, mods, role, link);
-                self.flush();
+                if el.name() == "center" || is_centered(el) {
+                    let mut sub = Builder {
+                        blocks: Vec::new(),
+                        inline: Vec::new(),
+                        links: self.links,
+                    };
+                    sub.children(node, mods, role, link);
+                    sub.flush();
+                    if !sub.blocks.is_empty() {
+                        self.blocks.push(Block::Center(sub.blocks));
+                    }
+                } else {
+                    self.children(node, mods, role, link);
+                    self.flush();
+                }
             }
             // Drop non-visual elements entirely.
             "script" | "style" | "head" | "title" | "noscript" => {}
@@ -272,6 +292,25 @@ fn spans_text(spans: &[Span]) -> String {
     spans.iter().map(|s| s.text.as_str()).collect()
 }
 
+/// Whether an element requests center alignment via `align="center"` or an
+/// inline `text-align: center` style. (`<center>` is handled by tag name.)
+fn is_centered(el: &Element) -> bool {
+    if el.attr("align").is_some_and(|a| a.eq_ignore_ascii_case("center")) {
+        return true;
+    }
+    el.attr("style").is_some_and(|style| {
+        style.split(';').any(|decl| {
+            let mut parts = decl.splitn(2, ':');
+            matches!(
+                (parts.next(), parts.next()),
+                (Some(prop), Some(val))
+                    if prop.trim().eq_ignore_ascii_case("text-align")
+                        && val.trim().eq_ignore_ascii_case("center")
+            )
+        })
+    })
+}
+
 fn collapse_whitespace(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut prev_space = false;
@@ -319,7 +358,12 @@ mod tests {
             r#"<div align="center"><img src="logo.png" alt="Logo"><p>A <a href="https://x.io">link</a> here</p></div>"#,
             &mut links,
         );
-        let text: String = blocks
+        // The centered div wraps its content in a Center block.
+        let inner = match blocks.first() {
+            Some(Block::Center(inner)) => inner.as_slice(),
+            _ => panic!("centered div should produce a Center block"),
+        };
+        let text: String = inner
             .iter()
             .flat_map(|b| match b {
                 Block::Paragraph(spans) => spans.iter().map(|s| s.text.clone()).collect::<Vec<_>>(),
@@ -345,6 +389,39 @@ mod tests {
         assert_eq!(table.header.len(), 2, "two header cells");
         assert_eq!(table.rows.len(), 1, "one data row");
         assert_eq!(table.rows[0].len(), 2, "two cells in the row");
+    }
+
+    #[test]
+    fn centers_aligned_paragraph_and_heading() {
+        let mut links = Vec::new();
+        let blocks = to_blocks(
+            r#"<h1 align="center">Title</h1><p align="center">tagline</p><p>normal</p>"#,
+            &mut links,
+        );
+        // Centered heading is wrapped, normal paragraph is not.
+        assert!(
+            matches!(blocks.first(), Some(Block::Center(inner)) if matches!(inner.first(), Some(Block::Heading { level: 1, .. }))),
+            "centered h1 should be wrapped in Center"
+        );
+        assert!(
+            matches!(blocks.get(1), Some(Block::Center(_))),
+            "centered paragraph should be wrapped in Center"
+        );
+        assert!(
+            matches!(blocks.get(2), Some(Block::Paragraph(_))),
+            "unaligned paragraph stays a plain Paragraph"
+        );
+    }
+
+    #[test]
+    fn centers_via_style_and_center_tag() {
+        let mut links = Vec::new();
+        let blocks = to_blocks(
+            r#"<div style="text-align: center">styled</div><center>tagged</center>"#,
+            &mut links,
+        );
+        assert!(matches!(blocks.first(), Some(Block::Center(_))));
+        assert!(matches!(blocks.get(1), Some(Block::Center(_))));
     }
 
     #[test]

@@ -125,6 +125,7 @@ impl Renderer<'_> {
             Block::Paragraph(spans) => self.wrap_render(spans, width),
             Block::CodeBlock { lang, lines } => self.code_block(lang.as_deref(), lines, width),
             Block::Quote(inner) => self.quote(inner, width),
+            Block::Center(inner) => self.center(inner, width),
             Block::List(list) => self.list(&list.items, list.tight, width),
             Block::Table(table) => self.table(table, width),
             Block::Alert { kind, title, body } => self.alert(*kind, title, body, width),
@@ -228,6 +229,20 @@ impl Renderer<'_> {
         self.blocks_lines(inner, width.saturating_sub(gutter_w))
             .into_iter()
             .map(|line| format!("{bar} {line}"))
+            .collect()
+    }
+
+    fn center(&self, inner: &[Block], width: usize) -> Vec<String> {
+        self.blocks_lines(inner, width)
+            .into_iter()
+            .map(|line| {
+                let vis = visible_width(&line);
+                if vis >= width {
+                    return line;
+                }
+                let pad = (width - vis) / 2;
+                format!("{}{line}", " ".repeat(pad))
+            })
             .collect()
     }
 
@@ -500,19 +515,46 @@ fn display_width_plain(marker: &str) -> usize {
     display_width(&visible)
 }
 
+/// Visible (printable) display width of a line that may carry SGR and OSC 8
+/// escape sequences. Used to center content correctly even when it contains
+/// colored runs or hyperlinks (whose URL bytes must not count toward width).
+fn visible_width(s: &str) -> usize {
+    display_width(&strip_ansi(s))
+}
+
+/// Strip SGR (CSI) and OSC escape sequences, leaving only printable text.
+///
+/// CSI runs (`ESC [ … final`) end at a byte in `@`–`~`; OSC runs (`ESC ] …`)
+/// end at BEL or the ST terminator (`ESC \`). Naively skipping to the next
+/// ASCII letter mis-handles OSC 8 hyperlinks, whose URLs contain letters.
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip until a letter (CSI) or ST for OSC.
-            for n in chars.by_ref() {
-                if n.is_ascii_alphabetic() || n == '\\' {
-                    break;
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for n in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&n) {
+                        break;
+                    }
                 }
             }
-        } else {
-            out.push(c);
+            Some(']') => {
+                while let Some(n) = chars.next() {
+                    if n == '\u{07}' {
+                        break;
+                    }
+                    if n == '\x1b' {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
         }
     }
     out
@@ -634,6 +676,17 @@ mod tests {
             },
         );
         assert_eq!(out, "\x1b[38;2;225;53;255mx\x1b[0m");
+    }
+
+    #[test]
+    fn visible_width_ignores_sgr_and_osc8() {
+        // SGR-wrapped text counts only the printable glyphs.
+        assert_eq!(visible_width("\x1b[1mhi\x1b[0m"), 2);
+        // An OSC 8 hyperlink's URL bytes (letters and all) must not count.
+        let link = "\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\";
+        assert_eq!(visible_width(link), 4);
+        // Plain text is just its display width.
+        assert_eq!(visible_width("hello"), 5);
     }
 
     #[test]
