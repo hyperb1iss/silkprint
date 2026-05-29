@@ -24,6 +24,7 @@ pub fn to_blocks(html: &str, links: &mut Vec<LinkTarget>) -> Vec<Block> {
         blocks: Vec::new(),
         inline: Vec::new(),
         links,
+        inline_only: false,
     };
     for child in fragment.tree.root().children() {
         builder.walk(child, Mods::default(), Role::Body, None);
@@ -36,6 +37,9 @@ struct Builder<'a> {
     blocks: Vec<Block>,
     inline: Vec<Span>,
     links: &'a mut Vec<LinkTarget>,
+    /// True inside contexts that can only hold inline content (table cells), so
+    /// images stay text placeholders instead of being promoted to image blocks.
+    inline_only: bool,
 }
 
 impl Builder<'_> {
@@ -109,17 +113,31 @@ impl Builder<'_> {
                 self.children(node, mods.with_underline(), Role::Link, id);
             }
             "img" => {
-                let label = el
-                    .attr("alt")
-                    .filter(|a| !a.is_empty())
-                    .or_else(|| el.attr("src"))
-                    .unwrap_or("image");
-                self.inline.push(Span {
-                    text: format!("[{label}]"),
-                    role: Role::Muted,
-                    mods,
-                    link,
-                });
+                let src = el.attr("src").unwrap_or_default();
+                let alt = el.attr("alt").unwrap_or_default();
+                // Promote real raster images (logos, screenshots) to block-level
+                // so they render as actual graphics. Decorative inline images —
+                // shields.io-style SVG badges with no raster extension — stay as
+                // text placeholders so a badge row doesn't explode into a stack.
+                if is_raster_src(src) && !self.inline_only {
+                    self.flush();
+                    self.blocks.push(Block::Image {
+                        src: src.to_string(),
+                        alt: alt.to_string(),
+                    });
+                } else {
+                    let label = if alt.is_empty() {
+                        if src.is_empty() { "image" } else { src }
+                    } else {
+                        alt
+                    };
+                    self.inline.push(Span {
+                        text: format!("[{label}]"),
+                        role: Role::Muted,
+                        mods,
+                        link,
+                    });
+                }
             }
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                 self.flush();
@@ -128,6 +146,7 @@ impl Builder<'_> {
                     blocks: Vec::new(),
                     inline: Vec::new(),
                     links: self.links,
+                    inline_only: self.inline_only,
                 };
                 sub.children(node, mods, Role::Heading(level), link);
                 let spans = sub.inline;
@@ -161,6 +180,7 @@ impl Builder<'_> {
                     blocks: Vec::new(),
                     inline: Vec::new(),
                     links: self.links,
+                    inline_only: self.inline_only,
                 };
                 sub.children(node, mods, Role::Quote, link);
                 sub.flush();
@@ -175,11 +195,26 @@ impl Builder<'_> {
                         blocks: Vec::new(),
                         inline: Vec::new(),
                         links: self.links,
+                        inline_only: self.inline_only,
                     };
                     sub.children(node, mods, role, link);
                     sub.flush();
-                    if !sub.blocks.is_empty() {
-                        self.blocks.push(Block::Center(sub.blocks));
+                    // Hoist block-level images out of the centered wrapper so they
+                    // get a real image band (reserve_bands only scans top-level
+                    // blocks); keep contiguous non-image content centered, in order.
+                    let mut centered: Vec<Block> = Vec::new();
+                    for block in sub.blocks {
+                        if matches!(block, Block::Image { .. }) {
+                            if !centered.is_empty() {
+                                self.blocks.push(Block::Center(std::mem::take(&mut centered)));
+                            }
+                            self.blocks.push(block);
+                        } else {
+                            centered.push(block);
+                        }
+                    }
+                    if !centered.is_empty() {
+                        self.blocks.push(Block::Center(centered));
                     }
                 } else {
                     self.children(node, mods, role, link);
@@ -208,6 +243,7 @@ impl Builder<'_> {
                 blocks: Vec::new(),
                 inline: Vec::new(),
                 links: self.links,
+                inline_only: self.inline_only,
             };
             sub.children(li, Mods::default(), Role::Body, None);
             sub.flush();
@@ -260,6 +296,7 @@ impl Builder<'_> {
                     blocks: Vec::new(),
                     inline: Vec::new(),
                     links: self.links,
+                    inline_only: true,
                 };
                 sub.children(cell, Mods::default(), Role::Body, None);
                 cells.push(sub.inline);
@@ -290,6 +327,18 @@ impl Builder<'_> {
 
 fn spans_text(spans: &[Span]) -> String {
     spans.iter().map(|s| s.text.as_str()).collect()
+}
+
+/// Whether an image `src` points at a decodable raster image, judged by file
+/// extension (ignoring any query string). SVG and extension-less endpoints
+/// (e.g. shields.io badges) return false and stay inline placeholders.
+fn is_raster_src(src: &str) -> bool {
+    let path = src.split(['?', '#']).next().unwrap_or(src);
+    let ext = path.rsplit('.').next().unwrap_or("");
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "avif" | "ico"
+    ) && path.contains('.')
 }
 
 /// Whether an element requests center alignment via `align="center"` or an
@@ -352,27 +401,62 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_image_and_link_from_div() {
+    fn raster_image_in_centered_div_is_hoisted_to_block() {
         let mut links = Vec::new();
         let blocks = to_blocks(
             r#"<div align="center"><img src="logo.png" alt="Logo"><p>A <a href="https://x.io">link</a> here</p></div>"#,
             &mut links,
         );
-        // The centered div wraps its content in a Center block.
-        let inner = match blocks.first() {
-            Some(Block::Center(inner)) => inner.as_slice(),
-            _ => panic!("centered div should produce a Center block"),
-        };
-        let text: String = inner
+        // The raster image is hoisted out of the Center wrapper so it can band;
+        // the remaining text stays centered.
+        assert!(
+            matches!(blocks.first(), Some(Block::Image { alt, .. }) if alt == "Logo"),
+            "logo.png should become a top-level image block: {blocks:?}"
+        );
+        let centered_text: String = blocks
             .iter()
+            .filter_map(|b| match b {
+                Block::Center(inner) => Some(inner),
+                _ => None,
+            })
+            .flatten()
             .flat_map(|b| match b {
                 Block::Paragraph(spans) => spans.iter().map(|s| s.text.clone()).collect::<Vec<_>>(),
                 _ => Vec::new(),
             })
             .collect();
-        assert!(text.contains("[Logo]"), "image alt should render: {text}");
-        assert!(text.contains("link"), "link text should render: {text}");
+        assert!(centered_text.contains("link"), "link text centered: {centered_text}");
         assert_eq!(links.len(), 1, "one link registered");
+    }
+
+    #[test]
+    fn badge_and_table_images_stay_inline_placeholders() {
+        let mut links = Vec::new();
+        // Extension-less shields.io badge: stays an inline placeholder.
+        let badges = to_blocks(
+            r#"<p><img src="https://img.shields.io/badge/Rust-2024-e135ff" alt="Rust"></p>"#,
+            &mut links,
+        );
+        assert!(
+            matches!(badges.first(), Some(Block::Paragraph(spans)) if spans.iter().any(|s| s.text.contains("[Rust]"))),
+            "badge should be an inline placeholder, not an image block: {badges:?}"
+        );
+
+        // A raster image inside a table cell can't band, so it stays a
+        // placeholder inside the table rather than vanishing.
+        let table = to_blocks(
+            r#"<table><tr><td><img src="shot.png" alt="Shot"></td></tr></table>"#,
+            &mut links,
+        );
+        let cell = table
+            .iter()
+            .find_map(|b| if let Block::Table(t) = b { t.rows.first() } else { None })
+            .and_then(|row| row.first())
+            .expect("a table cell");
+        assert!(
+            cell.iter().any(|s| s.text.contains("[Shot]")),
+            "table-cell image should stay a placeholder: {cell:?}"
+        );
     }
 
     #[test]
