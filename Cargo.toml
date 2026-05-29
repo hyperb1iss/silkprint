@@ -48,6 +48,7 @@ terminal = [
     "dep:directories",
     "dep:notify",
     "dep:ab_glyph",
+    "dep:resvg",
 ]
 
 [dependencies]
@@ -83,6 +84,8 @@ ansi-to-tui = { version = "8", optional = true }
 ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
 image = { version = "0.25", default-features = false, optional = true }
 ab_glyph = { version = "0.2", optional = true }
+# Already in the tree via typst; used to rasterize mermaid SVGs for the reader.
+resvg = { version = "0.45", optional = true }
 notify = { version = "8", optional = true }
 opaline = { version = "0.4", default-features = false, features = ["builtin-themes", "gradients", "widgets"], optional = true }
 

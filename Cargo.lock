@@ -4494,6 +4494,7 @@ dependencies = [
  "pretty_assertions",
  "ratatui",
  "ratatui-image",
+ "resvg",
  "rust-embed",
  "scraper",
  "serde",

@@ -6,6 +6,7 @@
 //! outline, popups); the document content keeps the silkprint theme.
 
 mod chrome;
+mod diagrams;
 mod headings;
 mod images;
 
@@ -57,6 +58,10 @@ enum BandSpec {
         level: u8,
         text: String,
         fg: Rgb,
+        bg: Rgb,
+    },
+    Mermaid {
+        source: String,
         bg: Rgb,
     },
 }
@@ -337,12 +342,21 @@ impl App {
                                 .unwrap_or(bg);
                             Some((line, BandSpec::Heading { level: *level, text, fg, bg }))
                         }
+                        Block::CodeBlock { lang: Some(lang), lines } if lang == "mermaid" => {
+                            let source = lines
+                                .iter()
+                                .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            Some((line, BandSpec::Mermaid { source, bg }))
+                        }
                         _ => None,
                     }
                 })
                 .collect()
         };
 
+        let theme = self.theme.clone();
         let mut inserted = 0usize;
         for (orig_line, spec) in bands {
             let (key, rows) = match spec {
@@ -354,6 +368,13 @@ impl App {
                     let key = format!("\u{0}h{level}:{text}");
                     let rows = self.images.ensure_generated(&key, content_width, || {
                         headings::rasterize(&text, level, fg, bg)
+                    });
+                    (key, rows)
+                }
+                BandSpec::Mermaid { source, bg } => {
+                    let key = format!("\u{0}mermaid:{source}");
+                    let rows = self.images.ensure_generated(&key, content_width, || {
+                        diagrams::mermaid_image(&source, &theme, bg)
                     });
                     (key, rows)
                 }

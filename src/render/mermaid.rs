@@ -47,6 +47,17 @@ pub fn render_all(
     results
 }
 
+/// Render a single mermaid source to SVG bytes, returning `None` on failure.
+///
+/// Used by the terminal reader, which rasterizes the SVG rather than serving it
+/// through the Typst world.
+#[cfg(feature = "terminal")]
+pub fn render_one(source: &str, theme: &ResolvedTheme) -> Option<Vec<u8>> {
+    let options = build_render_options(theme);
+    let svg = mermaid_rs_renderer::render_with_options(source, options).ok()?;
+    Some(sanitize_svg_fonts(&svg).into_bytes())
+}
+
 /// Build mermaid `RenderOptions` from the `SilkPrint` theme.
 ///
 /// Maps theme colors to mermaid's node fill, stroke, text, and line colors
