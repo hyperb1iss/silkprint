@@ -6,25 +6,30 @@
 //! outline, popups); the document content keeps the silkprint theme.
 
 mod chrome;
+mod images;
 
 use std::io;
+use std::path::PathBuf;
 
 use ansi_to_tui::IntoText;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block as WBlock, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
+use ratatui_image::StatefulImage;
+use ratatui_image::picker::Picker;
 
 use crate::ThemeSource;
 use crate::theme::ResolvedTheme;
 use crate::warnings::WarningCollector;
 
 use self::chrome::Chrome;
+use self::images::{ImageStore, Placement};
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::{RenderedDoc, Rgb};
+use super::model::{Block, RenderedDoc, Rgb};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
@@ -48,8 +53,12 @@ pub fn run(
     theme: ResolvedTheme,
     theme_name: &str,
     glyph_override: Option<GlyphTier>,
+    base_dir: Option<PathBuf>,
 ) -> io::Result<()> {
-    let mut app = App::new(body, theme, theme_name, glyph_override);
+    // Query the terminal's graphics protocol + font size before entering the
+    // alternate screen. `None` falls back to text-only (image placeholders).
+    let picker = Picker::from_query_stdio().ok();
+    let mut app = App::new(body, theme, theme_name, glyph_override, picker, base_dir);
     let mut terminal = ratatui::init();
     let result = app.run_loop(&mut terminal);
     ratatui::restore();
@@ -92,6 +101,9 @@ struct App {
 
     pending_g: bool,
     quit: bool,
+
+    images: ImageStore,
+    image_placements: Vec<Placement>,
 }
 
 impl App {
@@ -100,6 +112,8 @@ impl App {
         theme: ResolvedTheme,
         theme_name: &str,
         glyph_override: Option<GlyphTier>,
+        picker: Option<Picker>,
+        base_dir: Option<PathBuf>,
     ) -> Self {
         let arena = comrak::Arena::new();
         let root = crate::render::markdown::parse(&arena, body);
@@ -156,6 +170,8 @@ impl App {
             picker_saved: 0,
             pending_g: false,
             quit: false,
+            images: ImageStore::new(picker, base_dir),
+            image_placements: Vec::new(),
         }
     }
 
@@ -220,9 +236,49 @@ impl App {
         }
 
         self.block_offsets = offsets;
+        self.image_placements.clear();
+        if self.images.enabled() {
+            self.reserve_images(width.saturating_sub(2));
+        }
         self.rendered_width = width;
         self.theme_dirty = false;
         self.clamp_scroll();
+    }
+
+    /// Insert blank rows into the content for each top-level image and record
+    /// where to draw the image widget.
+    fn reserve_images(&mut self, content_width: u16) {
+        let image_blocks: Vec<(usize, String)> = self
+            .doc
+            .blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, block)| match block {
+                Block::Image { src, .. } => {
+                    self.block_offsets.get(i).map(|&line| (line, src.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        let mut inserted = 0usize;
+        for (orig_line, src) in image_blocks {
+            let Some(loaded) = self.images.get(&src, content_width) else {
+                continue;
+            };
+            let rows = loaded.rows;
+            let line = orig_line + inserted;
+            let insert_at = (line + 1).min(self.content.lines.len());
+            for _ in 0..rows.saturating_sub(1) {
+                self.content.lines.insert(insert_at, Line::default());
+            }
+            inserted += usize::from(rows.saturating_sub(1));
+            self.image_placements.push(Placement {
+                src,
+                line: u16::try_from(line).unwrap_or(u16::MAX),
+                rows,
+            });
+        }
     }
 
     fn content_len(&self) -> u16 {
@@ -481,6 +537,36 @@ impl App {
             .style(Style::default().fg(self.content_fg).bg(self.content_bg))
             .scroll((self.scroll, 0));
         frame.render_widget(para, area);
+
+        // Draw images over their reserved bands, but only when the full band is
+        // in view (ratatui-image fits-to-area and can't clip a partial band).
+        if self.image_placements.is_empty() {
+            return;
+        }
+        let placements = self.image_placements.clone();
+        let content_width = self.rendered_width;
+        let scroll = u32::from(self.scroll);
+        let viewport = u32::from(area.height);
+        for placement in placements {
+            let top = u32::from(placement.line);
+            let bottom = top + u32::from(placement.rows);
+            if top < scroll || bottom > scroll + viewport {
+                continue;
+            }
+            let rel = u16::try_from(top - scroll).unwrap_or(0);
+            let img_area = Rect {
+                x: area.x.saturating_add(2),
+                y: area.y.saturating_add(rel),
+                width: area.width.saturating_sub(2),
+                height: placement.rows.min(area.height.saturating_sub(rel)),
+            };
+            if img_area.width == 0 || img_area.height == 0 {
+                continue;
+            }
+            if let Some(loaded) = self.images.get(&placement.src, content_width.saturating_sub(2)) {
+                frame.render_stateful_widget(StatefulImage::new(), img_area, &mut loaded.protocol);
+            }
+        }
     }
 
     fn draw_outline(&mut self, frame: &mut Frame, area: Rect) {
@@ -509,7 +595,7 @@ impl App {
         };
         let list = List::new(items)
             .block(
-                Block::default()
+                WBlock::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(border))
                     .title(Span::styled(
@@ -589,7 +675,7 @@ impl App {
             .collect();
         let list = List::new(items)
             .block(
-                Block::default()
+                WBlock::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(self.chrome.border_focused))
                     .title(Span::styled(
@@ -632,7 +718,7 @@ impl App {
             })
             .collect();
         let para = Paragraph::new(Text::from(lines)).block(
-            Block::default()
+            WBlock::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(self.chrome.border_focused))
                 .title(Span::styled(
@@ -698,7 +784,7 @@ mod tests {
     fn sample() -> App {
         let body = "# Title\n\nSome **bold** text.\n\n## Section\n\n- a\n- b\n\n```rust\nfn main() {}\n```\n";
         let theme = load_theme_or_default("silk-light");
-        App::new(body, theme, "silk-light", Some(GlyphTier::Unicode))
+        App::new(body, theme, "silk-light", Some(GlyphTier::Unicode), None, None)
     }
 
     #[test]
