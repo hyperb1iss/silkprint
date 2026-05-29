@@ -12,8 +12,6 @@ use image::DynamicImage;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 
-const MAX_IMAGE_ROWS: u16 = 20;
-
 /// A decoded image protocol plus its source pixel dimensions. Reserved rows are
 /// computed fresh per content width (not cached) so resizes stay correct.
 pub struct Loaded {
@@ -161,9 +159,16 @@ fn resolve(src: &str, base: Option<&Path>) -> Option<PathBuf> {
 
 /// Reserve the number of rows the image will actually occupy: its natural cell
 /// size (pixels / `cell`), downscaled to fit `content_width` (never upscaled),
-/// matching how ratatui-image's `Fit` renders. This avoids the huge blank bands
-/// that resulted from always stretching to full width.
-pub(super) fn reserved_rows(width: u32, height: u32, content_width: u16, cell: (u32, u32)) -> u16 {
+/// matching how ratatui-image's `Fit` renders. Bounded by `max_rows` so a band
+/// stays within one viewport — that keeps it fully visible (ratatui-image can't
+/// clip a partially scrolled image, so an over-tall band would never draw).
+pub(super) fn reserved_rows(
+    width: u32,
+    height: u32,
+    content_width: u16,
+    cell: (u32, u32),
+    max_rows: u16,
+) -> u16 {
     let (cell_w, cell_h) = (cell.0.max(1), cell.1.max(1));
     let natural_cols = width.max(1).div_ceil(cell_w).max(1);
     let natural_rows = height.max(1).div_ceil(cell_h).max(1);
@@ -173,7 +178,8 @@ pub(super) fn reserved_rows(width: u32, height: u32, content_width: u16, cell: (
     } else {
         (natural_rows * limit / natural_cols).max(1)
     };
-    u16::try_from(rows.min(u32::from(MAX_IMAGE_ROWS))).unwrap_or(MAX_IMAGE_ROWS)
+    let cap = u32::from(max_rows.max(1));
+    u16::try_from(rows.min(cap)).unwrap_or(max_rows).max(1)
 }
 
 #[cfg(test)]
@@ -184,11 +190,13 @@ mod tests {
     fn reserved_rows_use_natural_size_then_downscale() {
         let cell = (8, 16);
         // 100x100 px at 8x16 cells → ~13 cols x 7 rows; fits in 40 cols → 7 rows.
-        assert_eq!(reserved_rows(100, 100, 40, cell), 7);
+        assert_eq!(reserved_rows(100, 100, 40, cell, 50), 7);
         // Wide banner (1000x100 → 125 cols) exceeds 60 → downscaled to a few rows.
-        assert!(reserved_rows(1000, 100, 60, cell) <= 4);
+        assert!(reserved_rows(1000, 100, 60, cell, 50) <= 4);
         // Never zero.
-        assert!(reserved_rows(100, 1, 80, cell) >= 1);
+        assert!(reserved_rows(100, 1, 80, cell, 50) >= 1);
+        // A tall diagram is clamped to the viewport cap, not its full height.
+        assert_eq!(reserved_rows(400, 4000, 80, cell, 30), 30);
     }
 
     #[test]

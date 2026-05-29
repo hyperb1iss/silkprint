@@ -333,9 +333,11 @@ impl App {
         self.clamp_scroll();
     }
 
-    /// Insert blank rows so each graphical band — inline images and mermaid
-    /// diagrams — fully covers its source block, record where to draw it, and
-    /// keep outline jump offsets in sync with the shift.
+    /// Replace each graphical block — inline images and mermaid diagrams — with
+    /// a blank band sized to the image it will draw, record where to draw it,
+    /// and keep outline jump offsets in sync with the shift. Replacing (rather
+    /// than covering) the source means the mermaid text / image alt never peeks
+    /// out below an image that is shorter than its source block.
     fn reserve_bands(&mut self, content_width: u16) {
         let bands: Vec<(usize, BandSpec)> = {
             let resolver = ContentStyleResolver::new(&self.theme);
@@ -361,7 +363,11 @@ impl App {
 
         let theme = self.theme.clone();
         let cell = self.images.cell();
-        let mut inserted = 0usize;
+        // Keep every band within one screen, with a row of headroom, so it can
+        // be fully scrolled into view (and therefore drawn) rather than being
+        // taller than the viewport and never rendering.
+        let max_rows = self.viewport_h.saturating_sub(1).max(1);
+        let mut delta: isize = 0;
         for (block_index, spec) in bands {
             let (orig_start, block_height) = self.block_spans[block_index];
             if block_height == 0 {
@@ -384,24 +390,26 @@ impl App {
             let Some((w, h)) = dims else {
                 continue;
             };
-            // The band must be at least as tall as the block it covers, so the
-            // block's own text (heading underline, mermaid source) is hidden.
-            let img_rows = images::reserved_rows(w, h, content_width, cell);
-            let band_rows = img_rows.max(u16::try_from(block_height).unwrap_or(u16::MAX));
-            let start = orig_start + inserted;
-            let extra = usize::from(band_rows) - block_height;
-            let insert_at = (start + block_height).min(self.content.lines.len());
-            for _ in 0..extra {
-                self.content.lines.insert(insert_at, Line::default());
-            }
-            inserted += extra;
+            let img_rows = images::reserved_rows(w, h, content_width, cell, max_rows);
+            // Replace the source block's lines with exactly `img_rows` blank
+            // lines so the image fills the band with no source text peeking out.
+            let base = isize::try_from(orig_start).unwrap_or(0) + delta;
+            let start = usize::try_from(base).unwrap_or(0).min(self.content.lines.len());
+            let end = (start + block_height).min(self.content.lines.len());
+            let band = usize::from(img_rows);
+            self.content
+                .lines
+                .splice(start..end, std::iter::repeat_with(Line::default).take(band));
+            let shift = isize::try_from(band).unwrap_or(0)
+                - isize::try_from(end - start).unwrap_or(0);
+            delta += shift;
             for jump in self.block_jump.iter_mut().skip(block_index + 1) {
-                *jump += extra;
+                *jump = usize::try_from(isize::try_from(*jump).unwrap_or(0) + shift).unwrap_or(0);
             }
             self.image_placements.push(Placement {
                 src: key,
                 line: u16::try_from(start).unwrap_or(u16::MAX),
-                rows: band_rows,
+                rows: img_rows,
             });
         }
     }
