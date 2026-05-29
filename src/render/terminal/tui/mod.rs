@@ -12,12 +12,12 @@ use std::io;
 use std::path::PathBuf;
 
 use ansi_to_tui::IntoText;
+use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block as WBlock, Borders, Clear, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 use ratatui_image::StatefulImage;
 use ratatui_image::picker::Picker;
 
@@ -178,10 +178,10 @@ impl App {
     fn run_loop(&mut self, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
         while !self.quit {
             terminal.draw(|frame| self.draw(frame))?;
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    self.on_key(key.code, key.modifiers);
-                }
+            if let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+            {
+                self.on_key(key.code, key.modifiers);
             }
         }
         self.save_config();
@@ -221,7 +221,9 @@ impl App {
         self.content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
 
         let resolver = ContentStyleResolver::new(&self.theme);
-        self.content_bg = resolver.page_background().map_or(Color::Reset, rgb_to_color);
+        self.content_bg = resolver
+            .page_background()
+            .map_or(Color::Reset, rgb_to_color);
         self.content_fg = resolver.body_color().map_or(Color::Reset, rgb_to_color);
         // ansi-to-tui leaves text spans with a Reset background, which paints as
         // the terminal's own default — black on a dark profile even for a light
@@ -396,7 +398,11 @@ impl App {
         }
         let len = self.doc.outline.len();
         let cur = self.outline_state.selected().unwrap_or(0);
-        let next = if forward { (cur + 1) % len } else { (cur + len - 1) % len };
+        let next = if forward {
+            (cur + 1) % len
+        } else {
+            (cur + len - 1) % len
+        };
         self.outline_state.select(Some(next));
     }
 
@@ -447,7 +453,9 @@ impl App {
             }
         }
         if !self.matches.is_empty() {
-            self.scroll = u16::try_from(self.matches[0]).unwrap_or(0).min(self.max_scroll());
+            self.scroll = u16::try_from(self.matches[0])
+                .unwrap_or(0)
+                .min(self.max_scroll());
         }
     }
 
@@ -495,7 +503,11 @@ impl App {
         }
         let len = self.theme_names.len();
         let cur = self.picker_state.selected().unwrap_or(0);
-        let next = if forward { (cur + 1) % len } else { (cur + len - 1) % len };
+        let next = if forward {
+            (cur + 1) % len
+        } else {
+            (cur + len - 1) % len
+        };
         self.picker_state.select(Some(next));
         self.apply_theme(next); // live preview
     }
@@ -508,11 +520,9 @@ impl App {
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
         let content_area = if self.outline_visible && !self.doc.outline.is_empty() {
-            let [outline, content] = Layout::horizontal([
-                Constraint::Length(OUTLINE_WIDTH),
-                Constraint::Min(10),
-            ])
-            .areas(body);
+            let [outline, content] =
+                Layout::horizontal([Constraint::Length(OUTLINE_WIDTH), Constraint::Min(10)])
+                    .areas(body);
             self.draw_outline(frame, outline);
             content
         } else {
@@ -569,7 +579,10 @@ impl App {
             if img_area.width == 0 || img_area.height == 0 {
                 continue;
             }
-            if let Some(loaded) = self.images.get(&placement.src, content_width.saturating_sub(2)) {
+            if let Some(loaded) = self
+                .images
+                .get(&placement.src, content_width.saturating_sub(2))
+            {
                 frame.render_stateful_widget(StatefulImage::new(), img_area, &mut loaded.protocol);
             }
         }
@@ -585,7 +598,10 @@ impl App {
                 let marker = self.glyphs.outline_marker();
                 ListItem::new(Line::from(vec![
                     Span::styled(indent, Style::default()),
-                    Span::styled(format!("{marker} "), Style::default().fg(self.chrome.accent)),
+                    Span::styled(
+                        format!("{marker} "),
+                        Style::default().fg(self.chrome.accent),
+                    ),
                     Span::styled(
                         super::layout::sanitize(&item.title).into_owned(),
                         Style::default().fg(self.chrome.text),
@@ -606,10 +622,16 @@ impl App {
                     .border_style(Style::default().fg(border))
                     .title(Span::styled(
                         " Outline ",
-                        Style::default().fg(self.chrome.accent2).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(self.chrome.accent2)
+                            .add_modifier(Modifier::BOLD),
                     )),
             )
-            .style(Style::default().bg(self.chrome.panel_bg).fg(self.chrome.text))
+            .style(
+                Style::default()
+                    .bg(self.chrome.panel_bg)
+                    .fg(self.chrome.text),
+            )
             .highlight_style(
                 Style::default()
                     .bg(self.chrome.selection_bg)
@@ -631,8 +653,10 @@ impl App {
         };
         let filled = (usize::from(pct) * BAR_W / 100).min(BAR_W);
         let bar_filled = Span::styled(" ".repeat(filled), Style::default().bg(self.chrome.accent));
-        let bar_track =
-            Span::styled(" ".repeat(BAR_W - filled), Style::default().bg(self.chrome.border));
+        let bar_track = Span::styled(
+            " ".repeat(BAR_W - filled),
+            Style::default().bg(self.chrome.border),
+        );
 
         let theme_name = self
             .theme_names
@@ -655,10 +679,15 @@ impl App {
         let accent = Style::default().fg(self.chrome.accent);
         let muted = Style::default().fg(self.chrome.muted);
         let left = Line::from(vec![
-            Span::styled(format!(" {} ", self.glyphs.diamond()), accent.add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!(" {} ", self.glyphs.diamond()),
+                accent.add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 truncate_plain(&self.title, 28),
-                Style::default().fg(self.chrome.text).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(self.chrome.text)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(" ", muted),
             bar_filled,
@@ -677,7 +706,12 @@ impl App {
         let items: Vec<ListItem> = self
             .theme_names
             .iter()
-            .map(|n| ListItem::new(Line::from(Span::styled(n.clone(), Style::default().fg(self.chrome.text)))))
+            .map(|n| {
+                ListItem::new(Line::from(Span::styled(
+                    n.clone(),
+                    Style::default().fg(self.chrome.text),
+                )))
+            })
             .collect();
         let list = List::new(items)
             .block(
@@ -686,7 +720,9 @@ impl App {
                     .border_style(Style::default().fg(self.chrome.border_focused))
                     .title(Span::styled(
                         " Theme  (↑↓ preview · Enter apply · Esc cancel) ",
-                        Style::default().fg(self.chrome.accent).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(self.chrome.accent)
+                            .add_modifier(Modifier::BOLD),
                     )),
             )
             .style(Style::default().bg(self.chrome.panel_bg))
@@ -718,21 +754,27 @@ impl App {
             .iter()
             .map(|(k, v)| {
                 Line::from(vec![
-                    Span::styled(format!("  {k:<18}"), Style::default().fg(self.chrome.accent)),
+                    Span::styled(
+                        format!("  {k:<18}"),
+                        Style::default().fg(self.chrome.accent),
+                    ),
                     Span::styled((*v).to_string(), Style::default().fg(self.chrome.text)),
                 ])
             })
             .collect();
-        let para = Paragraph::new(Text::from(lines)).block(
-            WBlock::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(self.chrome.border_focused))
-                .title(Span::styled(
-                    " Keys ",
-                    Style::default().fg(self.chrome.accent).add_modifier(Modifier::BOLD),
-                )),
-        )
-        .style(Style::default().bg(self.chrome.panel_bg));
+        let para = Paragraph::new(Text::from(lines))
+            .block(
+                WBlock::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(self.chrome.border_focused))
+                    .title(Span::styled(
+                        " Keys ",
+                        Style::default()
+                            .fg(self.chrome.accent)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+            )
+            .style(Style::default().bg(self.chrome.panel_bg));
         frame.render_widget(para, popup);
     }
 }
@@ -855,13 +897,20 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     fn sample() -> App {
         let body = "# Title\n\nSome **bold** text.\n\n## Section\n\n- a\n- b\n\n```rust\nfn main() {}\n```\n";
         let theme = load_theme_or_default("silk-light");
-        App::new(body, theme, "silk-light", Some(GlyphTier::Unicode), None, None)
+        App::new(
+            body,
+            theme,
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+        )
     }
 
     #[test]
@@ -912,14 +961,21 @@ mod tests {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        assert_ne!(app.content_bg, Color::Reset, "light theme resolves a page bg");
+        assert_ne!(
+            app.content_bg,
+            Color::Reset,
+            "light theme resolves a page bg"
+        );
         let leaked = app
             .content
             .lines
             .iter()
             .flat_map(|l| &l.spans)
             .any(|s| s.style.bg.is_none() || s.style.bg == Some(Color::Reset));
-        assert!(!leaked, "every content span should carry an explicit background");
+        assert!(
+            !leaked,
+            "every content span should carry an explicit background"
+        );
     }
 
     #[test]

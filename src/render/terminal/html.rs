@@ -276,8 +276,15 @@ mod tests {
     #[test]
     fn renders_heading_and_list() {
         let mut links = Vec::new();
-        let blocks = to_blocks("<h2>Title</h2><ul><li>one</li><li>two</li></ul>", &mut links);
-        assert!(blocks.iter().any(|b| matches!(b, Block::Heading { level: 2, .. })));
+        let blocks = to_blocks(
+            "<h2>Title</h2><ul><li>one</li><li>two</li></ul>",
+            &mut links,
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b, Block::Heading { level: 2, .. }))
+        );
         assert!(blocks.iter().any(|b| matches!(b, Block::List(_))));
     }
 }

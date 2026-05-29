@@ -190,7 +190,11 @@ mod tests {
         for line in &lines {
             assert!(display_width(&line_text(line)) <= 10, "line too wide");
         }
-        let joined: String = lines.iter().map(|l| line_text(l)).collect::<Vec<_>>().join(" ");
+        let joined: String = lines
+            .iter()
+            .map(|l| line_text(l))
+            .collect::<Vec<_>>()
+            .join(" ");
         assert_eq!(joined, "the quick brown fox jumps");
     }
 

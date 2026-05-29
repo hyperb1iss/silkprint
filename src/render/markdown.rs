@@ -791,39 +791,39 @@ fn emit_children<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         let extracted = extract_node(children[i]);
 
         // Check if this is an opening HTML inline tag (not a self-closing or entity)
-        if let ExtractedNode::HtmlInline(ref html_str) = extracted {
-            if is_opening_html_tag(html_str) {
-                // Accumulate siblings until tags balance
-                let mut buf = html_str.clone();
-                let mut depth: usize = 1;
-                i += 1;
+        if let ExtractedNode::HtmlInline(ref html_str) = extracted
+            && is_opening_html_tag(html_str)
+        {
+            // Accumulate siblings until tags balance
+            let mut buf = html_str.clone();
+            let mut depth: usize = 1;
+            i += 1;
 
-                while i < children.len() && depth > 0 {
-                    match extract_node(children[i]) {
-                        ExtractedNode::HtmlInline(ref s) => {
-                            buf.push_str(s);
-                            if is_opening_html_tag(s) {
-                                depth += 1;
-                            } else if is_closing_html_tag(s) {
-                                depth = depth.saturating_sub(1);
-                            }
-                            // Self-closing tags don't change depth
+            while i < children.len() && depth > 0 {
+                match extract_node(children[i]) {
+                    ExtractedNode::HtmlInline(ref s) => {
+                        buf.push_str(s);
+                        if is_opening_html_tag(s) {
+                            depth += 1;
+                        } else if is_closing_html_tag(s) {
+                            depth = depth.saturating_sub(1);
                         }
-                        ExtractedNode::Text(ref t) => {
-                            buf.push_str(t);
-                        }
-                        _ => {
-                            // Non-HTML/text node breaks accumulation
-                            break;
-                        }
+                        // Self-closing tags don't change depth
                     }
-                    i += 1;
+                    ExtractedNode::Text(ref t) => {
+                        buf.push_str(t);
+                    }
+                    _ => {
+                        // Non-HTML/text node breaks accumulation
+                        break;
+                    }
                 }
-
-                let typst = super::html::emit_html_inline(&buf, ctx.images, ctx.warnings);
-                ctx.push(&typst);
-                continue;
+                i += 1;
             }
+
+            let typst = super::html::emit_html_inline(&buf, ctx.images, ctx.warnings);
+            ctx.push(&typst);
+            continue;
         }
 
         emit_node(children[i], ctx);
@@ -870,9 +870,7 @@ fn emit_paragraph_contents<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>)
 
 /// If `children` represents a stacked field layout, return its physical
 /// (soft-break-delimited) non-blank lines. Otherwise return `None`.
-fn try_split_field_stack<'a>(
-    children: &[&'a AstNode<'a>],
-) -> Option<Vec<Vec<&'a AstNode<'a>>>> {
+fn try_split_field_stack<'a>(children: &[&'a AstNode<'a>]) -> Option<Vec<Vec<&'a AstNode<'a>>>> {
     let mut lines: Vec<Vec<&'a AstNode<'a>>> = Vec::new();
     let mut current: Vec<&'a AstNode<'a>> = Vec::new();
     let mut saw_soft_break = false;
@@ -1322,19 +1320,17 @@ fn decode_html_entity(s: &str) -> String {
         "&divide;" => "\u{00F7}".to_string(),
         _ => {
             // Try numeric entities: &#123; or &#x1F4A9;
-            if let Some(stripped) = s.strip_prefix("&#x").and_then(|s| s.strip_suffix(';')) {
-                if let Ok(code) = u32::from_str_radix(stripped, 16) {
-                    if let Some(c) = char::from_u32(code) {
-                        return c.to_string();
-                    }
-                }
+            if let Some(stripped) = s.strip_prefix("&#x").and_then(|s| s.strip_suffix(';'))
+                && let Ok(code) = u32::from_str_radix(stripped, 16)
+                && let Some(c) = char::from_u32(code)
+            {
+                return c.to_string();
             }
-            if let Some(stripped) = s.strip_prefix("&#").and_then(|s| s.strip_suffix(';')) {
-                if let Ok(code) = stripped.parse::<u32>() {
-                    if let Some(c) = char::from_u32(code) {
-                        return c.to_string();
-                    }
-                }
+            if let Some(stripped) = s.strip_prefix("&#").and_then(|s| s.strip_suffix(';'))
+                && let Ok(code) = stripped.parse::<u32>()
+                && let Some(c) = char::from_u32(code)
+            {
+                return c.to_string();
             }
             escape_typst_content(s)
         }

@@ -559,15 +559,14 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
     }
 
     // Open in system viewer if requested
-    if cli.open {
-        if let Some(ref path) = output_path {
-            debug!("opening PDF: {}", path.display());
-            open::that(path).map_err(|e| silkprint::error::SilkprintError::RenderFailed {
-                details: format!("failed to open PDF viewer: {e}"),
-                hint: "Check that a PDF viewer is installed and associated with .pdf files"
-                    .to_string(),
-            })?;
-        }
+    if cli.open
+        && let Some(ref path) = output_path
+    {
+        debug!("opening PDF: {}", path.display());
+        open::that(path).map_err(|e| silkprint::error::SilkprintError::RenderFailed {
+            details: format!("failed to open PDF viewer: {e}"),
+            hint: "Check that a PDF viewer is installed and associated with .pdf files".to_string(),
+        })?;
     }
 
     Ok(())
@@ -646,9 +645,10 @@ fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
 /// with `--plain`, it emits one-shot styled ANSI.
 #[cfg(feature = "terminal")]
 fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()> {
-    let input_path = args.input.clone().ok_or_else(|| {
-        miette::miette!("No input file specified. Usage: silkprint read <FILE>")
-    })?;
+    let input_path = args
+        .input
+        .clone()
+        .ok_or_else(|| miette::miette!("No input file specified. Usage: silkprint read <FILE>"))?;
 
     if !input_path.exists() {
         return Err(silkprint::error::SilkprintError::InputRead {
@@ -679,10 +679,10 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
                 .and_then(silkprint::GlyphTier::parse)
         });
     let mut options = build_render_options(cli)?;
-    if !options.theme_explicit {
-        if let Some(saved) = &reader_config.theme {
-            options.theme = silkprint::ThemeSource::BuiltIn(saved.clone());
-        }
+    if !options.theme_explicit
+        && let Some(saved) = &reader_config.theme
+    {
+        options.theme = silkprint::ThemeSource::BuiltIn(saved.clone());
     }
 
     // Interactive TTY → TUI; piped or --plain → one-shot. Both resolve the
@@ -706,8 +706,12 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
         width: None,
     };
 
-    let (output, warnings) =
-        silkprint::render_to_terminal(&input, Some(input_path.as_path()), &options, &terminal_options)?;
+    let (output, warnings) = silkprint::render_to_terminal(
+        &input,
+        Some(input_path.as_path()),
+        &options,
+        &terminal_options,
+    )?;
 
     print!("{output}");
     io::stdout().flush().ok();

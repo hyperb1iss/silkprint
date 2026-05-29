@@ -35,7 +35,13 @@ pub struct Cli {
     pub output: Option<String>,
 
     /// Theme name or path to .toml file.
-    #[arg(short, long, global = true, default_value = "silkcircuit-dawn", value_name = "NAME")]
+    #[arg(
+        short,
+        long,
+        global = true,
+        default_value = "silkcircuit-dawn",
+        value_name = "NAME"
+    )]
     pub theme: String,
 
     /// Paper size: a4, letter, a5, legal (case-insensitive).

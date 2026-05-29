@@ -260,13 +260,13 @@ fn resolve_color_table(colors: &HashMap<String, String>) -> HashMap<String, Stri
         let mut changed = false;
         let snapshot = resolved.clone();
         for value in resolved.values_mut() {
-            if !value.starts_with('#') && !value.is_empty() {
-                if let Some(target) = snapshot.get(value.as_str()) {
-                    if target != value {
-                        *value = target.clone();
-                        changed = true;
-                    }
-                }
+            if !value.starts_with('#')
+                && !value.is_empty()
+                && let Some(target) = snapshot.get(value.as_str())
+                && target != value
+            {
+                *value = target.clone();
+                changed = true;
             }
         }
         if !changed {
@@ -298,10 +298,11 @@ fn resolve_token_colors(tokens: &mut ThemeTokens) {
 
     // Helper closure to resolve a single field
     let r = |field: &mut String| {
-        if !field.is_empty() && !field.starts_with('#') {
-            if let Some(hex) = colors.get(field.as_str()) {
-                *field = hex.clone();
-            }
+        if !field.is_empty()
+            && !field.starts_with('#')
+            && let Some(hex) = colors.get(field.as_str())
+        {
+            *field = hex.clone();
         }
     };
 

@@ -398,14 +398,14 @@ fn emit_list(
     let marker = if ordered { "+ " } else { "- " };
 
     for child in node.children() {
-        if let Node::Element(ref el) = *child.value() {
-            if el.name() == "li" {
-                out.push_str(marker);
-                let mut item_content = String::new();
-                emit_children(child, &mut item_content, images, warnings, Context::Inline);
-                out.push_str(item_content.trim());
-                out.push('\n');
-            }
+        if let Node::Element(ref el) = *child.value()
+            && el.name() == "li"
+        {
+            out.push_str(marker);
+            let mut item_content = String::new();
+            emit_children(child, &mut item_content, images, warnings, Context::Inline);
+            out.push_str(item_content.trim());
+            out.push('\n');
         }
     }
 }
@@ -422,10 +422,10 @@ fn collect_table_rows(table_node: NodeRef<'_, Node>) -> Vec<NodeRef<'_, Node>> {
                 "tr" => rows.push(child),
                 "thead" | "tbody" | "tfoot" => {
                     for grandchild in child.children() {
-                        if let Node::Element(ref gc_el) = *grandchild.value() {
-                            if gc_el.name() == "tr" {
-                                rows.push(grandchild);
-                            }
+                        if let Node::Element(ref gc_el) = *grandchild.value()
+                            && gc_el.name() == "tr"
+                        {
+                            rows.push(grandchild);
                         }
                     }
                 }
@@ -585,10 +585,10 @@ fn parse_image_width(el: &Element) -> Option<String> {
     if numeric.chars().all(|c| c.is_ascii_digit() || c == '.') {
         // Cap large pixel values to 80% of text width — prevents images
         // from consuming entire pages in PDF output.
-        if let Ok(val) = numeric.parse::<f64>() {
-            if val > MAX_IMAGE_PT {
-                return Some("80%".to_string());
-            }
+        if let Ok(val) = numeric.parse::<f64>()
+            && val > MAX_IMAGE_PT
+        {
+            return Some("80%".to_string());
         }
         Some(format!("{numeric}pt"))
     } else {

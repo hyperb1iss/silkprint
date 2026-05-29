@@ -38,7 +38,11 @@ pub fn parse_hex(value: &str) -> Option<Rgb> {
         ),
         3 => {
             let expand = |c: &str| u8::from_str_radix(&c.repeat(2), 16).ok();
-            (expand(&hex[0..1])?, expand(&hex[1..2])?, expand(&hex[2..3])?)
+            (
+                expand(&hex[0..1])?,
+                expand(&hex[1..2])?,
+                expand(&hex[2..3])?,
+            )
         }
         _ => return None,
     };

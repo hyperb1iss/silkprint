@@ -188,7 +188,13 @@ mod tests {
     #[test]
     fn ascii_tier_has_no_high_codepoints() {
         let g = Glyphs::new(GlyphTier::Ascii);
-        for s in [g.bullet(), g.quote_bar(), g.rule(), g.task(true), g.task(false)] {
+        for s in [
+            g.bullet(),
+            g.quote_bar(),
+            g.rule(),
+            g.task(true),
+            g.task(false),
+        ] {
             assert!(s.is_ascii(), "ascii glyph {s:?} must be ASCII");
         }
     }
@@ -201,7 +207,10 @@ mod tests {
             g.alert(AlertKind::Tip),
             g.alert(AlertKind::Warning),
         ];
-        assert_eq!(icons.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+        assert_eq!(
+            icons.iter().collect::<std::collections::HashSet<_>>().len(),
+            3
+        );
     }
 
     #[test]

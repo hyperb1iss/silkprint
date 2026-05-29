@@ -257,11 +257,10 @@ pub fn compile_to_pdf(
                 if path.extension().is_some_and(|ext| {
                     let e = ext.to_ascii_lowercase();
                     e == "ttf" || e == "otf" || e == "ttc" || e == "otc"
-                }) {
-                    if let Ok(data) = std::fs::read(&path) {
-                        tracing::debug!(path = %path.display(), "loaded user font");
-                        font_data.push(data);
-                    }
+                }) && let Ok(data) = std::fs::read(&path)
+                {
+                    tracing::debug!(path = %path.display(), "loaded user font");
+                    font_data.push(data);
                 }
             }
         } else {

@@ -13,10 +13,10 @@ use super::caps::{Capabilities, ColorTier};
 use super::glyphs::Glyphs;
 use super::layout::{display_width, truncate, wrap_spans};
 use super::model::{
-    AlertKind, Block, LinkTarget, ListItem, ItemMarker, Mods, RenderedDoc, Rgb, Role, Span,
+    AlertKind, Block, ItemMarker, LinkTarget, ListItem, Mods, RenderedDoc, Rgb, Role, Span,
     TableBlock,
 };
-use super::style::{parse_hex, ContentStyleResolver, Style};
+use super::style::{ContentStyleResolver, Style, parse_hex};
 
 const MARGIN: &str = "  ";
 const MAX_CONTENT_WIDTH: usize = 100;
@@ -389,7 +389,11 @@ impl Renderer<'_> {
         lines
     }
 
-    fn description_list(&self, items: &[super::model::DescriptionItem], width: usize) -> Vec<String> {
+    fn description_list(
+        &self,
+        items: &[super::model::DescriptionItem],
+        width: usize,
+    ) -> Vec<String> {
         let mut out = Vec::new();
         for (idx, item) in items.iter().enumerate() {
             if idx > 0 {
@@ -565,11 +569,7 @@ fn rgb_to_16(rgb: Rgb) -> u8 {
     let bright = u16::from(r) + u16::from(g) + u16::from(b) > 384;
     let bit = |c: u8| u8::from(c > 110);
     let base = bit(r) | (bit(g) << 1) | (bit(b) << 2);
-    if bright {
-        base + 8
-    } else {
-        base
-    }
+    if bright { base + 8 } else { base }
 }
 
 #[cfg(test)]
@@ -602,7 +602,13 @@ mod tests {
             glyphs: Glyphs::new(GlyphTier::Ascii),
             links: &[],
         };
-        let out = r.paint("hello", Style { fg: Some(Rgb(255, 0, 0)), ..Style::default() });
+        let out = r.paint(
+            "hello",
+            Style {
+                fg: Some(Rgb(255, 0, 0)),
+                ..Style::default()
+            },
+        );
         assert_eq!(out, "hello");
         let _ = ColorChoice::Auto;
     }
@@ -620,7 +626,13 @@ mod tests {
             glyphs: Glyphs::new(GlyphTier::Unicode),
             links: &[],
         };
-        let out = r.paint("x", Style { fg: Some(Rgb(225, 53, 255)), ..Style::default() });
+        let out = r.paint(
+            "x",
+            Style {
+                fg: Some(Rgb(225, 53, 255)),
+                ..Style::default()
+            },
+        );
         assert_eq!(out, "\x1b[38;2;225;53;255mx\x1b[0m");
     }
 

@@ -14,7 +14,7 @@ use crate::warnings::{SilkprintWarning, WarningCollector};
 
 use super::highlight::highlight_block;
 use super::model::{
-    Align, AlertKind, Block, DescriptionItem, ListBlock, ListItem, ItemMarker, LinkTarget, Mods,
+    AlertKind, Align, Block, DescriptionItem, ItemMarker, LinkTarget, ListBlock, ListItem, Mods,
     OutlineItem, RenderedDoc, Role, Span,
 };
 
@@ -100,7 +100,9 @@ impl<'a> Walker<'a, '_> {
                 out.push(Block::Quote(inner));
             }
 
-            NodeValue::List(list) => out.push(self.list_block(node, list.list_type, list.tight, list.start)),
+            NodeValue::List(list) => {
+                out.push(self.list_block(node, list.list_type, list.tight, list.start));
+            }
 
             NodeValue::Table(t) => out.push(self.table_block(node, &t.alignments)),
 
@@ -139,29 +141,28 @@ impl<'a> Walker<'a, '_> {
         let children: Vec<&'a AstNode<'a>> = node.children().collect();
 
         // Standalone image: a paragraph whose only child is an image.
-        if children.len() == 1 {
-            if let NodeValue::Image(link) = &children[0].data.borrow().value {
-                let mut alt = String::new();
-                collect_text(children[0], &mut alt);
-                out.push(Block::Image {
-                    src: link.url.clone(),
-                    alt,
-                });
-                return;
-            }
+        if children.len() == 1
+            && let NodeValue::Image(link) = &children[0].data.borrow().value
+        {
+            let mut alt = String::new();
+            collect_text(children[0], &mut alt);
+            out.push(Block::Image {
+                src: link.url.clone(),
+                alt,
+            });
+            return;
         }
 
         // Display math alone in a paragraph becomes a math block.
-        if children.len() == 1 {
-            if let NodeValue::Math(m) = &children[0].data.borrow().value {
-                if m.display_math {
-                    out.push(Block::Math {
-                        source: m.literal.trim().to_string(),
-                        display: true,
-                    });
-                    return;
-                }
-            }
+        if children.len() == 1
+            && let NodeValue::Math(m) = &children[0].data.borrow().value
+            && m.display_math
+        {
+            out.push(Block::Math {
+                source: m.literal.trim().to_string(),
+                display: true,
+            });
+            return;
         }
 
         if let Some(lines) = field_stack(&children) {
@@ -231,8 +232,10 @@ impl<'a> Walker<'a, '_> {
 
         for row in node.children() {
             let is_header = matches!(&row.data.borrow().value, NodeValue::TableRow(true));
-            let cells: Vec<Vec<Span>> =
-                row.children().map(|cell| self.inline_children(cell)).collect();
+            let cells: Vec<Vec<Span>> = row
+                .children()
+                .map(|cell| self.inline_children(cell))
+                .collect();
             if is_header {
                 if cells.iter().any(|c| !spans_to_text(c).trim().is_empty()) {
                     header = cells;
@@ -321,7 +324,10 @@ impl<'a> Walker<'a, '_> {
                 self.inline_kids(node, role, mods.with_strikethrough(), link, out);
             }
             NodeValue::Underline => self.inline_kids(node, role, mods.with_underline(), link, out),
-            NodeValue::Superscript | NodeValue::Subscript | NodeValue::Subtext | NodeValue::Escaped => {
+            NodeValue::Superscript
+            | NodeValue::Subscript
+            | NodeValue::Subtext
+            | NodeValue::Escaped => {
                 self.inline_kids(node, role, mods, link, out);
             }
             NodeValue::Highlight => self.inline_kids(node, Role::Highlight, mods, link, out),
@@ -470,7 +476,9 @@ fn prefix_footnote_number(blocks: &mut [Block], n: usize) {
 
 fn first_heading_text(blocks: &[Block]) -> Option<String> {
     blocks.iter().find_map(|b| match b {
-        Block::Heading { level: 1, spans, .. } => Some(spans_to_text(spans)),
+        Block::Heading {
+            level: 1, spans, ..
+        } => Some(spans_to_text(spans)),
         _ => None,
     })
 }
@@ -554,9 +562,9 @@ fn inline_html_text(html: &str) -> Option<String> {
         "<br>" | "<br/>" | "<br />" => Some("\n".to_string()),
         _ if !trimmed.starts_with('<') => Some(decode_entities(trimmed)),
         // Opening/closing tags for inline emphasis we can safely drop.
-        "<b>" | "</b>" | "<strong>" | "</strong>" | "<i>" | "</i>" | "<em>" | "</em>"
-        | "<u>" | "</u>" | "<code>" | "</code>" | "<span>" | "</span>" | "<sub>" | "</sub>"
-        | "<sup>" | "</sup>" => Some(String::new()),
+        "<b>" | "</b>" | "<strong>" | "</strong>" | "<i>" | "</i>" | "<em>" | "</em>" | "<u>"
+        | "</u>" | "<code>" | "</code>" | "<span>" | "</span>" | "<sub>" | "</sub>" | "<sup>"
+        | "</sup>" => Some(String::new()),
         _ => None,
     }
 }
@@ -605,7 +613,10 @@ fn field_stack<'a>(children: &[&'a AstNode<'a>]) -> Option<Vec<Vec<&'a AstNode<'
     if !line_starts_with_label(first) {
         return None;
     }
-    let labels = nonblank.iter().filter(|l| line_starts_with_label(l)).count();
+    let labels = nonblank
+        .iter()
+        .filter(|l| line_starts_with_label(l))
+        .count();
     if labels < 2 {
         return None;
     }

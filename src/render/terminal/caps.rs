@@ -112,10 +112,10 @@ fn detect_color(choice: ColorChoice, is_tty: bool) -> ColorTier {
     if env::var_os("NO_COLOR").is_some() && choice != ColorChoice::Always {
         return ColorTier::None;
     }
-    if let Ok(ct) = env::var("COLORTERM") {
-        if ct.contains("truecolor") || ct.contains("24bit") {
-            return ColorTier::TrueColor;
-        }
+    if let Ok(ct) = env::var("COLORTERM")
+        && (ct.contains("truecolor") || ct.contains("24bit"))
+    {
+        return ColorTier::TrueColor;
     }
     match env::var("TERM") {
         Ok(term) if term.contains("256color") => ColorTier::Ansi256,
@@ -147,7 +147,8 @@ fn detect_graphics() -> GraphicsProtocol {
     {
         return GraphicsProtocol::Kitty;
     }
-    if env::var("TERM_PROGRAM").is_ok_and(|t| t == "iTerm.app") || env::var_os("WEZTERM_PANE").is_some()
+    if env::var("TERM_PROGRAM").is_ok_and(|t| t == "iTerm.app")
+        || env::var_os("WEZTERM_PANE").is_some()
     {
         return GraphicsProtocol::Iterm2;
     }

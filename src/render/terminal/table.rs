@@ -8,7 +8,7 @@ use super::ansi::Renderer;
 use super::caps::GlyphTier;
 use super::layout::display_width;
 use super::model::{Align, Span, TableBlock};
-use super::style::{parse_hex, Style};
+use super::style::{Style, parse_hex};
 
 const MAX_COL: usize = 40;
 const MIN_COL: usize = 3;
@@ -99,11 +99,27 @@ pub(super) fn render(r: &Renderer, table: &TableBlock, width: usize) -> Vec<Stri
 
     let has_header = !table.header.is_empty();
     if has_header {
-        out.push(data_row(r, &table.header, &col_w, &table.aligns, &chars, border_style, true));
+        out.push(data_row(
+            r,
+            &table.header,
+            &col_w,
+            &table.aligns,
+            &chars,
+            border_style,
+            true,
+        ));
         out.push(rule_row(r, &col_w, &chars, border_style, Pos::Mid));
     }
     for row in &table.rows {
-        out.push(data_row(r, row, &col_w, &table.aligns, &chars, border_style, false));
+        out.push(data_row(
+            r,
+            row,
+            &col_w,
+            &table.aligns,
+            &chars,
+            border_style,
+            false,
+        ));
     }
     out.push(rule_row(r, &col_w, &chars, border_style, Pos::Bottom));
     out
@@ -116,13 +132,7 @@ enum Pos {
     Bottom,
 }
 
-fn rule_row(
-    r: &Renderer,
-    col_w: &[usize],
-    chars: &BorderChars,
-    style: Style,
-    pos: Pos,
-) -> String {
+fn rule_row(r: &Renderer, col_w: &[usize], chars: &BorderChars, style: Style, pos: Pos) -> String {
     let (left, mid, right) = match pos {
         Pos::Top => (chars.tl, chars.tm, chars.tr),
         Pos::Mid => (chars.ml, chars.mm, chars.mr),
@@ -184,7 +194,11 @@ fn render_cell(r: &Renderer, cell: &[Span], col_w: usize, header: bool) -> (Stri
         cell.to_vec()
     };
     let clamped = super::ansi::clamp_spans(&styled, col_w);
-    let used = clamped.iter().map(|s| display_width(&s.text)).sum::<usize>().min(col_w);
+    let used = clamped
+        .iter()
+        .map(|s| display_width(&s.text))
+        .sum::<usize>()
+        .min(col_w);
     (r.inline_line(&clamped), used)
 }
 

@@ -130,8 +130,12 @@ pub fn render_to_terminal(
     let effective_theme_source = resolve_effective_theme(options, front_matter.as_ref());
     let resolved_theme = theme::load_theme(&effective_theme_source, &mut warnings)?;
 
-    let output =
-        render::terminal::render_to_string(&body, &resolved_theme, terminal_options, &mut warnings)?;
+    let output = render::terminal::render_to_string(
+        &body,
+        &resolved_theme,
+        terminal_options,
+        &mut warnings,
+    )?;
     Ok((output, warnings.into_warnings()))
 }
 
@@ -142,7 +146,14 @@ pub fn render_to_terminal(
 pub fn resolve_terminal_theme(
     input: &str,
     options: &RenderOptions,
-) -> Result<(theme::ResolvedTheme, String, Vec<warnings::SilkprintWarning>), SilkprintError> {
+) -> Result<
+    (
+        theme::ResolvedTheme,
+        String,
+        Vec<warnings::SilkprintWarning>,
+    ),
+    SilkprintError,
+> {
     let mut warnings = WarningCollector::new();
     let (front_matter, _body) = render::frontmatter::extract(input)?;
     if let Some(fm) = &front_matter {
