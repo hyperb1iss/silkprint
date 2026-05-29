@@ -5,6 +5,8 @@
 //! are robust against theme color tweaks. Run `cargo insta review` to accept
 //! changes.
 
+#![cfg(feature = "terminal")]
+
 use silkprint::{ColorChoice, GlyphTier, RenderOptions, TerminalRenderOptions, render_to_terminal};
 
 fn render_fixture(name: &str) -> String {

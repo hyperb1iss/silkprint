@@ -46,10 +46,10 @@ expression: "render_fixture(\"full-features.md\")"
 
   * First item with [1mbold[0m
   * Second item with [3mitalic[0m
-    
+
     * Nested item A
     * Nested item B
-      
+
       * Deep nested
   * Third item
 
@@ -76,10 +76,10 @@ expression: "render_fixture(\"full-features.md\")"
 
   [1mSilkPrint[0m
     Markdown to PDF converter
-  
+
   [1mTypst[0m
     Modern typesetting engine
-  
+
   [1mcomrak[0m
     GFM-compatible Markdown parser
 
@@ -97,7 +97,7 @@ expression: "render_fixture(\"full-features.md\")"
   [2m------------------------------------------------[0m
 
   | "Any sufficiently advanced technology is indistinguishable from magic."
-  | 
+  |
   | --- Arthur C. Clarke
 
   [1mTable[0m

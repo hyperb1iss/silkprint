@@ -58,10 +58,7 @@ enum Mode {
 /// diagram.
 enum BandSpec {
     Image(String),
-    Mermaid {
-        source: String,
-        bg: Rgb,
-    },
+    Mermaid { source: String, bg: Rgb },
 }
 
 /// Launch the interactive reader. Sets up and tears down the terminal
@@ -78,7 +75,15 @@ pub fn run(
     // Query the terminal's graphics protocol + font size before entering the
     // alternate screen. `None` (or `--no-images`) falls back to text-only.
     let picker = images.then(Picker::from_query_stdio).and_then(Result::ok);
-    let mut app = App::new(body, theme, theme_name, glyph_override, picker, base_dir, watch_path);
+    let mut app = App::new(
+        body,
+        theme,
+        theme_name,
+        glyph_override,
+        picker,
+        base_dir,
+        watch_path,
+    );
     let mut terminal = ratatui::init();
     let result = app.run_loop(&mut terminal);
     ratatui::restore();
@@ -207,17 +212,20 @@ impl App {
         // save via atomic rename). `_watcher` must stay alive for the loop.
         let (tx, rx) = std::sync::mpsc::channel();
         let _watcher = self.path.clone().and_then(|path| {
-            let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-                if res.is_ok() {
-                    let _ = tx.send(());
-                }
-            })
-            .ok()?;
+            let mut watcher =
+                notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                    if res.is_ok() {
+                        let _ = tx.send(());
+                    }
+                })
+                .ok()?;
             let target = path
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or(path.as_path());
-            watcher.watch(target, notify::RecursiveMode::NonRecursive).ok()?;
+            watcher
+                .watch(target, notify::RecursiveMode::NonRecursive)
+                .ok()?;
             Some(watcher)
         });
 
@@ -267,7 +275,8 @@ impl App {
         self.image_placements.clear();
         match self.outline_state.selected() {
             Some(sel) if sel >= self.doc.outline.len() => {
-                self.outline_state.select((!self.doc.outline.is_empty()).then_some(0));
+                self.outline_state
+                    .select((!self.doc.outline.is_empty()).then_some(0));
             }
             None if !self.doc.outline.is_empty() => self.outline_state.select(Some(0)),
             _ => {}
@@ -353,7 +362,10 @@ impl App {
                 .enumerate()
                 .filter_map(|(i, block)| match block {
                     Block::Image { src, .. } => Some((i, BandSpec::Image(src.clone()))),
-                    Block::CodeBlock { lang: Some(lang), lines } if lang == "mermaid" => {
+                    Block::CodeBlock {
+                        lang: Some(lang),
+                        lines,
+                    } if lang == "mermaid" => {
                         let source = lines
                             .iter()
                             .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
@@ -399,14 +411,16 @@ impl App {
             // Replace the source block's lines with exactly `img_rows` blank
             // lines so the image fills the band with no source text peeking out.
             let base = isize::try_from(orig_start).unwrap_or(0) + delta;
-            let start = usize::try_from(base).unwrap_or(0).min(self.content.lines.len());
+            let start = usize::try_from(base)
+                .unwrap_or(0)
+                .min(self.content.lines.len());
             let end = (start + block_height).min(self.content.lines.len());
             let band = usize::from(img_rows);
             self.content
                 .lines
                 .splice(start..end, std::iter::repeat_with(Line::default).take(band));
-            let shift = isize::try_from(band).unwrap_or(0)
-                - isize::try_from(end - start).unwrap_or(0);
+            let shift =
+                isize::try_from(band).unwrap_or(0) - isize::try_from(end - start).unwrap_or(0);
             delta += shift;
             for jump in self.block_jump.iter_mut().skip(block_index + 1) {
                 *jump = usize::try_from(isize::try_from(*jump).unwrap_or(0) + shift).unwrap_or(0);
@@ -437,9 +451,8 @@ impl App {
             self.chrome = Chrome::for_theme(name);
             self.theme_idx = idx;
             self.theme_dirty = true;
-            // Drop generated rasters (headings/mermaid) — they bake in the old
-            // theme's colors and must be rebuilt.
-            self.images.clear_cache();
+            // Generated rasters bake in the old theme's colors and must be rebuilt.
+            self.images.clear_generated();
         }
     }
 
@@ -1093,7 +1106,11 @@ mod tests {
         assert_eq!(app.doc.outline.len(), 1);
         std::fs::write(&path, "# One\n\n## Two\n").expect("rewrite");
         app.reload();
-        assert_eq!(app.doc.outline.len(), 2, "reload should pick up the new heading");
+        assert_eq!(
+            app.doc.outline.len(),
+            2,
+            "reload should pick up the new heading"
+        );
     }
 
     #[test]

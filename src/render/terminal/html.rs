@@ -206,7 +206,8 @@ impl Builder<'_> {
                     for block in sub.blocks {
                         if matches!(block, Block::Image { .. }) {
                             if !centered.is_empty() {
-                                self.blocks.push(Block::Center(std::mem::take(&mut centered)));
+                                self.blocks
+                                    .push(Block::Center(std::mem::take(&mut centered)));
                             }
                             self.blocks.push(block);
                         } else {
@@ -344,7 +345,10 @@ fn is_raster_src(src: &str) -> bool {
 /// Whether an element requests center alignment via `align="center"` or an
 /// inline `text-align: center` style. (`<center>` is handled by tag name.)
 fn is_centered(el: &Element) -> bool {
-    if el.attr("align").is_some_and(|a| a.eq_ignore_ascii_case("center")) {
+    if el
+        .attr("align")
+        .is_some_and(|a| a.eq_ignore_ascii_case("center"))
+    {
         return true;
     }
     el.attr("style").is_some_and(|style| {
@@ -425,7 +429,10 @@ mod tests {
                 _ => Vec::new(),
             })
             .collect();
-        assert!(centered_text.contains("link"), "link text centered: {centered_text}");
+        assert!(
+            centered_text.contains("link"),
+            "link text centered: {centered_text}"
+        );
         assert_eq!(links.len(), 1, "one link registered");
     }
 
@@ -450,7 +457,13 @@ mod tests {
         );
         let cell = table
             .iter()
-            .find_map(|b| if let Block::Table(t) = b { t.rows.first() } else { None })
+            .find_map(|b| {
+                if let Block::Table(t) = b {
+                    t.rows.first()
+                } else {
+                    None
+                }
+            })
             .and_then(|row| row.first())
             .expect("a table cell");
         assert!(
@@ -468,7 +481,13 @@ mod tests {
         );
         let table = blocks
             .iter()
-            .find_map(|b| if let Block::Table(t) = b { Some(t) } else { None })
+            .find_map(|b| {
+                if let Block::Table(t) = b {
+                    Some(t)
+                } else {
+                    None
+                }
+            })
             .expect("a table block");
         assert_eq!(table.header.len(), 2, "two header cells");
         assert_eq!(table.rows.len(), 1, "one data row");

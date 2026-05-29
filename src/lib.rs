@@ -119,7 +119,8 @@ pub fn render_to_terminal(
     options: &RenderOptions,
     terminal_options: &render::terminal::TerminalRenderOptions,
 ) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
-    // input_path is reserved for image/asset resolution in a later wave.
+    // One-shot output stays text-only for images; the TUI resolves assets from
+    // its base_dir and draws graphical bands.
     let _ = input_path;
     let mut warnings = WarningCollector::new();
 

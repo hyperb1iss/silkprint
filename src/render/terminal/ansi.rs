@@ -66,8 +66,10 @@ pub fn render_with_offsets(
         first = false;
         spans[idx] = (line_no, lines.len());
         for line in lines {
-            out.push_str(MARGIN);
-            out.push_str(&line);
+            if !line.is_empty() {
+                out.push_str(MARGIN);
+                out.push_str(&line);
+            }
             out.push('\n');
             line_no += 1;
         }
@@ -210,7 +212,11 @@ impl Renderer<'_> {
         let body_width = width.saturating_sub(2);
         for code_line in lines {
             let rendered = self.inline_line(&clamp_spans(code_line, body_width));
-            out.push(format!("{bar} {rendered}"));
+            if rendered.is_empty() {
+                out.push(bar.clone());
+            } else {
+                out.push(format!("{bar} {rendered}"));
+            }
         }
         out
     }
@@ -228,7 +234,13 @@ impl Renderer<'_> {
         let gutter_w = display_width(self.glyphs.quote_bar()) + 1;
         self.blocks_lines(inner, width.saturating_sub(gutter_w))
             .into_iter()
-            .map(|line| format!("{bar} {line}"))
+            .map(|line| {
+                if line.is_empty() {
+                    bar.clone()
+                } else {
+                    format!("{bar} {line}")
+                }
+            })
             .collect()
     }
 
@@ -258,6 +270,8 @@ impl Renderer<'_> {
             for (i, line) in inner.into_iter().enumerate() {
                 if i == 0 {
                     out.push(format!("{marker}{line}"));
+                } else if line.is_empty() {
+                    out.push(String::new());
                 } else {
                     out.push(format!("{indent}{line}"));
                 }
@@ -340,7 +354,11 @@ impl Renderer<'_> {
         let mut out = vec![format!("{bar} {heading}{title_extra}")];
         let inner = self.blocks_lines(body, width.saturating_sub(2));
         for line in inner {
-            out.push(format!("{bar} {line}"));
+            if line.is_empty() {
+                out.push(bar.clone());
+            } else {
+                out.push(format!("{bar} {line}"));
+            }
         }
         out
     }
@@ -427,7 +445,11 @@ impl Renderer<'_> {
             out.extend(self.wrap_render(&term_spans, width));
             let details = self.blocks_lines(&item.details, width.saturating_sub(2));
             for line in details {
-                out.push(format!("  {line}"));
+                if line.is_empty() {
+                    out.push(String::new());
+                } else {
+                    out.push(format!("  {line}"));
+                }
             }
         }
         out

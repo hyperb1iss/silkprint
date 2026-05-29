@@ -239,15 +239,15 @@ fn image_typst_path(original_src: &str, resolved_path: &Path) -> String {
 pub(crate) fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
     use std::time::Duration;
 
-    // SSRF guard: only fetch hosts that resolve entirely to public addresses,
-    // since the source URL may come from an untrusted document. (A redirect to
-    // an internal host is a residual risk — full per-hop validation is TODO.)
+    // Markdown can be untrusted; remote images must not become SSRF probes.
     if !is_public_host(url) {
         return Err("blocked non-public or unresolvable host".to_string());
     }
 
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(20)))
+        // Keep the preflight meaningful: a public URL must not hop private.
+        .max_redirects(0)
         .build()
         .into();
 
@@ -305,6 +305,9 @@ fn is_public_host(url: &str) -> bool {
     if lower.is_empty() || last_label == "localhost" || last_label == "local" {
         return false;
     }
+    if let Ok(ip) = host.parse() {
+        return is_global_ip(ip);
+    }
 
     match (host, 443u16).to_socket_addrs() {
         Ok(addrs) => {
@@ -337,7 +340,14 @@ fn is_global_ip(ip: std::net::IpAddr) -> bool {
                 || (o[0] == 100 && (o[1] & 0xc0) == 64))
         }
         IpAddr::V6(v6) => {
-            let first = v6.segments()[0];
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_global_ip(IpAddr::V4(v4));
+            }
+            let segments = v6.segments();
+            if let Some(v4) = embedded_ipv4(segments) {
+                return is_global_ip(IpAddr::V4(v4));
+            }
+            let first = segments[0];
             !(v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
@@ -345,6 +355,30 @@ fn is_global_ip(ip: std::net::IpAddr) -> bool {
                 || (first & 0xffc0) == 0xfe80)
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn embedded_ipv4(segments: [u16; 8]) -> Option<std::net::Ipv4Addr> {
+    let tail = || {
+        let [a, b] = segments[6].to_be_bytes();
+        let [c, d] = segments[7].to_be_bytes();
+        std::net::Ipv4Addr::new(a, b, c, d)
+    };
+
+    if segments[..6] == [0, 0, 0, 0, 0, 0]
+        || segments[..6] == [0, 0, 0, 0, 0xffff, 0]
+        || segments[..6] == [0x0064, 0xff9b, 0, 0, 0, 0]
+    {
+        return Some(tail());
+    }
+
+    if segments[0] == 0x2002 {
+        let [a, b] = segments[1].to_be_bytes();
+        let [c, d] = segments[2].to_be_bytes();
+        return Some(std::net::Ipv4Addr::new(a, b, c, d));
+    }
+
+    None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -435,6 +469,12 @@ mod tests {
         assert!(!is_public_host("http://10.0.0.5/x"));
         assert!(!is_public_host("http://192.168.1.1/x"));
         assert!(!is_public_host("http://[::1]/x"));
+        assert!(!is_public_host("http://[::ffff:127.0.0.1]/x"));
+        assert!(!is_public_host("http://[::ffff:169.254.169.254]/x"));
+        assert!(!is_public_host("http://[::ffff:0:127.0.0.1]/x"));
+        assert!(!is_public_host("http://[::192.168.1.1]/x"));
+        assert!(!is_public_host("http://[64:ff9b::127.0.0.1]/x"));
+        assert!(!is_public_host("http://[2002:0a00:0001::]/x"));
         assert!(!is_public_host("https://printer.local/x"));
         assert!(!is_public_host("http:///no-host"));
     }

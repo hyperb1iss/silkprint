@@ -587,7 +587,9 @@ fn display_warnings(warnings: &[SilkprintWarning]) {
 
 /// Remove terminal control characters (keeping tab) from untrusted text.
 fn strip_control(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control() || *c == '\t').collect()
+    s.chars()
+        .filter(|c| !c.is_control() || *c == '\t')
+        .collect()
 }
 
 /// Estimate page count from PDF bytes by counting page object markers.

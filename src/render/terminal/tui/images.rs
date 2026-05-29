@@ -6,7 +6,7 @@
 //! ourselves and build a protocol for just the visible rows). Protocols target
 //! Kitty / iTerm2 / Sixel where the terminal supports them, halfblocks else.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
@@ -21,12 +21,18 @@ pub struct Loaded {
     pub height: u32,
 }
 
-/// The protocol for the slice of an image currently being drawn, cached so it
-/// is only re-encoded when the visible slice actually changes (i.e. on scroll).
-struct SliceProto {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SliceKey {
+    src: String,
     start_row: u16,
     rows: u16,
     band_rows: u16,
+}
+
+/// The protocol for a visible image slice. A small FIFO cache keeps recent
+/// slices warm while scrolling back and forth without retaining every row of a
+/// tall image forever.
+struct SliceProto {
     proto: StatefulProtocol,
 }
 
@@ -43,8 +49,8 @@ pub struct ImageStore {
     picker: Option<Picker>,
     base_dir: Option<PathBuf>,
     cache: HashMap<String, Option<Loaded>>,
-    /// Per-source protocol for the visible slice; rebuilt on scroll.
-    slices: HashMap<String, SliceProto>,
+    slices: HashMap<SliceKey, SliceProto>,
+    slice_order: VecDeque<SliceKey>,
     /// Terminal cell size in pixels, for sizing reserved row bands.
     cell: (u32, u32),
 }
@@ -60,6 +66,7 @@ impl ImageStore {
             base_dir,
             cache: HashMap::new(),
             slices: HashMap::new(),
+            slice_order: VecDeque::new(),
             cell,
         }
     }
@@ -79,6 +86,17 @@ impl ImageStore {
     pub fn clear_cache(&mut self) {
         self.cache.clear();
         self.slices.clear();
+        self.slice_order.clear();
+    }
+
+    /// Drop generated rasters while preserving decoded document images.
+    pub fn clear_generated(&mut self) {
+        self.cache
+            .retain(|key, _loaded| !key.starts_with(GENERATED_KEY_PREFIX));
+        self.slices
+            .retain(|key, _proto| !key.src.starts_with(GENERATED_KEY_PREFIX));
+        self.slice_order
+            .retain(|key| !key.src.starts_with(GENERATED_KEY_PREFIX));
     }
 
     /// Ensure a generated image (e.g. a mermaid diagram) is cached under `key`,
@@ -115,28 +133,26 @@ impl ImageStore {
     ) -> Option<&mut StatefulProtocol> {
         let picker = self.picker.as_ref()?;
         let loaded = self.cache.get(src).and_then(Option::as_ref)?;
-        let stale = self
-            .slices
-            .get(src)
-            .is_none_or(|s| s.start_row != start_row || s.rows != rows || s.band_rows != band_rows);
-        if stale {
-            let h = loaded.height;
-            let band = u32::from(band_rows.max(1));
-            let y0 = (u32::from(start_row) * h / band).min(h);
-            let y1 = (u32::from(start_row.saturating_add(rows)) * h / band).clamp(y0 + 1, h);
+        let key = SliceKey {
+            src: src.to_string(),
+            start_row,
+            rows,
+            band_rows,
+        };
+        if !self.slices.contains_key(&key) {
+            let (y0, y1) = slice_bounds(loaded.height, start_row, rows, band_rows)?;
             let crop = loaded.image.crop_imm(0, y0, loaded.width, y1 - y0);
             let proto = picker.new_resize_protocol(crop);
-            self.slices.insert(
-                src.to_string(),
-                SliceProto {
-                    start_row,
-                    rows,
-                    band_rows,
-                    proto,
-                },
-            );
+            while self.slices.len() >= MAX_SLICE_PROTOS {
+                let Some(oldest) = self.slice_order.pop_front() else {
+                    break;
+                };
+                self.slices.remove(&oldest);
+            }
+            self.slice_order.push_back(key.clone());
+            self.slices.insert(key.clone(), SliceProto { proto });
         }
-        self.slices.get_mut(src).map(|s| &mut s.proto)
+        self.slices.get_mut(&key).map(|s| &mut s.proto)
     }
 
     /// Get a cached image (loading it on first request). `None` if the source
@@ -181,6 +197,8 @@ impl ImageStore {
 /// Max decoded image dimension (px per side) and total allocation.
 const MAX_IMAGE_DIM: u32 = 8000;
 const MAX_IMAGE_ALLOC: u64 = 256 * 1024 * 1024;
+const MAX_SLICE_PROTOS: usize = 12;
+const GENERATED_KEY_PREFIX: &str = "\u{0}";
 
 /// Fetch a remote image's bytes, reusing the PDF pipeline's downloader.
 /// (SVG bytes won't decode as a raster — those stay placeholders for now.)
@@ -213,8 +231,8 @@ fn resolve(src: &str, base: Option<&Path>) -> Option<PathBuf> {
 /// Reserve the number of rows the image will actually occupy: its natural cell
 /// size (pixels / `cell`), downscaled to fit `content_width` (never upscaled),
 /// matching how ratatui-image's `Fit` renders. Bounded by `max_rows` so a band
-/// stays within one viewport — that keeps it fully visible (ratatui-image can't
-/// clip a partially scrolled image, so an over-tall band would never draw).
+/// cannot flood the content flow; over-tall bands are scrolled through by
+/// cropping the visible source slice during draw.
 pub(super) fn reserved_rows(
     width: u32,
     height: u32,
@@ -235,6 +253,33 @@ pub(super) fn reserved_rows(
     u16::try_from(rows.min(cap)).unwrap_or(max_rows).max(1)
 }
 
+fn slice_bounds(height: u32, start_row: u16, rows: u16, band_rows: u16) -> Option<(u32, u32)> {
+    if height == 0 || rows == 0 || band_rows == 0 {
+        return None;
+    }
+
+    let band = u32::from(band_rows);
+    let start = u32::from(start_row);
+    if start >= band {
+        return None;
+    }
+
+    let end = start.saturating_add(u32::from(rows)).min(band);
+    if end <= start {
+        return None;
+    }
+
+    let h = u64::from(height);
+    let band_u64 = u64::from(band);
+    let y0 = u32::try_from(u64::from(start) * h / band_u64)
+        .ok()?
+        .min(height - 1);
+    let y1 = u32::try_from((u64::from(end) * h).div_ceil(band_u64))
+        .ok()?
+        .clamp(y0 + 1, height);
+    Some((y0, y1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,8 +293,23 @@ mod tests {
         assert!(reserved_rows(1000, 100, 60, cell, 50) <= 4);
         // Never zero.
         assert!(reserved_rows(100, 1, 80, cell, 50) >= 1);
-        // A tall diagram is clamped to the viewport cap, not its full height.
+        // A tall diagram is clamped to the configured band cap, not the viewport.
         assert_eq!(reserved_rows(400, 4000, 80, cell, 30), 30);
+    }
+
+    #[test]
+    fn slice_bounds_map_band_rows_to_pixels() {
+        assert_eq!(slice_bounds(100, 0, 10, 100), Some((0, 10)));
+        assert_eq!(slice_bounds(100, 90, 10, 100), Some((90, 100)));
+        assert_eq!(slice_bounds(101, 1, 1, 3), Some((33, 68)));
+    }
+
+    #[test]
+    fn slice_bounds_reject_bad_ranges_without_panicking() {
+        assert_eq!(slice_bounds(100, 100, 1, 100), None);
+        assert_eq!(slice_bounds(100, 0, 0, 100), None);
+        assert_eq!(slice_bounds(100, 0, 1, 0), None);
+        assert_eq!(slice_bounds(0, 0, 1, 100), None);
     }
 
     #[test]

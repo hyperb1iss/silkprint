@@ -104,8 +104,8 @@ pub struct Cli {
 pub enum Command {
     /// Read a Markdown file in the terminal with full styling.
     ///
-    /// Emits styled ANSI to stdout (pipe-friendly). A scrollable TUI lands in a
-    /// later wave; for now `read` always produces one-shot output.
+    /// Launches a scrollable TUI in an interactive terminal and emits styled
+    /// ANSI when piped or when `--plain` is set.
     Read(ReadArgs),
 }
 
