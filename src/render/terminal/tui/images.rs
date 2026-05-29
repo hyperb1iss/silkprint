@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use image::DynamicImage;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 
@@ -51,6 +52,31 @@ impl ImageStore {
     /// Drop cached protocols (e.g. on live reload, where images may have changed).
     pub fn clear_cache(&mut self) {
         self.cache.clear();
+    }
+
+    /// Ensure a generated image (e.g. a rasterized heading) is cached under
+    /// `key`, building it on first request. Returns its reserved row count.
+    pub fn ensure_generated(
+        &mut self,
+        key: &str,
+        content_width: u16,
+        build: impl FnOnce() -> Option<DynamicImage>,
+    ) -> Option<u16> {
+        if !self.cache.contains_key(key) {
+            let loaded = self.picker.as_ref().and_then(|picker| {
+                let image = build()?;
+                let rows = reserved_rows(image.width(), image.height(), content_width);
+                Some(Loaded {
+                    protocol: picker.new_resize_protocol(image),
+                    rows,
+                })
+            });
+            self.cache.insert(key.to_string(), loaded);
+        }
+        self.cache
+            .get(key)
+            .and_then(Option::as_ref)
+            .map(|loaded| loaded.rows)
     }
 
     /// Get a cached image (loading it on first request). `None` if the source

@@ -27,6 +27,11 @@ mod native {
         }
         fonts
     }
+
+    /// Fetch a single bundled core font by its path under `fonts/core/`.
+    pub fn font_by_path(path: &str) -> Option<Vec<u8>> {
+        CoreFonts::get(path).map(|file| file.data.to_vec())
+    }
 }
 
 // ── WASM: fonts loaded externally via register_font() ───────────────
@@ -66,6 +71,10 @@ mod wasm {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::load_bundled_fonts;
+
+/// Fetch a single bundled core font by path (native only; `None` on wasm).
+#[cfg(all(not(target_arch = "wasm32"), feature = "terminal"))]
+pub use native::font_by_path;
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm::load_bundled_fonts;

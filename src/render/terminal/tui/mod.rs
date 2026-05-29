@@ -6,6 +6,7 @@
 //! outline, popups); the document content keeps the silkprint theme.
 
 mod chrome;
+mod headings;
 mod images;
 
 use std::io;
@@ -31,7 +32,7 @@ use self::chrome::Chrome;
 use self::images::{ImageStore, Placement};
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::{Block, RenderedDoc, Rgb};
+use super::model::{Block, Mods, RenderedDoc, Rgb, Role};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
@@ -46,6 +47,18 @@ enum Focus {
 enum Mode {
     Normal,
     Search,
+}
+
+/// A content region that renders as an image: an inline image or a rasterized
+/// heading.
+enum BandSpec {
+    Image(String),
+    Heading {
+        level: u8,
+        text: String,
+        fg: Rgb,
+        bg: Rgb,
+    },
 }
 
 /// Launch the interactive reader. Sets up and tears down the terminal
@@ -295,35 +308,59 @@ impl App {
         self.block_offsets = offsets;
         self.image_placements.clear();
         if self.images.enabled() {
-            self.reserve_images(width.saturating_sub(2));
+            self.reserve_bands(width.saturating_sub(2));
         }
         self.rendered_width = width;
         self.theme_dirty = false;
         self.clamp_scroll();
     }
 
-    /// Insert blank rows into the content for each top-level image and record
-    /// where to draw the image widget.
-    fn reserve_images(&mut self, content_width: u16) {
-        let image_blocks: Vec<(usize, String)> = self
-            .doc
-            .blocks
-            .iter()
-            .enumerate()
-            .filter_map(|(i, block)| match block {
-                Block::Image { src, .. } => {
-                    self.block_offsets.get(i).map(|&line| (line, src.clone()))
-                }
-                _ => None,
-            })
-            .collect();
+    /// Insert blank rows into the content for each graphical band — inline
+    /// images and rasterized H1/H2 headings — and record where to draw them.
+    fn reserve_bands(&mut self, content_width: u16) {
+        let bands: Vec<(usize, BandSpec)> = {
+            let resolver = ContentStyleResolver::new(&self.theme);
+            let bg = resolver.page_background().unwrap_or(Rgb(0, 0, 0));
+            self.doc
+                .blocks
+                .iter()
+                .enumerate()
+                .filter_map(|(i, block)| {
+                    let line = *self.block_offsets.get(i)?;
+                    match block {
+                        Block::Image { src, .. } => Some((line, BandSpec::Image(src.clone()))),
+                        Block::Heading { level, spans, .. } if *level <= 2 => {
+                            let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+                            let fg = resolver
+                                .resolve(Role::Heading(*level), Mods::default())
+                                .fg
+                                .unwrap_or(bg);
+                            Some((line, BandSpec::Heading { level: *level, text, fg, bg }))
+                        }
+                        _ => None,
+                    }
+                })
+                .collect()
+        };
 
         let mut inserted = 0usize;
-        for (orig_line, src) in image_blocks {
-            let Some(loaded) = self.images.get(&src, content_width) else {
+        for (orig_line, spec) in bands {
+            let (key, rows) = match spec {
+                BandSpec::Image(src) => {
+                    let rows = self.images.get(&src, content_width).map(|l| l.rows);
+                    (src, rows)
+                }
+                BandSpec::Heading { level, text, fg, bg } => {
+                    let key = format!("\u{0}h{level}:{text}");
+                    let rows = self.images.ensure_generated(&key, content_width, || {
+                        headings::rasterize(&text, level, fg, bg)
+                    });
+                    (key, rows)
+                }
+            };
+            let Some(rows) = rows else {
                 continue;
             };
-            let rows = loaded.rows;
             let line = orig_line + inserted;
             let insert_at = (line + 1).min(self.content.lines.len());
             for _ in 0..rows.saturating_sub(1) {
@@ -331,7 +368,7 @@ impl App {
             }
             inserted += usize::from(rows.saturating_sub(1));
             self.image_placements.push(Placement {
-                src,
+                src: key,
                 line: u16::try_from(line).unwrap_or(u16::MAX),
                 rows,
             });
