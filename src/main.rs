@@ -665,8 +665,25 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
         }
     })?;
 
-    let glyph_tier = args.glyphs.as_deref().and_then(silkprint::GlyphTier::parse);
-    let options = build_render_options(cli)?;
+    // Saved reader preferences fill in where no flag was given (CLI explicit
+    // theme/glyphs still win).
+    let reader_config = silkprint::render::terminal::config::load();
+    let glyph_tier = args
+        .glyphs
+        .as_deref()
+        .and_then(silkprint::GlyphTier::parse)
+        .or_else(|| {
+            reader_config
+                .glyphs
+                .as_deref()
+                .and_then(silkprint::GlyphTier::parse)
+        });
+    let mut options = build_render_options(cli)?;
+    if !options.theme_explicit {
+        if let Some(saved) = &reader_config.theme {
+            options.theme = silkprint::ThemeSource::BuiltIn(saved.clone());
+        }
+    }
 
     // Interactive TTY → TUI; piped or --plain → one-shot. Both resolve the
     // effective theme the same way (front matter / path / builtin).

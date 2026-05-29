@@ -12,7 +12,7 @@ use std::io;
 use ansi_to_tui::IntoText;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
@@ -24,7 +24,8 @@ use crate::warnings::WarningCollector;
 use self::chrome::Chrome;
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::RenderedDoc;
+use super::model::{RenderedDoc, Rgb};
+use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
 
@@ -67,6 +68,8 @@ struct App {
     title: String,
 
     content: Text<'static>,
+    content_bg: Color,
+    content_fg: Color,
     block_offsets: Vec<usize>,
     rendered_width: u16,
     theme_dirty: bool,
@@ -121,7 +124,8 @@ impl App {
         if !doc.outline.is_empty() {
             outline_state.select(Some(0));
         }
-        let outline_visible = doc.outline.len() > 1;
+        let saved = super::config::load();
+        let outline_visible = saved.outline.unwrap_or(doc.outline.len() > 1);
 
         Self {
             doc,
@@ -132,6 +136,8 @@ impl App {
             theme_idx,
             title,
             content: Text::default(),
+            content_bg: Color::Reset,
+            content_fg: Color::Reset,
             block_offsets: Vec::new(),
             rendered_width: 0,
             theme_dirty: true,
@@ -162,7 +168,21 @@ impl App {
                 }
             }
         }
+        self.save_config();
         Ok(())
+    }
+
+    fn save_config(&self) {
+        let glyphs = match self.glyphs.tier() {
+            GlyphTier::NerdFont => "nerdfont",
+            GlyphTier::Unicode => "unicode",
+            GlyphTier::Ascii => "ascii",
+        };
+        super::config::save(&super::config::ReaderConfig {
+            theme: self.theme_names.get(self.theme_idx).cloned(),
+            outline: Some(self.outline_visible),
+            glyphs: Some(glyphs.to_string()),
+        });
     }
 
     // ─── Content rendering ───────────────────────────────────────
@@ -183,6 +203,22 @@ impl App {
         let (ansi, offsets) =
             super::ansi::render_with_offsets(&self.doc, &self.theme, &caps, self.glyphs);
         self.content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
+
+        let resolver = ContentStyleResolver::new(&self.theme);
+        self.content_bg = resolver.page_background().map_or(Color::Reset, rgb_to_color);
+        self.content_fg = resolver.body_color().map_or(Color::Reset, rgb_to_color);
+        // ansi-to-tui leaves text spans with a Reset background, which paints as
+        // the terminal's own default — black on a dark profile even for a light
+        // document theme. Pin every unset span background to the page color so
+        // content sits on its theme's surface, not the terminal's.
+        for line in &mut self.content.lines {
+            for span in &mut line.spans {
+                if span.style.bg.is_none() || span.style.bg == Some(Color::Reset) {
+                    span.style.bg = Some(self.content_bg);
+                }
+            }
+        }
+
         self.block_offsets = offsets;
         self.rendered_width = width;
         self.theme_dirty = false;
@@ -387,7 +423,10 @@ impl App {
                 self.apply_theme(self.picker_saved);
                 self.show_picker = false;
             }
-            KeyCode::Enter => self.show_picker = false,
+            KeyCode::Enter => {
+                self.show_picker = false;
+                self.save_config();
+            }
             KeyCode::Char('j') | KeyCode::Down => self.picker_step(true),
             KeyCode::Char('k') | KeyCode::Up => self.picker_step(false),
             _ => {}
@@ -439,7 +478,7 @@ impl App {
 
     fn draw_content(&mut self, frame: &mut Frame, area: Rect) {
         let para = Paragraph::new(self.content.clone())
-            .style(Style::default().fg(self.chrome.text).bg(self.chrome.bg))
+            .style(Style::default().fg(self.content_fg).bg(self.content_bg))
             .scroll((self.scroll, 0));
         frame.render_widget(para, area);
     }
@@ -600,6 +639,10 @@ impl App {
 
 // ─── Free helpers ────────────────────────────────────────────────
 
+fn rgb_to_color(rgb: Rgb) -> Color {
+    Color::Rgb(rgb.0, rgb.1, rgb.2)
+}
+
 fn load_theme_or_default(name: &str) -> ResolvedTheme {
     let mut warnings = WarningCollector::new();
     let source = ThemeSource::BuiltIn(name.to_string());
@@ -699,6 +742,24 @@ mod tests {
         app.search_query = "section".to_string();
         app.run_search();
         assert!(!app.matches.is_empty(), "should find 'section' heading");
+    }
+
+    #[test]
+    fn content_spans_carry_theme_background() {
+        // Regression: ansi-to-tui leaves a Reset background that paints as the
+        // terminal default (black on a dark profile) under light themes.
+        let mut app = sample();
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        assert_ne!(app.content_bg, Color::Reset, "light theme resolves a page bg");
+        let leaked = app
+            .content
+            .lines
+            .iter()
+            .flat_map(|l| &l.spans)
+            .any(|s| s.style.bg.is_none() || s.style.bg == Some(Color::Reset));
+        assert!(!leaked, "every content span should carry an explicit background");
     }
 
     #[test]

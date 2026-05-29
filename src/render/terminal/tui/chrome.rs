@@ -12,7 +12,6 @@ use ratatui::style::Color;
 /// Resolved chrome colors for the TUI shell.
 #[derive(Debug, Clone, Copy)]
 pub struct Chrome {
-    pub bg: Color,
     pub panel_bg: Color,
     pub text: Color,
     pub muted: Color,
@@ -29,7 +28,6 @@ impl Chrome {
         let theme = opaline::load_by_name(theme_name).unwrap_or_default();
         let color = |token: &str| Color::from(theme.color(token));
         Self {
-            bg: color("bg.base"),
             panel_bg: color("bg.panel"),
             text: color("text.primary"),
             muted: color("text.muted"),

@@ -121,15 +121,8 @@ impl<'a> Walker<'a, '_> {
                 display: m.display_math,
             }),
 
-            NodeValue::HtmlBlock(_) => {
-                // Block HTML is rare in reading-focused markdown; render its
-                // visible text rather than dropping content silently.
-                let mut text = String::new();
-                collect_text(node, &mut text);
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    out.push(Block::Paragraph(vec![Span::body(trimmed.to_string())]));
-                }
+            NodeValue::HtmlBlock(html) => {
+                out.extend(super::html::to_blocks(&html.literal, &mut self.doc.links));
             }
 
             // Anything else at block position is treated as inline content.

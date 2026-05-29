@@ -43,6 +43,7 @@ terminal = [
     "dep:ratatui",
     "dep:ansi-to-tui",
     "dep:opaline",
+    "dep:directories",
 ]
 
 [dependencies]

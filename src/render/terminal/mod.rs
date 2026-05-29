@@ -7,8 +7,10 @@
 
 pub mod ansi;
 pub mod caps;
+pub mod config;
 pub mod glyphs;
 pub mod highlight;
+pub mod html;
 pub mod layout;
 pub mod model;
 pub mod style;
