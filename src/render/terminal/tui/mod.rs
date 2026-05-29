@@ -7,7 +7,6 @@
 
 mod chrome;
 mod diagrams;
-mod headings;
 mod images;
 
 use std::io;
@@ -33,7 +32,7 @@ use self::chrome::Chrome;
 use self::images::{ImageStore, Placement};
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::{Block, Mods, RenderedDoc, Rgb, Role};
+use super::model::{Block, RenderedDoc, Rgb};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
@@ -50,16 +49,10 @@ enum Mode {
     Search,
 }
 
-/// A content region that renders as an image: an inline image or a rasterized
-/// heading.
+/// A content region that renders as an image: an inline image or a mermaid
+/// diagram.
 enum BandSpec {
     Image(String),
-    Heading {
-        level: u8,
-        text: String,
-        fg: Rgb,
-        bg: Rgb,
-    },
     Mermaid {
         source: String,
         bg: Rgb,
@@ -340,9 +333,9 @@ impl App {
         self.clamp_scroll();
     }
 
-    /// Insert blank rows so each graphical band — inline images, rasterized
-    /// H1/H2 headings, mermaid diagrams — fully covers its source block, record
-    /// where to draw it, and keep outline jump offsets in sync with the shift.
+    /// Insert blank rows so each graphical band — inline images and mermaid
+    /// diagrams — fully covers its source block, record where to draw it, and
+    /// keep outline jump offsets in sync with the shift.
     fn reserve_bands(&mut self, content_width: u16) {
         let bands: Vec<(usize, BandSpec)> = {
             let resolver = ContentStyleResolver::new(&self.theme);
@@ -353,14 +346,6 @@ impl App {
                 .enumerate()
                 .filter_map(|(i, block)| match block {
                     Block::Image { src, .. } => Some((i, BandSpec::Image(src.clone()))),
-                    Block::Heading { level, spans, .. } if *level <= 2 => {
-                        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-                        let fg = resolver
-                            .resolve(Role::Heading(*level), Mods::default())
-                            .fg
-                            .unwrap_or(bg);
-                        Some((i, BandSpec::Heading { level: *level, text, fg, bg }))
-                    }
                     Block::CodeBlock { lang: Some(lang), lines } if lang == "mermaid" => {
                         let source = lines
                             .iter()
@@ -386,14 +371,6 @@ impl App {
                 BandSpec::Image(src) => {
                     let dims = self.images.get(&src).map(|l| (l.width, l.height));
                     (src, dims)
-                }
-                BandSpec::Heading { level, text, fg, bg } => {
-                    let key = format!("\u{0}h{level}:{text}");
-                    let dims = self
-                        .images
-                        .ensure_generated(&key, || headings::rasterize(&text, level, fg, bg))
-                        .map(|l| (l.width, l.height));
-                    (key, dims)
                 }
                 BandSpec::Mermaid { source, bg } => {
                     let key = format!("\u{0}mermaid:{source}");
