@@ -26,11 +26,13 @@ static FONTDB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
     Arc::new(fontdb)
 });
 
-const TARGET_WIDTH_PX: f32 = 760.0;
+/// Render diagrams wide enough to be crisp and fill a modern terminal; tall
+/// ones are scrolled through rather than shrunk.
+const TARGET_WIDTH_PX: f32 = 1400.0;
 /// Reject oversized mermaid input and cap the rasterized output dimensions so
 /// untrusted documents can't drive unbounded render/allocation work.
 const MAX_MERMAID_BYTES: usize = 32 * 1024;
-const MAX_RASTER_DIM: f32 = 2000.0;
+const MAX_RASTER_DIM: f32 = 4000.0;
 
 /// Render a mermaid source to a rasterized image, or `None` on failure.
 pub fn mermaid_image(source: &str, theme: &ResolvedTheme, bg: Rgb) -> Option<DynamicImage> {
@@ -56,9 +58,16 @@ fn svg_to_image(svg: &[u8], bg: Rgb) -> Option<DynamicImage> {
 
     let tree = usvg::Tree::from_data(svg, &options).ok()?;
     let size = tree.size();
-    let scale = (TARGET_WIDTH_PX / size.width()).clamp(0.2, 4.0);
-    let width = (size.width() * scale).ceil().clamp(1.0, MAX_RASTER_DIM) as u32;
-    let height = (size.height() * scale).ceil().clamp(1.0, MAX_RASTER_DIM) as u32;
+    let (sw, sh) = (size.width().max(1.0), size.height().max(1.0));
+    // Scale to the target width, but bound the scale by both axes so neither
+    // exceeds MAX_RASTER_DIM. Clamping width/height independently would break
+    // the aspect ratio and crop the bottom off a tall diagram.
+    let scale = (TARGET_WIDTH_PX / sw)
+        .min(MAX_RASTER_DIM / sw)
+        .min(MAX_RASTER_DIM / sh)
+        .clamp(0.05, 8.0);
+    let width = (sw * scale).ceil().max(1.0) as u32;
+    let height = (sh * scale).ceil().max(1.0) as u32;
 
     let mut pixmap = tiny_skia::Pixmap::new(width, height)?;
     pixmap.fill(tiny_skia::Color::from_rgba8(bg.0, bg.1, bg.2, 255));

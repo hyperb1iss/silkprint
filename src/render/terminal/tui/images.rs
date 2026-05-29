@@ -1,9 +1,10 @@
 //! Inline image loading for the TUI.
 //!
-//! Decodes local images and builds ratatui-image protocols (Kitty / iTerm2 /
-//! Sixel where the terminal supports them, halfblocks otherwise). Each image is
-//! given a reserved row band in the content flow; the widget is drawn over that
-//! band when it scrolls fully into view.
+//! Decodes local images and keeps the decoded pixels so a band can be scrolled
+//! through: the widget draws only the vertical slice currently in the viewport
+//! (ratatui-image can't clip a partially scrolled image, so we crop the source
+//! ourselves and build a protocol for just the visible rows). Protocols target
+//! Kitty / iTerm2 / Sixel where the terminal supports them, halfblocks else.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,12 +13,21 @@ use image::DynamicImage;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 
-/// A decoded image protocol plus its source pixel dimensions. Reserved rows are
-/// computed fresh per content width (not cached) so resizes stay correct.
+/// A decoded image plus its source pixel dimensions. The pixels are retained so
+/// a tall band can be cropped to whatever vertical slice is currently visible.
 pub struct Loaded {
-    pub protocol: StatefulProtocol,
+    pub image: DynamicImage,
     pub width: u32,
     pub height: u32,
+}
+
+/// The protocol for the slice of an image currently being drawn, cached so it
+/// is only re-encoded when the visible slice actually changes (i.e. on scroll).
+struct SliceProto {
+    start_row: u16,
+    rows: u16,
+    band_rows: u16,
+    proto: StatefulProtocol,
 }
 
 /// Where a loaded image sits in the (reserved) content flow.
@@ -33,6 +43,8 @@ pub struct ImageStore {
     picker: Option<Picker>,
     base_dir: Option<PathBuf>,
     cache: HashMap<String, Option<Loaded>>,
+    /// Per-source protocol for the visible slice; rebuilt on scroll.
+    slices: HashMap<String, SliceProto>,
     /// Terminal cell size in pixels, for sizing reserved row bands.
     cell: (u32, u32),
 }
@@ -47,6 +59,7 @@ impl ImageStore {
             picker,
             base_dir,
             cache: HashMap::new(),
+            slices: HashMap::new(),
             cell,
         }
     }
@@ -61,30 +74,69 @@ impl ImageStore {
         self.cell
     }
 
-    /// Drop cached protocols (e.g. on live reload, where images may have changed).
+    /// Drop cached images and slice protocols (e.g. on live reload, where the
+    /// underlying files may have changed).
     pub fn clear_cache(&mut self) {
         self.cache.clear();
+        self.slices.clear();
     }
 
-    /// Ensure a generated image (e.g. a rasterized heading) is cached under
-    /// `key`, building it on first request.
+    /// Ensure a generated image (e.g. a mermaid diagram) is cached under `key`,
+    /// building it on first request.
     pub fn ensure_generated(
         &mut self,
         key: &str,
         build: impl FnOnce() -> Option<DynamicImage>,
     ) -> Option<&mut Loaded> {
         if !self.cache.contains_key(key) {
-            let loaded = self.picker.as_ref().and_then(|picker| {
+            let loaded = self.picker.as_ref().and_then(|_picker| {
                 let image = build()?;
                 Some(Loaded {
                     width: image.width(),
                     height: image.height(),
-                    protocol: picker.new_resize_protocol(image),
+                    image,
                 })
             });
             self.cache.insert(key.to_string(), loaded);
         }
         self.cache.get_mut(key).and_then(Option::as_mut)
+    }
+
+    /// Build (or reuse) the protocol for the vertical slice of `src` spanning
+    /// band rows `[start_row, start_row + rows)` of a `band_rows`-tall band.
+    /// Crops the source to the matching pixel range so the visible portion of a
+    /// tall image draws correctly while scrolling. `None` if `src` isn't loaded.
+    pub fn slice_protocol(
+        &mut self,
+        src: &str,
+        start_row: u16,
+        rows: u16,
+        band_rows: u16,
+    ) -> Option<&mut StatefulProtocol> {
+        let picker = self.picker.as_ref()?;
+        let loaded = self.cache.get(src).and_then(Option::as_ref)?;
+        let stale = self
+            .slices
+            .get(src)
+            .is_none_or(|s| s.start_row != start_row || s.rows != rows || s.band_rows != band_rows);
+        if stale {
+            let h = loaded.height;
+            let band = u32::from(band_rows.max(1));
+            let y0 = (u32::from(start_row) * h / band).min(h);
+            let y1 = (u32::from(start_row.saturating_add(rows)) * h / band).clamp(y0 + 1, h);
+            let crop = loaded.image.crop_imm(0, y0, loaded.width, y1 - y0);
+            let proto = picker.new_resize_protocol(crop);
+            self.slices.insert(
+                src.to_string(),
+                SliceProto {
+                    start_row,
+                    rows,
+                    band_rows,
+                    proto,
+                },
+            );
+        }
+        self.slices.get_mut(src).map(|s| &mut s.proto)
     }
 
     /// Get a cached image (loading it on first request). `None` if the source
@@ -98,7 +150,8 @@ impl ImageStore {
     }
 
     fn load(&self, src: &str) -> Option<Loaded> {
-        let picker = self.picker.as_ref()?;
+        // Only load when a graphics protocol is available to draw it.
+        self.picker.as_ref()?;
         let bytes = if src.starts_with("http://") || src.starts_with("https://") {
             fetch_remote(src)?
         } else {
@@ -120,7 +173,7 @@ impl ImageStore {
         Some(Loaded {
             width: image.width(),
             height: image.height(),
-            protocol: picker.new_resize_protocol(image),
+            image,
         })
     }
 }

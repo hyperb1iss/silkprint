@@ -37,6 +37,11 @@ use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
 
+/// Upper bound on the rows a single image/diagram band may reserve. Bands are
+/// normally sized to the image's natural height and scrolled through; this only
+/// guards against a pathologically tall input flooding the content flow.
+const MAX_BAND_ROWS: u16 = 400;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
     Content,
@@ -363,10 +368,10 @@ impl App {
 
         let theme = self.theme.clone();
         let cell = self.images.cell();
-        // Keep every band within one screen, with a row of headroom, so it can
-        // be fully scrolled into view (and therefore drawn) rather than being
-        // taller than the viewport and never rendering.
-        let max_rows = self.viewport_h.saturating_sub(1).max(1);
+        // Size bands to the image's natural height (bounded only against
+        // pathological inputs). Tall diagrams get a tall band and are scrolled
+        // through — the draw path crops to whatever slice is on screen.
+        let max_rows = MAX_BAND_ROWS;
         let mut delta: isize = 0;
         for (block_index, spec) in bands {
             let (orig_start, block_height) = self.block_spans[block_index];
@@ -706,8 +711,9 @@ impl App {
             .style(Style::default().fg(self.content_fg).bg(self.content_bg));
         frame.render_widget(para, area);
 
-        // Draw images over their reserved bands, but only when the full band is
-        // in view (ratatui-image fits-to-area and can't clip a partial band).
+        // Draw each band's visible vertical slice. A band taller than the
+        // viewport is cropped to whatever rows are on screen, so large diagrams
+        // scroll through smoothly instead of having to fit entirely in view.
         if self.image_placements.is_empty() {
             return;
         }
@@ -717,21 +723,28 @@ impl App {
         for placement in &placements {
             let band_top = u32::from(placement.line);
             let band_bottom = band_top + u32::from(placement.rows);
-            if band_top < scroll || band_bottom > scroll + viewport {
+            let vis_top = band_top.max(scroll);
+            let vis_bottom = band_bottom.min(scroll + viewport);
+            if vis_top >= vis_bottom {
                 continue;
             }
-            let rel = u16::try_from(band_top - scroll).unwrap_or(0);
+            let rel = u16::try_from(vis_top - scroll).unwrap_or(0);
+            let start_row = u16::try_from(vis_top - band_top).unwrap_or(0);
+            let rows = u16::try_from(vis_bottom - vis_top).unwrap_or(0);
             let img_area = Rect {
                 x: area.x.saturating_add(2),
                 y: area.y.saturating_add(rel),
                 width: area.width.saturating_sub(2),
-                height: placement.rows.min(area.height.saturating_sub(rel)),
+                height: rows,
             };
             if img_area.width == 0 || img_area.height == 0 {
                 continue;
             }
-            if let Some(loaded) = self.images.get(&placement.src) {
-                frame.render_stateful_widget(StatefulImage::new(), img_area, &mut loaded.protocol);
+            if let Some(proto) =
+                self.images
+                    .slice_protocol(&placement.src, start_row, rows, placement.rows)
+            {
+                frame.render_stateful_widget(StatefulImage::new(), img_area, proto);
             }
         }
         self.image_placements = placements;
