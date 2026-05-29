@@ -4,6 +4,8 @@
 //! SVG with resvg (already in the tree via typst) onto an opaque page-colored
 //! background so the result is a flat RGBA image ready for ratatui-image.
 
+use std::sync::{Arc, LazyLock};
+
 use image::{DynamicImage, RgbaImage};
 use resvg::tiny_skia;
 use resvg::usvg;
@@ -11,6 +13,18 @@ use resvg::usvg;
 use crate::theme::ResolvedTheme;
 
 use super::super::model::Rgb;
+
+/// Bundled-font database for SVG text, built once and shared across diagrams.
+/// Parsing the bundled fonts (which include the multi-MB color emoji font)
+/// takes ~0.5s, so rebuilding it per diagram made multi-diagram documents
+/// stutter on open.
+static FONTDB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
+    let mut fontdb = usvg::fontdb::Database::new();
+    for font in crate::fonts::load_bundled_fonts() {
+        fontdb.load_font_data(font);
+    }
+    Arc::new(fontdb)
+});
 
 const TARGET_WIDTH_PX: f32 = 760.0;
 /// Reject oversized mermaid input and cap the rasterized output dimensions so
@@ -35,12 +49,8 @@ pub fn mermaid_image(source: &str, theme: &ResolvedTheme, bg: Rgb) -> Option<Dyn
     clippy::as_conversions
 )]
 fn svg_to_image(svg: &[u8], bg: Rgb) -> Option<DynamicImage> {
-    let mut fontdb = usvg::fontdb::Database::new();
-    for font in crate::fonts::load_bundled_fonts() {
-        fontdb.load_font_data(font);
-    }
     let options = usvg::Options {
-        fontdb: std::sync::Arc::new(fontdb),
+        fontdb: FONTDB.clone(),
         ..usvg::Options::default()
     };
 
