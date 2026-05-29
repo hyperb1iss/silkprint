@@ -101,7 +101,10 @@ struct App {
     content: Text<'static>,
     content_bg: Color,
     content_fg: Color,
-    block_offsets: Vec<usize>,
+    /// Per-block `(start_line, line_count)` from the renderer (pre-band-insert).
+    block_spans: Vec<(usize, usize)>,
+    /// Per-block start line adjusted for inserted graphical bands (outline jumps).
+    block_jump: Vec<usize>,
     rendered_width: u16,
     theme_dirty: bool,
 
@@ -176,7 +179,8 @@ impl App {
             content: Text::default(),
             content_bg: Color::Reset,
             content_fg: Color::Reset,
-            block_offsets: Vec::new(),
+            block_spans: Vec::new(),
+            block_jump: Vec::new(),
             rendered_width: 0,
             theme_dirty: true,
             scroll: 0,
@@ -219,16 +223,27 @@ impl App {
             Some(watcher)
         });
 
+        // Redraw only when something changes — input, resize, or a file edit —
+        // so an idle reader doesn't repaint the whole document on every tick.
+        let mut needs_redraw = true;
         while !self.quit {
-            terminal.draw(|frame| self.draw(frame))?;
-            if event::poll(Duration::from_millis(200))?
-                && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-            {
-                self.on_key(key.code, key.modifiers);
+            if needs_redraw {
+                terminal.draw(|frame| self.draw(frame))?;
+                needs_redraw = false;
+            }
+            if event::poll(Duration::from_millis(200))? {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
+                        self.on_key(key.code, key.modifiers);
+                        needs_redraw = true;
+                    }
+                    Event::Resize(..) => needs_redraw = true,
+                    _ => {}
+                }
             }
             if rx.try_iter().count() > 0 {
                 self.reload();
+                needs_redraw = true;
             }
         }
         self.save_config();
@@ -258,6 +273,9 @@ impl App {
             }
             None if !self.doc.outline.is_empty() => self.outline_state.select(Some(0)),
             _ => {}
+        }
+        if self.doc.outline.is_empty() {
+            self.focus = Focus::Content; // outline may have vanished
         }
         self.theme_dirty = true; // force ensure_content to re-render
     }
@@ -311,7 +329,8 @@ impl App {
             }
         }
 
-        self.block_offsets = offsets;
+        self.block_spans = offsets;
+        self.block_jump = self.block_spans.iter().map(|(start, _)| *start).collect();
         self.image_placements.clear();
         if self.images.enabled() {
             self.reserve_bands(width.saturating_sub(2));
@@ -321,8 +340,9 @@ impl App {
         self.clamp_scroll();
     }
 
-    /// Insert blank rows into the content for each graphical band — inline
-    /// images and rasterized H1/H2 headings — and record where to draw them.
+    /// Insert blank rows so each graphical band — inline images, rasterized
+    /// H1/H2 headings, mermaid diagrams — fully covers its source block, record
+    /// where to draw it, and keep outline jump offsets in sync with the shift.
     fn reserve_bands(&mut self, content_width: u16) {
         let bands: Vec<(usize, BandSpec)> = {
             let resolver = ContentStyleResolver::new(&self.theme);
@@ -331,68 +351,79 @@ impl App {
                 .blocks
                 .iter()
                 .enumerate()
-                .filter_map(|(i, block)| {
-                    let line = *self.block_offsets.get(i)?;
-                    match block {
-                        Block::Image { src, .. } => Some((line, BandSpec::Image(src.clone()))),
-                        Block::Heading { level, spans, .. } if *level <= 2 => {
-                            let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-                            let fg = resolver
-                                .resolve(Role::Heading(*level), Mods::default())
-                                .fg
-                                .unwrap_or(bg);
-                            Some((line, BandSpec::Heading { level: *level, text, fg, bg }))
-                        }
-                        Block::CodeBlock { lang: Some(lang), lines } if lang == "mermaid" => {
-                            let source = lines
-                                .iter()
-                                .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            Some((line, BandSpec::Mermaid { source, bg }))
-                        }
-                        _ => None,
+                .filter_map(|(i, block)| match block {
+                    Block::Image { src, .. } => Some((i, BandSpec::Image(src.clone()))),
+                    Block::Heading { level, spans, .. } if *level <= 2 => {
+                        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+                        let fg = resolver
+                            .resolve(Role::Heading(*level), Mods::default())
+                            .fg
+                            .unwrap_or(bg);
+                        Some((i, BandSpec::Heading { level: *level, text, fg, bg }))
                     }
+                    Block::CodeBlock { lang: Some(lang), lines } if lang == "mermaid" => {
+                        let source = lines
+                            .iter()
+                            .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        Some((i, BandSpec::Mermaid { source, bg }))
+                    }
+                    _ => None,
                 })
                 .collect()
         };
 
         let theme = self.theme.clone();
         let mut inserted = 0usize;
-        for (orig_line, spec) in bands {
-            let (key, rows) = match spec {
+        for (block_index, spec) in bands {
+            let (orig_start, block_height) = self.block_spans[block_index];
+            if block_height == 0 {
+                continue;
+            }
+            let (key, dims) = match spec {
                 BandSpec::Image(src) => {
-                    let rows = self.images.get(&src, content_width).map(|l| l.rows);
-                    (src, rows)
+                    let dims = self.images.get(&src).map(|l| (l.width, l.height));
+                    (src, dims)
                 }
                 BandSpec::Heading { level, text, fg, bg } => {
                     let key = format!("\u{0}h{level}:{text}");
-                    let rows = self.images.ensure_generated(&key, content_width, || {
-                        headings::rasterize(&text, level, fg, bg)
-                    });
-                    (key, rows)
+                    let dims = self
+                        .images
+                        .ensure_generated(&key, || headings::rasterize(&text, level, fg, bg))
+                        .map(|l| (l.width, l.height));
+                    (key, dims)
                 }
                 BandSpec::Mermaid { source, bg } => {
                     let key = format!("\u{0}mermaid:{source}");
-                    let rows = self.images.ensure_generated(&key, content_width, || {
-                        diagrams::mermaid_image(&source, &theme, bg)
-                    });
-                    (key, rows)
+                    let dims = self
+                        .images
+                        .ensure_generated(&key, || diagrams::mermaid_image(&source, &theme, bg))
+                        .map(|l| (l.width, l.height));
+                    (key, dims)
                 }
             };
-            let Some(rows) = rows else {
+            let Some((w, h)) = dims else {
                 continue;
             };
-            let line = orig_line + inserted;
-            let insert_at = (line + 1).min(self.content.lines.len());
-            for _ in 0..rows.saturating_sub(1) {
+            // The band must be at least as tall as the block it covers, so the
+            // block's own text (heading underline, mermaid source) is hidden.
+            let img_rows = images::reserved_rows(w, h, content_width);
+            let band_rows = img_rows.max(u16::try_from(block_height).unwrap_or(u16::MAX));
+            let start = orig_start + inserted;
+            let extra = usize::from(band_rows) - block_height;
+            let insert_at = (start + block_height).min(self.content.lines.len());
+            for _ in 0..extra {
                 self.content.lines.insert(insert_at, Line::default());
             }
-            inserted += usize::from(rows.saturating_sub(1));
+            inserted += extra;
+            for jump in self.block_jump.iter_mut().skip(block_index + 1) {
+                *jump += extra;
+            }
             self.image_placements.push(Placement {
                 src: key,
-                line: u16::try_from(line).unwrap_or(u16::MAX),
-                rows,
+                line: u16::try_from(start).unwrap_or(u16::MAX),
+                rows: band_rows,
             });
         }
     }
@@ -415,6 +446,9 @@ impl App {
             self.chrome = Chrome::for_theme(name);
             self.theme_idx = idx;
             self.theme_dirty = true;
+            // Drop generated rasters (headings/mermaid) — they bake in the old
+            // theme's colors and must be rebuilt.
+            self.images.clear_cache();
         }
     }
 
@@ -446,7 +480,12 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('t') => self.open_picker(),
-            KeyCode::Char('o') => self.outline_visible = !self.outline_visible,
+            KeyCode::Char('o') => {
+                self.outline_visible = !self.outline_visible;
+                if !self.outline_visible {
+                    self.focus = Focus::Content; // don't strand focus on a hidden pane
+                }
+            }
             KeyCode::Char('/') => {
                 self.mode = Mode::Search;
                 self.search_query.clear();
@@ -527,8 +566,10 @@ impl App {
         let Some(item) = self.doc.outline.get(sel) else {
             return;
         };
-        if let Some(offset) = self.block_offsets.get(item.block_index) {
-            self.scroll = u16::try_from(*offset).unwrap_or(0).min(self.max_scroll());
+        if let Some(offset) = self.block_jump.get(item.block_index) {
+            self.scroll = u16::try_from(*offset)
+                .unwrap_or(u16::MAX)
+                .min(self.max_scroll());
         }
         self.focus = Focus::Content;
     }
@@ -645,6 +686,7 @@ impl App {
 
         self.viewport_h = content_area.height;
         self.ensure_content(content_area.width);
+        self.clamp_scroll(); // height-only resizes change max_scroll
         self.draw_content(frame, content_area);
         self.draw_status(frame, status);
 
@@ -657,15 +699,25 @@ impl App {
     }
 
     fn draw_content(&mut self, frame: &mut Frame, area: Rect) {
-        let content = if self.search_query.is_empty() {
-            self.content.clone()
+        // Render only the visible slice (and highlight only those lines), so the
+        // draw path is O(viewport) rather than O(document) per frame.
+        let top = usize::from(self.scroll);
+        let total = self.content.lines.len();
+        let end = top.saturating_add(usize::from(area.height)).min(total);
+        let mut visible: Vec<Line<'static>> = if top < total {
+            self.content.lines[top..end].to_vec()
         } else {
-            let needle: Vec<char> = self.search_query.to_lowercase().chars().collect();
-            highlight_matches(&self.content, &needle)
+            Vec::new()
         };
-        let para = Paragraph::new(content)
-            .style(Style::default().fg(self.content_fg).bg(self.content_bg))
-            .scroll((self.scroll, 0));
+        if !self.search_query.is_empty() {
+            let needle: Vec<char> = self.search_query.to_lowercase().chars().collect();
+            let hl = search_highlight_style();
+            for line in &mut visible {
+                *line = highlight_line(line, &needle, hl);
+            }
+        }
+        let para = Paragraph::new(Text::from(visible))
+            .style(Style::default().fg(self.content_fg).bg(self.content_bg));
         frame.render_widget(para, area);
 
         // Draw images over their reserved bands, but only when the full band is
@@ -673,17 +725,16 @@ impl App {
         if self.image_placements.is_empty() {
             return;
         }
-        let placements = self.image_placements.clone();
-        let content_width = self.rendered_width;
+        let placements = std::mem::take(&mut self.image_placements);
         let scroll = u32::from(self.scroll);
         let viewport = u32::from(area.height);
-        for placement in placements {
-            let top = u32::from(placement.line);
-            let bottom = top + u32::from(placement.rows);
-            if top < scroll || bottom > scroll + viewport {
+        for placement in &placements {
+            let band_top = u32::from(placement.line);
+            let band_bottom = band_top + u32::from(placement.rows);
+            if band_top < scroll || band_bottom > scroll + viewport {
                 continue;
             }
-            let rel = u16::try_from(top - scroll).unwrap_or(0);
+            let rel = u16::try_from(band_top - scroll).unwrap_or(0);
             let img_area = Rect {
                 x: area.x.saturating_add(2),
                 y: area.y.saturating_add(rel),
@@ -693,13 +744,11 @@ impl App {
             if img_area.width == 0 || img_area.height == 0 {
                 continue;
             }
-            if let Some(loaded) = self
-                .images
-                .get(&placement.src, content_width.saturating_sub(2))
-            {
+            if let Some(loaded) = self.images.get(&placement.src) {
                 frame.render_stateful_widget(StatefulImage::new(), img_area, &mut loaded.protocol);
             }
         }
+        self.image_placements = placements;
     }
 
     fn draw_outline(&mut self, frame: &mut Frame, area: Rect) {
@@ -899,22 +948,12 @@ fn rgb_to_color(rgb: Rgb) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
 }
 
-/// Return a copy of `text` with every (case-insensitive) occurrence of `needle`
-/// highlighted. `needle` is pre-lowercased characters.
-fn highlight_matches(text: &Text<'static>, needle: &[char]) -> Text<'static> {
-    if needle.is_empty() {
-        return text.clone();
-    }
-    let hl = Style::default()
+/// Style applied to search matches: electric yellow on black.
+fn search_highlight_style() -> Style {
+    Style::default()
         .bg(Color::Rgb(241, 250, 140))
         .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let lines: Vec<Line<'static>> = text
-        .lines
-        .iter()
-        .map(|line| highlight_line(line, needle, hl))
-        .collect();
-    Text::from(lines)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn highlight_line(line: &Line<'static>, needle: &[char], hl: Style) -> Line<'static> {
@@ -1065,7 +1104,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
         assert_eq!(app.doc.outline.len(), 2, "two headings expected");
-        assert_eq!(app.block_offsets.len(), app.doc.blocks.len());
+        assert_eq!(app.block_spans.len(), app.doc.blocks.len());
     }
 
     #[test]

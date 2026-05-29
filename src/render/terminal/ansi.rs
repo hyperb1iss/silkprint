@@ -32,16 +32,16 @@ pub fn render(
     render_with_offsets(doc, theme, caps, glyphs).0
 }
 
-/// Render, also returning the starting output line of each top-level block.
+/// Render, also returning each top-level block's `(start_line, line_count)`.
 ///
-/// The offsets (one per `doc.blocks` entry) let the TUI map outline headings to
-/// scroll positions.
+/// The spans (one per `doc.blocks` entry) let the TUI map outline headings to
+/// scroll positions and size graphical bands to the full block they cover.
 pub fn render_with_offsets(
     doc: &RenderedDoc,
     theme: &ResolvedTheme,
     caps: &Capabilities,
     glyphs: Glyphs,
-) -> (String, Vec<usize>) {
+) -> (String, Vec<(usize, usize)>) {
     let renderer = Renderer {
         resolver: ContentStyleResolver::new(theme),
         theme,
@@ -51,13 +51,13 @@ pub fn render_with_offsets(
     };
     let width = renderer.content_width();
     let mut out = String::new();
-    let mut offsets = vec![0usize; doc.blocks.len()];
+    let mut spans = vec![(0usize, 0usize); doc.blocks.len()];
     let mut line_no = 0usize;
     let mut first = true;
     for (idx, block) in doc.blocks.iter().enumerate() {
         let lines = renderer.block_lines(block, width);
         if lines.is_empty() {
-            offsets[idx] = line_no;
+            spans[idx] = (line_no, 0);
             continue;
         }
         if !first {
@@ -65,7 +65,7 @@ pub fn render_with_offsets(
             line_no += 1;
         }
         first = false;
-        offsets[idx] = line_no;
+        spans[idx] = (line_no, lines.len());
         for line in lines {
             out.push_str(MARGIN);
             out.push_str(&line);
@@ -73,7 +73,7 @@ pub fn render_with_offsets(
             line_no += 1;
         }
     }
-    (out, offsets)
+    (out, spans)
 }
 
 pub(super) struct Renderer<'a> {

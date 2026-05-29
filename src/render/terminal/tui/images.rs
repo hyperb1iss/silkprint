@@ -14,10 +14,12 @@ use ratatui_image::protocol::StatefulProtocol;
 
 const MAX_IMAGE_ROWS: u16 = 20;
 
-/// A decoded image plus the number of content rows reserved for it.
+/// A decoded image protocol plus its source pixel dimensions. Reserved rows are
+/// computed fresh per content width (not cached) so resizes stay correct.
 pub struct Loaded {
     pub protocol: StatefulProtocol,
-    pub rows: u16,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Where a loaded image sits in the (reserved) content flow.
@@ -55,41 +57,37 @@ impl ImageStore {
     }
 
     /// Ensure a generated image (e.g. a rasterized heading) is cached under
-    /// `key`, building it on first request. Returns its reserved row count.
+    /// `key`, building it on first request.
     pub fn ensure_generated(
         &mut self,
         key: &str,
-        content_width: u16,
         build: impl FnOnce() -> Option<DynamicImage>,
-    ) -> Option<u16> {
+    ) -> Option<&mut Loaded> {
         if !self.cache.contains_key(key) {
             let loaded = self.picker.as_ref().and_then(|picker| {
                 let image = build()?;
-                let rows = reserved_rows(image.width(), image.height(), content_width);
                 Some(Loaded {
+                    width: image.width(),
+                    height: image.height(),
                     protocol: picker.new_resize_protocol(image),
-                    rows,
                 })
             });
             self.cache.insert(key.to_string(), loaded);
         }
-        self.cache
-            .get(key)
-            .and_then(Option::as_ref)
-            .map(|loaded| loaded.rows)
+        self.cache.get_mut(key).and_then(Option::as_mut)
     }
 
     /// Get a cached image (loading it on first request). `None` if the source
-    /// is remote, missing, or undecodable.
-    pub fn get(&mut self, src: &str, content_width: u16) -> Option<&mut Loaded> {
+    /// is remote-blocked, missing, jailed, or undecodable.
+    pub fn get(&mut self, src: &str) -> Option<&mut Loaded> {
         if !self.cache.contains_key(src) {
-            let loaded = self.load(src, content_width);
+            let loaded = self.load(src);
             self.cache.insert(src.to_string(), loaded);
         }
         self.cache.get_mut(src).and_then(Option::as_mut)
     }
 
-    fn load(&self, src: &str, content_width: u16) -> Option<Loaded> {
+    fn load(&self, src: &str) -> Option<Loaded> {
         let picker = self.picker.as_ref()?;
         let bytes = if src.starts_with("http://") || src.starts_with("https://") {
             fetch_remote(src)?
@@ -109,9 +107,11 @@ impl ImageStore {
         reader.limits(limits);
 
         let image = reader.decode().ok()?;
-        let rows = reserved_rows(image.width(), image.height(), content_width);
-        let protocol = picker.new_resize_protocol(image);
-        Some(Loaded { protocol, rows })
+        Some(Loaded {
+            width: image.width(),
+            height: image.height(),
+            protocol: picker.new_resize_protocol(image),
+        })
     }
 }
 
@@ -149,7 +149,7 @@ fn resolve(src: &str, base: Option<&Path>) -> Option<PathBuf> {
 
 /// Reserve a row band sized to the image's aspect ratio, assuming a terminal
 /// cell is roughly twice as tall as it is wide. Integer math; capped.
-fn reserved_rows(width: u32, height: u32, content_width: u16) -> u16 {
+pub(super) fn reserved_rows(width: u32, height: u32, content_width: u16) -> u16 {
     let width = u64::from(width.max(1));
     let height = u64::from(height);
     let rows = u64::from(content_width) * height / width / 2;
