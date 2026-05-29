@@ -527,13 +527,20 @@ impl App {
     }
 
     fn draw_status(&mut self, frame: &mut Frame, area: Rect) {
+        // Draw the progress meter as background-filled spaces rather than block
+        // glyphs: a colored space is always exactly one cell tall, whereas full
+        // blocks can overshoot the line height in some terminal fonts.
+        const BAR_W: usize = 10;
         let max = self.max_scroll();
         let pct: u16 = if max == 0 {
             100
         } else {
             u16::try_from(u32::from(self.scroll) * 100 / u32::from(max)).unwrap_or(100)
         };
-        let bar = progress_bar(pct, 10);
+        let filled = (usize::from(pct) * BAR_W / 100).min(BAR_W);
+        let bar_filled = Span::styled(" ".repeat(filled), Style::default().bg(self.chrome.accent));
+        let bar_track =
+            Span::styled(" ".repeat(BAR_W - filled), Style::default().bg(self.chrome.border));
 
         let theme_name = self
             .theme_names
@@ -561,8 +568,9 @@ impl App {
                 truncate_plain(&self.title, 28),
                 Style::default().fg(self.chrome.text).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("  ", muted),
-            Span::styled(bar, accent),
+            Span::styled(" ", muted),
+            bar_filled,
+            bar_track,
             Span::styled(format!(" {pct:>3}%  "), muted),
             Span::styled(theme_name, Style::default().fg(self.chrome.accent2)),
             Span::styled(format!("   {hint}"), muted),
@@ -654,17 +662,6 @@ fn load_theme_or_default(name: &str) -> ResolvedTheme {
             tmtheme_xml: String::new(),
         })
     })
-}
-
-fn progress_bar(pct: u16, width: usize) -> String {
-    let filled = (usize::from(pct) * width / 100).min(width);
-    let mut bar = String::with_capacity(width + 2);
-    bar.push('\u{2595}');
-    for i in 0..width {
-        bar.push(if i < filled { '\u{2588}' } else { '\u{2591}' });
-    }
-    bar.push('\u{258f}');
-    bar
 }
 
 fn truncate_plain(s: &str, max: usize) -> String {
