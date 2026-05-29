@@ -716,7 +716,14 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
     // effective theme the same way (front matter / path / builtin).
     if io::stdout().is_terminal() && !args.plain {
         let (theme, theme_name, _warnings) = silkprint::resolve_terminal_theme(&input, &options)?;
-        let base_dir = input_path.parent().map(std::path::Path::to_path_buf);
+        // Resolve relative image paths against the document's directory. Go
+        // through canonicalize first so a bare `README.md` (whose `.parent()`
+        // is the empty path) still yields the real containing directory.
+        let base_dir = input_path
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .or_else(|| input_path.parent().map(std::path::Path::to_path_buf));
         silkprint::run_terminal_tui(
             &input,
             theme,

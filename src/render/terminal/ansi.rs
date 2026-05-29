@@ -19,7 +19,6 @@ use super::model::{
 use super::style::{ContentStyleResolver, Style, parse_hex};
 
 const MARGIN: &str = "  ";
-const MAX_CONTENT_WIDTH: usize = 100;
 const RESET: &str = "\x1b[0m";
 
 /// Render a document to a styled ANSI string (terminating newline included).
@@ -95,8 +94,9 @@ impl Renderer<'_> {
 
     fn content_width(&self) -> usize {
         let term = usize::from(self.caps.width);
-        term.saturating_sub(MARGIN.len())
-            .clamp(20, MAX_CONTENT_WIDTH)
+        // Use the full available width (GitHub-style), only reserving the left
+        // margin. No upper clamp — readers want text to fill the pane.
+        term.saturating_sub(MARGIN.len()).max(20)
     }
 
     // ─── Block dispatch ──────────────────────────────────────────
