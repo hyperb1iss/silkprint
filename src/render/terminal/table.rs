@@ -1,14 +1,15 @@
 //! Box-drawn table rendering for the one-shot terminal renderer.
 //!
 //! Column widths are derived from cell content, capped, and shrunk to fit the
-//! available width. Cells preserve inline styling and are truncated with an
-//! ellipsis when a column is narrowed.
+//! available width. Cells preserve inline styling and wrap across visual table
+//! rows when a column is narrowed.
 
 use super::ansi::Renderer;
 use super::caps::GlyphTier;
-use super::layout::display_width;
+use super::layout::{display_width, wrap_spans};
 use super::model::{Align, Span, TableBlock};
 use super::style::{Style, parse_hex};
+use unicode_width::UnicodeWidthChar;
 
 const MAX_COL: usize = 40;
 const MIN_COL: usize = 3;
@@ -99,7 +100,7 @@ pub(super) fn render(r: &Renderer, table: &TableBlock, width: usize) -> Vec<Stri
 
     let has_header = !table.header.is_empty();
     if has_header {
-        out.push(data_row(
+        out.extend(data_row(
             r,
             &table.header,
             &col_w,
@@ -111,7 +112,7 @@ pub(super) fn render(r: &Renderer, table: &TableBlock, width: usize) -> Vec<Stri
         out.push(rule_row(r, &col_w, &chars, border_style, Pos::Mid));
     }
     for row in &table.rows {
-        out.push(data_row(
+        out.extend(data_row(
             r,
             row,
             &col_w,
@@ -155,32 +156,60 @@ fn data_row(
     chars: &BorderChars,
     border_style: Style,
     header: bool,
-) -> String {
+) -> Vec<String> {
     let v = r.paint(chars.v, border_style);
-    let mut line = v.clone();
-    for (i, w) in col_w.iter().enumerate() {
-        let empty = Vec::new();
-        let cell = cells.get(i).unwrap_or(&empty);
-        let align = aligns.get(i).copied().unwrap_or(Align::None);
-        let (rendered, used) = render_cell(r, cell, *w, header);
-        let pad = w.saturating_sub(used);
-        let (lpad, rpad) = match align {
-            Align::Right => (pad, 0),
-            Align::Center => (pad / 2, pad - pad / 2),
-            _ => (0, pad),
-        };
-        line.push(' ');
-        line.push_str(&" ".repeat(lpad));
-        line.push_str(&rendered);
-        line.push_str(&" ".repeat(rpad));
-        line.push(' ');
-        line.push_str(&v);
+    let rendered_cells: Vec<Vec<CellLine>> = col_w
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            let cell = cells.get(i).map_or([].as_slice(), Vec::as_slice);
+            render_cell_lines(r, cell, *w, header)
+        })
+        .collect();
+    let height = rendered_cells.iter().map(Vec::len).max().unwrap_or(1);
+    let mut rows = Vec::with_capacity(height);
+    for row_idx in 0..height {
+        let mut line = v.clone();
+        for (i, w) in col_w.iter().enumerate() {
+            let align = aligns.get(i).copied().unwrap_or(Align::None);
+            let blank = CellLine::default();
+            let rendered = rendered_cells[i].get(row_idx).unwrap_or(&blank);
+            let pad = w.saturating_sub(rendered.width);
+            let (lpad, rpad) = match align {
+                Align::Right => (pad, 0),
+                Align::Center => (pad / 2, pad - pad / 2),
+                _ => (0, pad),
+            };
+            line.push(' ');
+            line.push_str(&" ".repeat(lpad));
+            line.push_str(&rendered.text);
+            line.push_str(&" ".repeat(rpad));
+            line.push(' ');
+            line.push_str(&v);
+        }
+        rows.push(line);
     }
-    line
+    rows
 }
 
-/// Render a cell to a styled string and report its visible width.
-fn render_cell(r: &Renderer, cell: &[Span], col_w: usize, header: bool) -> (String, usize) {
+#[derive(Default)]
+struct CellLine {
+    text: String,
+    width: usize,
+}
+
+/// Render a cell to styled visual lines.
+fn render_cell_lines(r: &Renderer, cell: &[Span], col_w: usize, header: bool) -> Vec<CellLine> {
+    wrap_cell_lines(cell, col_w, header)
+        .iter()
+        .map(|line| CellLine {
+            text: r.inline_line(line),
+            width: span_width(line).min(col_w),
+        })
+        .collect()
+}
+
+fn wrap_cell_lines(cell: &[Span], col_w: usize, header: bool) -> Vec<Vec<Span>> {
     let styled: Vec<Span> = if header {
         cell.iter()
             .map(|s| Span {
@@ -193,13 +222,60 @@ fn render_cell(r: &Renderer, cell: &[Span], col_w: usize, header: bool) -> (Stri
     } else {
         cell.to_vec()
     };
-    let clamped = super::ansi::clamp_spans(&styled, col_w);
-    let used = clamped
-        .iter()
-        .map(|s| display_width(&s.text))
-        .sum::<usize>()
-        .min(col_w);
-    (r.inline_line(&clamped), used)
+    let mut lines = Vec::new();
+    for line in wrap_spans(&styled, col_w) {
+        lines.extend(split_wide_line(&line, col_w));
+    }
+    if lines.is_empty() {
+        lines.push(Vec::new());
+    }
+    lines
+}
+
+fn split_wide_line(line: &[Span], width: usize) -> Vec<Vec<Span>> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    let mut current = Vec::new();
+    let mut used = 0usize;
+    for span in line {
+        for ch in span.text.chars() {
+            let ch_width = ch.width().unwrap_or(0);
+            if used > 0 && used + ch_width > width {
+                out.push(std::mem::take(&mut current));
+                used = 0;
+            }
+            push_char(&mut current, ch, span);
+            used += ch_width;
+        }
+    }
+    if !current.is_empty() || out.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
+fn push_char(line: &mut Vec<Span>, ch: char, span: &Span) {
+    let same_style = line.last().is_some_and(|last| {
+        last.role == span.role && last.mods == span.mods && last.link == span.link
+    });
+    if same_style {
+        if let Some(last) = line.last_mut() {
+            last.text.push(ch);
+        }
+    } else {
+        let mut text = String::new();
+        text.push(ch);
+        line.push(Span {
+            text,
+            role: span.role,
+            mods: span.mods,
+            link: span.link,
+        });
+    }
+}
+
+fn span_width(spans: &[Span]) -> usize {
+    spans.iter().map(|s| display_width(&s.text)).sum()
 }
 
 fn cell_width(cell: &[Span]) -> usize {
@@ -230,6 +306,13 @@ fn shrink_to_fit(col_w: &mut [usize], width: usize) {
 mod tests {
     use super::*;
 
+    fn lines_text(lines: &[Vec<Span>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| line.iter().map(|span| span.text.as_str()).collect())
+            .collect()
+    }
+
     #[test]
     fn shrink_keeps_minimum() {
         let mut cols = vec![30, 30, 30];
@@ -248,5 +331,30 @@ mod tests {
     fn cell_width_sums_spans() {
         let cell = vec![Span::body("ab"), Span::body("cd")];
         assert_eq!(cell_width(&cell), 4);
+    }
+
+    #[test]
+    fn wraps_cell_words_instead_of_ellipsizing() {
+        let cell = vec![Span::body("alpha beta gamma")];
+        let lines = wrap_cell_lines(&cell, 6, false);
+
+        assert_eq!(lines_text(&lines), ["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn splits_unbreakable_cell_words_to_column_width() {
+        let cell = vec![Span::body("abcdefgh")];
+        let lines = wrap_cell_lines(&cell, 3, false);
+
+        assert_eq!(lines_text(&lines), ["abc", "def", "gh"]);
+        assert!(lines.iter().all(|line| span_width(line) <= 3));
+    }
+
+    #[test]
+    fn header_cell_wrapping_preserves_bold_modifier() {
+        let cell = vec![Span::body("alpha beta")];
+        let lines = wrap_cell_lines(&cell, 5, true);
+
+        assert!(lines.iter().flatten().all(|span| span.mods.bold));
     }
 }
