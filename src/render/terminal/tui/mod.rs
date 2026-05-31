@@ -41,7 +41,8 @@ const OUTLINE_WIDTH: u16 = 30;
 /// normally sized to the image's natural height and scrolled through; this only
 /// guards against a pathologically tall input flooding the content flow.
 const MAX_BAND_ROWS: u16 = 400;
-const IMAGE_PREFETCH_ROWS: u16 = 24;
+const IMAGE_PREFETCH_MIN_ROWS: u16 = 48;
+const IMAGE_PRIME_ROWS: u16 = 96;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -349,7 +350,9 @@ impl App {
         self.block_jump = self.block_spans.iter().map(|(start, _)| *start).collect();
         self.image_placements.clear();
         if self.images.enabled() {
-            self.reserve_bands(width.saturating_sub(2));
+            let image_width = width.saturating_sub(2);
+            self.reserve_bands(image_width);
+            self.prime_image_rows(image_width);
         }
         self.rendered_width = width;
         self.theme_dirty = false;
@@ -439,6 +442,24 @@ impl App {
                 line: u16::try_from(start).unwrap_or(u16::MAX),
                 rows: img_rows,
             });
+        }
+    }
+
+    fn prime_image_rows(&mut self, content_width: u16) {
+        let rows = self
+            .viewport_h
+            .saturating_mul(2)
+            .max(IMAGE_PREFETCH_MIN_ROWS)
+            .min(IMAGE_PRIME_ROWS);
+        for placement in &self.image_placements {
+            self.images.warm_rows(
+                &placement.src,
+                placement.line,
+                0,
+                rows,
+                placement.rows,
+                content_width,
+            );
         }
     }
 
@@ -746,7 +767,7 @@ impl App {
         // then reuses every cached tile except the newly exposed edge row.
         let scroll = u32::from(self.scroll);
         let viewport = u32::from(area.height);
-        let prefetch = u32::from(IMAGE_PREFETCH_ROWS);
+        let prefetch = viewport.max(u32::from(IMAGE_PREFETCH_MIN_ROWS));
         let prefetch_top = scroll.saturating_sub(prefetch);
         let prefetch_bottom = scroll.saturating_add(viewport).saturating_add(prefetch);
         let placements = std::mem::take(&mut self.image_placements);

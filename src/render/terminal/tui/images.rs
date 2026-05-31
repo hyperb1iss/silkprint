@@ -126,6 +126,7 @@ pub struct ImageStore {
     pending: HashMap<SliceKey, u64>,
     wanted: HashSet<SliceKey>,
     visible: HashSet<SliceKey>,
+    warming: HashSet<SliceKey>,
     worker: Option<SliceWorker>,
     generation: u64,
     request_epoch: u64,
@@ -150,6 +151,7 @@ impl ImageStore {
             pending: HashMap::new(),
             wanted: HashSet::new(),
             visible: HashSet::new(),
+            warming: HashSet::new(),
             worker,
             generation: 0,
             request_epoch: 0,
@@ -229,7 +231,7 @@ impl ImageStore {
         let canceled: Vec<(SliceKey, u64)> = self
             .pending
             .iter()
-            .filter(|(key, _epoch)| !self.wanted.contains(*key))
+            .filter(|(key, _epoch)| !self.wanted.contains(*key) && !self.warming.contains(*key))
             .map(|(key, epoch)| (key.clone(), *epoch))
             .collect();
         for (key, epoch) in canceled {
@@ -248,6 +250,7 @@ impl ImageStore {
             if self.pending.get(&item.key) == Some(&item.epoch) {
                 self.pending.remove(&item.key);
             }
+            let warming = self.warming.remove(&item.key);
             if item.key.generation != self.generation {
                 continue;
             }
@@ -258,7 +261,7 @@ impl ImageStore {
                 continue;
             }
             let wanted = self.wanted.contains(&item.key);
-            if item.epoch != self.request_epoch && !wanted {
+            if item.epoch != self.request_epoch && !wanted && !warming {
                 continue;
             }
             let visible = self.visible.contains(&item.key);
@@ -313,6 +316,31 @@ impl ImageStore {
             return;
         }
         self.enqueue_request(request);
+    }
+
+    pub fn warm_rows(
+        &mut self,
+        src: &str,
+        placement_line: u16,
+        start_row: u16,
+        rows: u16,
+        band_rows: u16,
+        area_width: u16,
+    ) {
+        let end = start_row.saturating_add(rows).min(band_rows);
+        for row in start_row..end {
+            let Some(request) = self.build_request(src, placement_line, row, band_rows, area_width)
+            else {
+                continue;
+            };
+            let key = request.key.clone();
+            if self.slices.contains_key(&key) {
+                self.remember_slice(&key);
+                continue;
+            }
+            self.warming.insert(key);
+            self.enqueue_request(request);
+        }
     }
 
     /// Get a cached image (loading it on first request). `None` if the source
@@ -397,6 +425,7 @@ impl ImageStore {
         if let Some(worker) = self.worker.as_ref() {
             if worker.send(request).is_err() {
                 self.pending.remove(&key);
+                self.warming.remove(&key);
             } else {
                 self.pending.insert(key, self.request_epoch);
             }
@@ -426,6 +455,7 @@ impl ImageStore {
         self.pending.clear();
         self.wanted.clear();
         self.visible.clear();
+        self.warming.clear();
         self.active_view = None;
         if let Some(worker) = self.worker.as_ref() {
             worker.cancel_before(self.request_epoch);
@@ -783,6 +813,19 @@ mod tests {
     }
 
     #[test]
+    fn warm_rows_prepares_without_marking_wanted_or_visible() {
+        let mut store = ImageStore::new(Some(Picker::halfblocks()), None);
+        store.ensure_generated("generated", || Some(test_image(80, 80)));
+
+        store.warm_rows("generated", 0, 0, 3, 10, 20);
+
+        assert!(store.has_pending());
+        assert!(store.wanted.is_empty());
+        assert!(store.visible.is_empty());
+        assert_eq!(store.warming.len(), 3);
+    }
+
+    #[test]
     fn prefetched_ready_row_does_not_request_redraw_until_visible() {
         let (tx, _rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -808,6 +851,40 @@ mod tests {
 
         assert!(!store.poll_ready());
         assert!(store.slices.contains_key(&request.key));
+    }
+
+    #[test]
+    fn warmed_ready_row_is_cached_even_after_epoch_changes() {
+        let (tx, _rx) = mpsc::channel();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let mut store = ImageStore::new(Some(Picker::halfblocks()), None);
+        store.ensure_generated("generated", || Some(test_image(80, 80)));
+        store.worker = Some(SliceWorker {
+            txs: vec![tx],
+            rx: ready_rx,
+        });
+        let request = store
+            .build_request("generated", 0, 1, 10, 20)
+            .expect("request");
+        let proto = prepare_slice(&Picker::halfblocks(), &request);
+        store.warming.insert(request.key.clone());
+        store.pending.insert(request.key.clone(), request.epoch);
+        store.begin_frame(ImageView {
+            scroll: 1,
+            height: 10,
+            width: 20,
+        });
+        ready_tx
+            .send(SliceReady {
+                key: request.key.clone(),
+                proto,
+                epoch: request.epoch,
+            })
+            .expect("ready");
+
+        assert!(!store.poll_ready());
+        assert!(store.slices.contains_key(&request.key));
+        assert!(!store.warming.contains(&request.key));
     }
 
     #[test]
@@ -949,6 +1026,25 @@ mod tests {
         });
         let request = test_request("a", 0);
         store.wanted.insert(request.key.clone());
+        store.pending.insert(request.key.clone(), request.epoch);
+
+        store.finish_frame();
+
+        assert_eq!(store.pending.get(&request.key), Some(&request.epoch));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn finish_frame_keeps_background_warming_rows() {
+        let (tx, rx) = mpsc::channel();
+        let (_ready_tx, ready_rx) = mpsc::channel();
+        let mut store = ImageStore::new(None, None);
+        store.worker = Some(SliceWorker {
+            txs: vec![tx],
+            rx: ready_rx,
+        });
+        let request = test_request("a", 0);
+        store.warming.insert(request.key.clone());
         store.pending.insert(request.key.clone(), request.epoch);
 
         store.finish_frame();
