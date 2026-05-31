@@ -93,12 +93,34 @@ impl<'a> ContentStyleResolver<'a> {
         parse_hex(&self.tokens().links.color).or_else(|| self.body_color())
     }
 
+    fn strong_color(&self) -> Option<Rgb> {
+        parse_hex(&self.tokens().alerts.note_color)
+            .or_else(|| parse_hex(&self.tokens().title_page.separator_color))
+            .or_else(|| self.link_color())
+    }
+
+    fn italic_color(&self) -> Option<Rgb> {
+        parse_hex(&self.tokens().alerts.tip_color)
+            .or_else(|| parse_hex(&self.tokens().blockquote.border_color))
+            .or_else(|| self.link_color())
+    }
+
+    fn strong_italic_color(&self) -> Option<Rgb> {
+        parse_hex(&self.tokens().alerts.warning_color)
+            .or_else(|| parse_hex(&self.tokens().highlight.fill))
+            .or_else(|| self.strong_color())
+    }
+
     fn emphasis_color(&self, mods: Mods) -> Option<Rgb> {
         if mods.strikethrough {
             parse_hex(&self.tokens().emphasis.strikethrough_color).or_else(|| self.body_color())
+        } else if mods.bold && mods.italic {
+            self.strong_italic_color()
         } else if mods.bold {
-            self.heading_color(1)
-        } else if mods.italic || mods.underline {
+            self.strong_color()
+        } else if mods.italic {
+            self.italic_color()
+        } else if mods.underline {
             self.link_color()
         } else {
             None
@@ -175,7 +197,7 @@ impl<'a> ContentStyleResolver<'a> {
                 ..Style::default()
             },
             Role::Muted => Style {
-                fg: self.body_color(),
+                fg: parse_hex(&self.tokens().images.caption_color).or_else(|| self.body_color()),
                 dim: true,
                 ..Style::default()
             },
@@ -206,7 +228,11 @@ mod tests {
         tokens.text.color = "#111111".to_string();
         tokens.headings.color = "#e135ff".to_string();
         tokens.links.color = "#80ffea".to_string();
+        tokens.alerts.note_color = "#ff00ff".to_string();
+        tokens.alerts.tip_color = "#00ff00".to_string();
+        tokens.alerts.warning_color = "#ffff00".to_string();
         tokens.emphasis.strikethrough_color = "#6a6a82".to_string();
+        tokens.images.caption_color = "#444444".to_string();
         tokens.code_inline.background = "#eeeeee".to_string();
         tokens.syntax.text.color = "#222222".to_string();
         ResolvedTheme {
@@ -239,13 +265,19 @@ mod tests {
 
         assert_eq!(
             resolver.resolve(Role::Body, Mods::default().with_bold()).fg,
-            Some(Rgb(0xe1, 0x35, 0xff))
+            Some(Rgb(0xff, 0x00, 0xff))
         );
         assert_eq!(
             resolver
                 .resolve(Role::Body, Mods::default().with_italic())
                 .fg,
-            Some(Rgb(0x80, 0xff, 0xea))
+            Some(Rgb(0x00, 0xff, 0x00))
+        );
+        assert_eq!(
+            resolver
+                .resolve(Role::Body, Mods::default().with_bold().with_italic())
+                .fg,
+            Some(Rgb(0xff, 0xff, 0x00))
         );
         assert_eq!(
             resolver
@@ -275,6 +307,10 @@ mod tests {
         assert_eq!(
             resolver.resolve(Role::Link, Mods::default().with_bold()).fg,
             Some(Rgb(0x80, 0xff, 0xea))
+        );
+        assert_eq!(
+            resolver.resolve(Role::Muted, Mods::default()).fg,
+            Some(Rgb(0x44, 0x44, 0x44))
         );
     }
 }

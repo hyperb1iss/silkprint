@@ -1741,7 +1741,7 @@ mod tests {
     #[test]
     fn content_spans_color_markdown_emphasis_with_theme_accents() {
         let mut app = App::new_with_config(
-            "# Title\n\nPlain **bold** and *italic* and ~~gone~~.\n",
+            "# Title\n\nPlain **bold** and *italic* and ***both*** and ~~gone~~.\n",
             load_theme_or_default("silkcircuit-glow"),
             "silkcircuit-glow",
             Some(GlyphTier::Unicode),
@@ -1771,6 +1771,17 @@ mod tests {
             italic.style.fg,
             resolver
                 .resolve(Role::Body, Mods::default().with_italic())
+                .fg
+                .map(rgb_to_color)
+        );
+
+        let both = content_span(&app, "both");
+        assert!(both.style.add_modifier.contains(Modifier::BOLD));
+        assert!(both.style.add_modifier.contains(Modifier::ITALIC));
+        assert_eq!(
+            both.style.fg,
+            resolver
+                .resolve(Role::Body, Mods::default().with_bold().with_italic())
                 .fg
                 .map(rgb_to_color)
         );
