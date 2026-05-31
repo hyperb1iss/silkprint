@@ -650,42 +650,29 @@ fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
     })
 }
 
-/// Handle the `read` subcommand: render Markdown to styled terminal output.
+/// Handle `read` mode: render Markdown to styled terminal output.
 ///
 /// In an interactive terminal it launches the scrollable TUI; when piped, or
 /// with `--plain`, it emits one-shot styled ANSI.
 #[cfg(feature = "terminal")]
-fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()> {
-    let input_path = args
-        .input
-        .clone()
-        .ok_or_else(|| miette::miette!("No input file specified. Usage: silkprint read <FILE>"))?;
-
-    if !input_path.exists() {
-        return Err(silkprint::error::SilkprintError::InputRead {
-            path: input_path.display().to_string(),
-            source: io::Error::new(io::ErrorKind::NotFound, "file not found"),
-        }
-        .into());
-    }
-
-    let input = std::fs::read_to_string(&input_path).map_err(|e| {
+fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
+    let input = std::fs::read_to_string(input_path).map_err(|e| {
         silkprint::error::SilkprintError::InputRead {
             path: input_path.display().to_string(),
             source: e,
         }
     })?;
 
-    // `read` is its own mode; PDF-only flags don't apply.
+    // Reading is its own mode; PDF-only flags don't apply.
     if cli.check || cli.open || cli.dump_typst || cli.output.is_some() {
         return Err(silkprint::error::SilkprintError::ConflictingOptions {
-            details: "--check, --open, --dump-typst, and --output do not apply to `read`"
+            details: "--check, --open, --dump-typst, and --output do not apply when reading"
                 .to_string(),
         }
         .into());
     }
     // Reject an unrecognized --glyphs value instead of silently falling back.
-    if let Some(value) = args.glyphs.as_deref()
+    if let Some(value) = cli.glyphs.as_deref()
         && silkprint::GlyphTier::parse(value).is_none()
     {
         return Err(silkprint::error::SilkprintError::ConflictingOptions {
@@ -697,7 +684,7 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
     // Saved reader preferences fill in where no flag was given (CLI explicit
     // theme/glyphs still win).
     let reader_config = silkprint::render::terminal::config::load();
-    let glyph_tier = args
+    let glyph_tier = cli
         .glyphs
         .as_deref()
         .and_then(silkprint::GlyphTier::parse)
@@ -716,7 +703,7 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
 
     // Interactive TTY → TUI; piped or --plain → one-shot. Both resolve the
     // effective theme the same way (front matter / path / builtin).
-    if io::stdout().is_terminal() && !args.plain {
+    if io::stdout().is_terminal() && !cli.plain {
         let (theme, theme_name, _warnings) = silkprint::resolve_terminal_theme(&input, &options)?;
         // Resolve relative image paths against the document's directory. Go
         // through canonicalize first so a bare `README.md` (whose `.parent()`
@@ -731,9 +718,9 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
             theme,
             &theme_name,
             glyph_tier,
-            !args.no_images,
+            !cli.no_images,
             base_dir,
-            Some(input_path.clone()),
+            Some(input_path.to_path_buf()),
         )
         .map_err(|e| silkprint::error::SilkprintError::RenderFailed {
             details: e.to_string(),
@@ -745,13 +732,13 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
     let terminal_options = silkprint::TerminalRenderOptions {
         color: silkprint::ColorChoice::parse(&cli.color),
         glyphs: glyph_tier,
-        images: !args.no_images,
-        width: None,
+        images: !cli.no_images,
+        width: cli.width,
     };
 
     let (output, warnings) = silkprint::render_to_terminal(
         &input,
-        Some(input_path.as_path()),
+        Some(input_path),
         &options,
         &terminal_options,
     )?;
@@ -763,6 +750,34 @@ fn handle_read(cli: &Cli, args: &silkprint::cli::ReadArgs) -> miette::Result<()>
         display_warnings(&warnings);
     }
     Ok(())
+}
+
+/// Resolve the input file for a mode, erroring if absent or missing on disk.
+fn require_input(input: Option<PathBuf>) -> miette::Result<PathBuf> {
+    let path = input.ok_or_else(|| {
+        miette::miette!("No input file specified. Run `silkprint --help` for usage.")
+    })?;
+    if !path.exists() {
+        return Err(silkprint::error::SilkprintError::InputRead {
+            path: path.display().to_string(),
+            source: io::Error::new(io::ErrorKind::NotFound, "file not found"),
+        }
+        .into());
+    }
+    Ok(path)
+}
+
+/// Render the input to a PDF, dispatching the `--check` / `--dump-typst`
+/// sub-modes that share the PDF pipeline.
+fn run_pdf(cli: &Cli, input_path: &PathBuf) -> miette::Result<()> {
+    let options = build_render_options(cli)?;
+    if cli.check {
+        return handle_check(input_path, &options);
+    }
+    if cli.dump_typst {
+        return handle_dump_typst(input_path, cli.output.as_deref(), &options, cli.quiet);
+    }
+    handle_render(cli, input_path, &options)
 }
 
 // ── Entrypoint ─────────────────────────────────────────────────
@@ -786,40 +801,26 @@ fn main() -> miette::Result<()> {
         return Ok(());
     }
 
-    // `read` subcommand: terminal reader. Dispatched before the PDF input
-    // requirement since its input lives on the subcommand.
-    #[cfg(feature = "terminal")]
-    if let Some(silkprint::cli::Command::Read(args)) = &cli.command {
-        return handle_read(&cli, args);
-    }
-
-    // All other modes require an input file
-    let input_path = cli.input.clone().ok_or_else(|| {
-        miette::miette!("No input file specified. Run `silkprint --help` for usage.")
-    })?;
-
-    if !input_path.exists() {
-        return Err(silkprint::error::SilkprintError::InputRead {
-            path: input_path.display().to_string(),
-            source: io::Error::new(io::ErrorKind::NotFound, "file not found"),
+    // Explicit subcommand pins the mode; input may live on the subcommand.
+    match &cli.command {
+        Some(silkprint::cli::Command::Pdf { .. }) => {
+            let input = require_input(cli.effective_input())?;
+            return run_pdf(&cli, &input);
         }
-        .into());
+        #[cfg(feature = "terminal")]
+        Some(silkprint::cli::Command::Read { .. }) => {
+            let input = require_input(cli.effective_input())?;
+            return handle_read(&cli, &input);
+        }
+        None => {}
     }
 
-    let options = build_render_options(&cli)?;
-
-    // --check: validate only
-    if cli.check {
-        return handle_check(&input_path, &options);
+    // Bare form: read in the terminal by default; a PDF flag (-o / --check /
+    // --dump-typst / --open) routes to PDF rendering instead.
+    let input = require_input(cli.input.clone())?;
+    #[cfg(feature = "terminal")]
+    if !cli.pdf_signaled() {
+        return handle_read(&cli, &input);
     }
-
-    // (the `read` subcommand is dispatched earlier, before this point)
-
-    // --dump-typst: emit Typst source
-    if cli.dump_typst {
-        return handle_dump_typst(&input_path, cli.output.as_deref(), &options, cli.quiet);
-    }
-
-    // Normal render: Markdown -> PDF
-    handle_render(&cli, &input_path, &options)
+    run_pdf(&cli, &input)
 }

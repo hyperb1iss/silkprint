@@ -11,28 +11,28 @@ const HELP_TEMPLATE: &str = "\
 
 \x1b[38;2;128;255;234m\x1b[1mUsage:\x1b[0m {usage}
 
+\x1b[38;2;128;255;234m\x1b[1mCommands:\x1b[0m
+{subcommands}
+
 \x1b[38;2;128;255;234m\x1b[1mArguments:\x1b[0m
 {positionals}
 
 \x1b[38;2;128;255;234m\x1b[1mOptions:\x1b[0m
 {options}";
 
-/// Transform Markdown into stunning PDFs with electric elegance.
+/// Read Markdown in your terminal, or render it to a stunning PDF.
 #[derive(Debug, Parser)]
 #[command(
     name = "silkprint",
     version,
-    about = "Transform Markdown into stunning PDFs with electric elegance",
+    about = "Read Markdown in your terminal, or render it to a stunning PDF",
     help_template = HELP_TEMPLATE,
 )]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
-    /// Path to the Markdown file to render (optional with --list-themes).
+    /// Markdown file. Opens in the terminal reader by default; renders a PDF
+    /// with `-o`/`--output` or the `pdf` subcommand.
     pub input: Option<PathBuf>,
-
-    /// Output path ("-" for stdout) [default: <input-stem>.pdf].
-    #[arg(short, long, value_name = "PATH")]
-    pub output: Option<String>,
 
     /// Theme name or path to .toml file.
     #[arg(
@@ -45,40 +45,64 @@ pub struct Cli {
     pub theme: String,
 
     /// Paper size: a4, letter, a5, legal (case-insensitive).
-    #[arg(short, long, default_value = "a4", value_name = "SIZE")]
+    #[arg(short, long, global = true, default_value = "a4", value_name = "SIZE")]
     pub paper: String,
 
     /// List all available themes and exit.
     #[arg(long)]
     pub list_themes: bool,
 
-    /// Validate input + theme without rendering (exit code only).
-    #[arg(long)]
+    /// Output path ("-" for stdout). Implies PDF output [default: <input-stem>.pdf].
+    #[arg(short, long, global = true, value_name = "PATH")]
+    pub output: Option<String>,
+
+    /// Validate input + theme without rendering (exit code only). Implies PDF.
+    #[arg(long, global = true)]
     pub check: bool,
 
-    /// Emit generated Typst markup instead of PDF.
-    #[arg(long)]
+    /// Emit generated Typst markup instead of PDF. Implies PDF output.
+    #[arg(long, global = true)]
     pub dump_typst: bool,
 
-    /// Open the PDF in system viewer after rendering.
-    #[arg(long)]
+    /// Open the PDF in system viewer after rendering. Implies PDF output.
+    #[arg(long, global = true)]
     pub open: bool,
 
     /// Force-enable table of contents (overrides front matter).
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub toc: bool,
 
     /// Force-disable table of contents.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_toc: bool,
 
     /// Suppress title page even if theme enables it.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_title_page: bool,
 
     /// Additional font search directory.
-    #[arg(long, value_name = "DIR")]
+    #[arg(long, global = true, value_name = "DIR")]
     pub font_dir: Option<PathBuf>,
+
+    /// Force one-shot styled output even in an interactive terminal.
+    #[cfg(feature = "terminal")]
+    #[arg(long, global = true)]
+    pub plain: bool,
+
+    /// Glyph set: nerdfont (default), unicode, ascii.
+    #[cfg(feature = "terminal")]
+    #[arg(long, global = true, value_name = "MODE")]
+    pub glyphs: Option<String>,
+
+    /// Disable inline image rendering in the reader.
+    #[cfg(feature = "terminal")]
+    #[arg(long, global = true)]
+    pub no_images: bool,
+
+    /// Wrap one-shot output to this many columns (default: terminal width).
+    #[cfg(feature = "terminal")]
+    #[arg(long, global = true, value_name = "COLS")]
+    pub width: Option<u16>,
 
     /// Color output: auto, always, never.
     #[arg(long, global = true, default_value = "auto", value_name = "WHEN")]
@@ -92,41 +116,32 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub quiet: bool,
 
-    /// Subcommand. Absent → render the positional input to PDF (default).
-    #[cfg(feature = "terminal")]
+    /// Explicit mode subcommand. Absent → read the input in the terminal
+    /// (or one-shot when piped), unless a PDF flag forces rendering.
     #[command(subcommand)]
     pub command: Option<Command>,
 }
 
-/// Subcommands beyond the default PDF render.
-#[cfg(feature = "terminal")]
+/// Explicit mode subcommands. The bare form (no subcommand) auto-routes:
+/// terminal reader in a TTY, one-shot ANSI when piped, PDF when `-o`/`--check`/
+/// `--dump-typst`/`--open` is present.
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
+    /// Render the Markdown file to a PDF.
+    Pdf {
+        /// Path to the Markdown file to render.
+        input: Option<PathBuf>,
+    },
+
     /// Read a Markdown file in the terminal with full styling.
     ///
     /// Launches a scrollable TUI in an interactive terminal and emits styled
     /// ANSI when piped or when `--plain` is set.
-    Read(ReadArgs),
-}
-
-/// Arguments for the `read` subcommand.
-#[cfg(feature = "terminal")]
-#[derive(Debug, clap::Args)]
-pub struct ReadArgs {
-    /// Path to the Markdown file to read.
-    pub input: Option<PathBuf>,
-
-    /// Force one-shot styled output even in an interactive terminal.
-    #[arg(long)]
-    pub plain: bool,
-
-    /// Glyph set: nerdfont (default), unicode, ascii.
-    #[arg(long, value_name = "MODE")]
-    pub glyphs: Option<String>,
-
-    /// Disable inline image rendering.
-    #[arg(long)]
-    pub no_images: bool,
+    #[cfg(feature = "terminal")]
+    Read {
+        /// Path to the Markdown file to read.
+        input: Option<PathBuf>,
+    },
 }
 
 impl Cli {
@@ -178,6 +193,24 @@ impl Cli {
         } else {
             None
         }
+    }
+
+    /// The input file for the active mode: a subcommand's argument when present,
+    /// otherwise the top-level positional.
+    pub fn effective_input(&self) -> Option<PathBuf> {
+        let from_command = match &self.command {
+            Some(Command::Pdf { input }) => input.clone(),
+            #[cfg(feature = "terminal")]
+            Some(Command::Read { input }) => input.clone(),
+            None => None,
+        };
+        from_command.or_else(|| self.input.clone())
+    }
+
+    /// Whether a PDF-output signal is present. In the bare form (no subcommand)
+    /// this forces PDF rendering instead of the terminal reader.
+    pub fn pdf_signaled(&self) -> bool {
+        self.output.is_some() || self.check || self.dump_typst || self.open
     }
 
     /// Determine the output path for PDF mode.
