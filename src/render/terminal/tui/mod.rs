@@ -76,6 +76,14 @@ struct LinkRegion {
     target: LinkTarget,
 }
 
+/// A visited document in the back/forward history: its path and the scroll
+/// offset at the time we left it, so returning restores the prior view.
+#[derive(Clone)]
+struct NavEntry {
+    path: PathBuf,
+    scroll: u16,
+}
+
 enum Osc8Target {
     Open(LinkTarget),
     Close,
@@ -196,6 +204,10 @@ struct App {
     image_placements: Vec<Placement>,
     base_dir: Option<PathBuf>,
     path: Option<PathBuf>,
+    back: Vec<NavEntry>,
+    forward: Vec<NavEntry>,
+    /// Heading anchor to jump to once the next document's layout is computed.
+    pending_anchor: Option<String>,
     content_area: Rect,
     outline_area: Option<Rect>,
     status_area: Rect,
@@ -304,6 +316,9 @@ impl App {
             image_placements: Vec::new(),
             base_dir,
             path: watch_path,
+            back: Vec::new(),
+            forward: Vec::new(),
+            pending_anchor: None,
             content_area: Rect::default(),
             outline_area: None,
             status_area: Rect::default(),
@@ -379,8 +394,15 @@ impl App {
         let Ok(body) = std::fs::read_to_string(&path) else {
             return;
         };
+        self.rewalk(&body);
+    }
+
+    /// Parse and walk `body` into the active document, resetting derived state
+    /// (title, image caches, outline selection) but leaving navigation history,
+    /// the current path, and the scroll offset to the caller.
+    fn rewalk(&mut self, body: &str) {
         let arena = comrak::Arena::new();
-        let root = crate::render::markdown::parse(&arena, &body);
+        let root = crate::render::markdown::parse(&arena, body);
         let mut warnings = WarningCollector::new();
         crate::render::markdown::check_content(root, &mut warnings);
         self.doc = super::walk::walk(root, &mut warnings);
@@ -400,6 +422,118 @@ impl App {
             self.focus = Focus::Content; // outline may have vanished
         }
         self.theme_dirty = true; // force ensure_content to re-render
+    }
+
+    // ─── Cross-document navigation ───────────────────────────────
+
+    /// Load a local document into the reader, pointing image resolution and the
+    /// link jail at its directory. Reads first, so a missing file leaves the
+    /// current view untouched. The `anchor`, if any, is applied once the next
+    /// layout is computed. Returns whether the load succeeded.
+    fn load_path(&mut self, path: &std::path::Path, anchor: Option<String>) -> bool {
+        let Ok(body) = std::fs::read_to_string(path) else {
+            self.status_message = Some(format!(
+                "can't open {}",
+                truncate_plain(&path.display().to_string(), 48)
+            ));
+            return false;
+        };
+        let base = path
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .or_else(|| path.parent().map(std::path::Path::to_path_buf));
+        self.path = Some(path.to_path_buf());
+        self.images.set_base_dir(base.clone());
+        self.base_dir = base;
+        self.scroll = 0;
+        // A new document invalidates the prior search.
+        self.search_query.clear();
+        self.matches.clear();
+        self.match_idx = 0;
+        self.rewalk(&body);
+        self.pending_anchor = anchor;
+        true
+    }
+
+    /// Follow a link to a local document, recording the current view so the
+    /// reader can navigate back to it.
+    fn open_local_doc(&mut self, path: &std::path::Path, anchor: Option<String>) {
+        let from = self.path.clone();
+        let from_scroll = self.scroll;
+        if self.load_path(path, anchor) {
+            if let Some(path) = from {
+                self.back.push(NavEntry {
+                    path,
+                    scroll: from_scroll,
+                });
+            }
+            self.forward.clear();
+            self.status_message = Some(format!("opened {}", truncate_plain(&self.title, 40)));
+        }
+    }
+
+    /// Return to the previously viewed document, restoring its scroll offset.
+    fn go_back(&mut self) {
+        let Some(entry) = self.back.pop() else {
+            self.status_message = Some("no page to go back to".to_string());
+            return;
+        };
+        let from = self.path.clone();
+        let from_scroll = self.scroll;
+        if self.load_path(&entry.path, None) {
+            if let Some(path) = from {
+                self.forward.push(NavEntry {
+                    path,
+                    scroll: from_scroll,
+                });
+            }
+            self.scroll = entry.scroll; // draw() clamps once the layout is known
+        }
+    }
+
+    /// Re-open the document a `go_back` left, restoring its scroll offset.
+    fn go_forward(&mut self) {
+        let Some(entry) = self.forward.pop() else {
+            self.status_message = Some("no page to go forward to".to_string());
+            return;
+        };
+        let from = self.path.clone();
+        let from_scroll = self.scroll;
+        if self.load_path(&entry.path, None) {
+            if let Some(path) = from {
+                self.back.push(NavEntry {
+                    path,
+                    scroll: from_scroll,
+                });
+            }
+            self.scroll = entry.scroll;
+        }
+    }
+
+    /// Resolve a link URL to a local Markdown file (and optional `#anchor`),
+    /// jailed to the document directory. `None` when it carries a scheme,
+    /// escapes the jail, or doesn't point at Markdown — those fall back to the
+    /// system opener.
+    fn local_markdown_target(&self, url: &str) -> Option<(PathBuf, Option<String>)> {
+        let (path_part, anchor) = match url.split_once('#') {
+            Some((p, a)) if !p.is_empty() => (p, Some(a.to_string())),
+            _ => (url, None),
+        };
+        if uri_scheme(path_part).is_some() {
+            return None;
+        }
+        let resolved = resolve_jailed(path_part, self.base_dir.as_deref())?;
+        let is_markdown = resolved
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| {
+                matches!(
+                    e.to_ascii_lowercase().as_str(),
+                    "md" | "markdown" | "mdown" | "mkd" | "mdwn" | "mkdn"
+                )
+            });
+        is_markdown.then_some((resolved, anchor))
     }
 
     fn save_config(&self) {
@@ -646,6 +780,8 @@ impl App {
             }
             KeyCode::Char('n') => self.jump_match(true),
             KeyCode::Char('N') => self.jump_match(false),
+            KeyCode::Char('b') | KeyCode::Backspace => self.go_back(),
+            KeyCode::Char('f') => self.go_forward(),
             KeyCode::Char('g') => {
                 if was_g {
                     self.set_scroll(0);
@@ -852,7 +988,13 @@ impl App {
             LinkTarget::Anchor(anchor) => {
                 self.jump_to_anchor(&anchor);
             }
-            LinkTarget::Url(url) => self.open_url(&url),
+            LinkTarget::Url(url) => {
+                if let Some((path, anchor)) = self.local_markdown_target(&url) {
+                    self.open_local_doc(&path, anchor);
+                } else {
+                    self.open_url(&url);
+                }
+            }
         }
     }
 
@@ -1042,6 +1184,11 @@ impl App {
 
         self.viewport_h = content_area.height;
         self.ensure_content(content_area.width);
+        // A linked-document jump needs the freshly computed block offsets, so it
+        // waits until the new layout exists rather than firing at navigation.
+        if let Some(anchor) = self.pending_anchor.take() {
+            self.jump_to_anchor(&anchor);
+        }
         self.clamp_scroll(); // height-only resizes change max_scroll
         self.draw_content(frame, content_area);
         self.draw_status(frame, status);
@@ -1233,7 +1380,7 @@ impl App {
                 self.matches.len()
             )
         } else {
-            "j/k scroll  /search  t theme  o outline  ?help  q quit".to_string()
+            "j/k scroll  /search  b/f back  t theme  o outline  ?help  q quit".to_string()
         };
 
         let accent = Style::default().fg(self.chrome.accent);
@@ -1307,6 +1454,8 @@ impl App {
             ("o", "toggle outline"),
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
+            ("click link", "follow .md link / open url"),
+            ("b / f, Bksp", "history back / forward"),
             ("/ then n / N", "search / next / prev"),
             ("t", "theme picker"),
             ("q / Esc", "quit"),
@@ -1501,6 +1650,30 @@ fn open_target(url: &str, base_dir: Option<&std::path::Path>) -> Result<OsString
     Ok(target.into_os_string())
 }
 
+/// Resolve a relative link path against the document directory, returning the
+/// canonicalized target only when it stays inside the (canonicalized) base.
+/// Absolute paths and any `..`/root escape are rejected, mirroring the jail in
+/// [`open_target`] — the reader must not read files outside the document tree.
+fn resolve_jailed(rel: &str, base: Option<&std::path::Path>) -> Option<PathBuf> {
+    let path = std::path::Path::new(rel);
+    if path.is_absolute() {
+        return None;
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    }) {
+        return None;
+    }
+    let canon_base = base?.canonicalize().ok()?;
+    let target = canon_base.join(path).canonicalize().ok()?;
+    target.starts_with(&canon_base).then_some(target)
+}
+
 fn uri_scheme(value: &str) -> Option<&str> {
     let (scheme, _rest) = value.split_once(':')?;
     let mut chars = scheme.chars();
@@ -1680,6 +1853,54 @@ mod tests {
             2,
             "reload should pick up the new heading"
         );
+    }
+
+    #[test]
+    fn follows_local_markdown_links_with_history() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "# Alpha\n\n[to b](b.md)\n").expect("write a");
+        std::fs::write(&b, "# Beta\n\n## Deep\n").expect("write b");
+        std::fs::write(dir.path().join("note.txt"), "hi").expect("write note");
+        let theme = load_theme_or_default("silk-light");
+        let mut app = App::new(
+            "# Alpha\n\n[to b](b.md)\n",
+            theme,
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(a.clone()),
+        );
+
+        // A relative .md link resolves to a local target, splitting any anchor.
+        let (target, anchor) = app.local_markdown_target("b.md").expect("local md target");
+        assert!(target.ends_with("b.md"));
+        assert_eq!(anchor, None);
+        let (_t, frag) = app
+            .local_markdown_target("b.md#deep")
+            .expect("md target with anchor");
+        assert_eq!(frag.as_deref(), Some("deep"));
+
+        // External schemes, non-markdown files, and jail escapes are not
+        // navigated in-reader (they fall back to the system opener).
+        assert!(app.local_markdown_target("https://example.com").is_none());
+        assert!(app.local_markdown_target("note.txt").is_none());
+        assert!(app.local_markdown_target("../escape.md").is_none());
+
+        // Following the link swaps documents and records back history.
+        app.open_local_doc(&target, None);
+        assert_eq!(app.title, "Beta");
+        assert_eq!(app.back.len(), 1);
+        assert!(app.forward.is_empty());
+
+        // Back returns to the first document; forward replays the jump.
+        app.go_back();
+        assert_eq!(app.title, "Alpha");
+        assert_eq!(app.forward.len(), 1);
+        app.go_forward();
+        assert_eq!(app.title, "Beta");
     }
 
     #[test]

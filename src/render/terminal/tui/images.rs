@@ -163,6 +163,13 @@ impl ImageStore {
         self.picker.is_some()
     }
 
+    /// Point image resolution at a new document directory after in-reader
+    /// navigation to a linked file. Cached slices are dir-relative, so the
+    /// caller clears the cache alongside this.
+    pub fn set_base_dir(&mut self, base: Option<PathBuf>) {
+        self.base_dir = base;
+    }
+
     /// Terminal cell size in pixels.
     pub fn cell(&self) -> (u32, u32) {
         self.cell
