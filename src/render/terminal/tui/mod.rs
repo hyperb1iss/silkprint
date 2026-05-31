@@ -9,6 +9,7 @@ mod chrome;
 mod diagrams;
 mod images;
 
+use std::ffi::OsString;
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -16,13 +17,17 @@ use std::time::Duration;
 use ansi_to_tui::IntoText;
 use notify::Watcher;
 use ratatui::Frame;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block as WBlock, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui_image::StatefulImage;
 use ratatui_image::picker::Picker;
+use unicode_width::UnicodeWidthChar;
 
 use crate::ThemeSource;
 use crate::theme::ResolvedTheme;
@@ -32,7 +37,7 @@ use self::chrome::Chrome;
 use self::images::{ImageStore, Placement};
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::{Block, RenderedDoc, Rgb};
+use super::model::{Block, LinkTarget, RenderedDoc, Rgb, Span as ModelSpan};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
@@ -43,6 +48,7 @@ const OUTLINE_WIDTH: u16 = 30;
 const MAX_BAND_ROWS: u16 = 400;
 const IMAGE_PREFETCH_MIN_ROWS: u16 = 48;
 const IMAGE_PRIME_ROWS: u16 = 96;
+const MOUSE_SCROLL_ROWS: i32 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -61,6 +67,14 @@ enum Mode {
 enum BandSpec {
     Image(String),
     Mermaid { source: String, bg: Rgb },
+}
+
+#[derive(Clone)]
+struct LinkRegion {
+    line: usize,
+    start: u16,
+    end: u16,
+    target: LinkTarget,
 }
 
 /// Launch the interactive reader. Sets up and tears down the terminal
@@ -87,9 +101,36 @@ pub fn run(
         watch_path,
     );
     let mut terminal = ratatui::init();
+    let mouse = match MouseCapture::enable() {
+        Ok(mouse) => mouse,
+        Err(err) => {
+            ratatui::restore();
+            return Err(err);
+        }
+    };
     let result = app.run_loop(&mut terminal);
+    drop(mouse);
     ratatui::restore();
     result
+}
+
+struct MouseCapture;
+
+impl MouseCapture {
+    fn enable() -> io::Result<Self> {
+        let mut stdout = io::stdout();
+        ratatui::crossterm::execute!(stdout, EnableMouseCapture)?;
+        Ok(Self)
+    }
+}
+
+impl Drop for MouseCapture {
+    fn drop(&mut self) {
+        let _ = {
+            let mut stdout = io::stdout();
+            ratatui::crossterm::execute!(stdout, DisableMouseCapture)
+        };
+    }
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -108,6 +149,7 @@ struct App {
     content: Text<'static>,
     content_bg: Color,
     content_fg: Color,
+    link_regions: Vec<LinkRegion>,
     /// Per-block `(start_line, line_count)` from the renderer (pre-band-insert).
     block_spans: Vec<(usize, usize)>,
     /// Per-block start line adjusted for inserted graphical bands (outline jumps).
@@ -130,13 +172,20 @@ struct App {
     show_picker: bool,
     picker_state: ListState,
     picker_saved: usize,
+    picker_area: Rect,
 
     pending_g: bool,
+    drag_row: Option<u16>,
+    status_message: Option<String>,
     quit: bool,
 
     images: ImageStore,
     image_placements: Vec<Placement>,
+    base_dir: Option<PathBuf>,
     path: Option<PathBuf>,
+    content_area: Rect,
+    outline_area: Option<Rect>,
+    status_area: Rect,
 }
 
 impl App {
@@ -215,6 +264,7 @@ impl App {
             content: Text::default(),
             content_bg: Color::Reset,
             content_fg: Color::Reset,
+            link_regions: Vec::new(),
             block_spans: Vec::new(),
             block_jump: Vec::new(),
             rendered_width: 0,
@@ -232,11 +282,18 @@ impl App {
             show_picker: false,
             picker_state: ListState::default(),
             picker_saved: 0,
+            picker_area: Rect::default(),
             pending_g: false,
+            drag_row: None,
+            status_message: None,
             quit: false,
-            images: ImageStore::new(picker, base_dir),
+            images: ImageStore::new(picker, base_dir.clone()),
             image_placements: Vec::new(),
+            base_dir,
             path: watch_path,
+            content_area: Rect::default(),
+            outline_area: None,
+            status_area: Rect::default(),
         }
     }
 
@@ -282,6 +339,10 @@ impl App {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
                         self.on_key(key.code, key.modifiers);
+                        needs_redraw = true;
+                    }
+                    Event::Mouse(mouse) => {
+                        self.on_mouse(mouse);
                         needs_redraw = true;
                     }
                     Event::Resize(..) => needs_redraw = true,
@@ -392,6 +453,7 @@ impl App {
             self.reserve_bands(image_width);
             self.prime_image_rows(image_width);
         }
+        self.link_regions = build_link_regions(&self.doc, &self.content);
         self.rendered_width = width;
         self.theme_dirty = false;
         self.clamp_scroll();
@@ -487,8 +549,7 @@ impl App {
         let rows = self
             .viewport_h
             .saturating_mul(2)
-            .max(IMAGE_PREFETCH_MIN_ROWS)
-            .min(IMAGE_PRIME_ROWS);
+            .clamp(IMAGE_PREFETCH_MIN_ROWS, IMAGE_PRIME_ROWS);
         for placement in &self.image_placements {
             self.images.warm_rows(
                 &placement.src,
@@ -541,6 +602,7 @@ impl App {
             self.search_key(code);
             return;
         }
+        self.status_message = None;
         self.normal_key(code, mods);
     }
 
@@ -597,6 +659,95 @@ impl App {
         }
     }
 
+    fn on_mouse(&mut self, mouse: MouseEvent) {
+        if self.show_help {
+            if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+                self.show_help = false;
+            }
+            return;
+        }
+        if self.show_picker {
+            self.picker_mouse(mouse);
+            return;
+        }
+        match mouse.kind {
+            MouseEventKind::ScrollDown => self.mouse_scroll(mouse, true),
+            MouseEventKind::ScrollUp => self.mouse_scroll(mouse, false),
+            MouseEventKind::Down(MouseButton::Left) => self.mouse_down(mouse),
+            MouseEventKind::Drag(MouseButton::Left) => self.mouse_drag(mouse),
+            MouseEventKind::Up(MouseButton::Left) => self.drag_row = None,
+            _ => {}
+        }
+    }
+
+    fn mouse_scroll(&mut self, mouse: MouseEvent, down: bool) {
+        self.status_message = None;
+        if self
+            .outline_area
+            .is_some_and(|area| contains(area, mouse.column, mouse.row))
+        {
+            for _ in 0..MOUSE_SCROLL_ROWS {
+                self.outline_step(down);
+            }
+            self.focus = Focus::Outline;
+            return;
+        }
+        let delta = if down {
+            MOUSE_SCROLL_ROWS
+        } else {
+            -MOUSE_SCROLL_ROWS
+        };
+        self.scroll_by(delta);
+        self.focus = Focus::Content;
+    }
+
+    fn mouse_down(&mut self, mouse: MouseEvent) {
+        self.status_message = None;
+        if self.select_outline_at(mouse.column, mouse.row) {
+            return;
+        }
+        if contains(self.content_area, mouse.column, mouse.row) {
+            self.focus = Focus::Content;
+            self.drag_row = Some(mouse.row);
+            let line = usize::from(self.scroll)
+                .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
+            let col = mouse.column.saturating_sub(self.content_area.x);
+            self.activate_link_at(line, col);
+        }
+    }
+
+    fn mouse_drag(&mut self, mouse: MouseEvent) {
+        let Some(prev) = self.drag_row else {
+            return;
+        };
+        let delta = i32::from(mouse.row) - i32::from(prev);
+        if delta != 0 {
+            self.scroll_by(-delta);
+            self.drag_row = Some(mouse.row);
+            self.status_message = None;
+        }
+    }
+
+    fn select_outline_at(&mut self, column: u16, row: u16) -> bool {
+        let Some(area) = self.outline_area else {
+            return false;
+        };
+        if !contains(area, column, row)
+            || row <= area.y
+            || row >= area.y.saturating_add(area.height).saturating_sub(1)
+        {
+            return false;
+        }
+        let visible_idx = usize::from(row.saturating_sub(area.y).saturating_sub(1));
+        let idx = self.outline_state.offset().saturating_add(visible_idx);
+        if idx >= self.doc.outline.len() {
+            return false;
+        }
+        self.outline_state.select(Some(idx));
+        self.jump_to_selected_heading();
+        true
+    }
+
     fn move_down(&mut self) {
         if self.focus == Focus::Outline {
             self.outline_step(true);
@@ -651,6 +802,61 @@ impl App {
             self.set_scroll(u16::try_from(*offset).unwrap_or(u16::MAX));
         }
         self.focus = Focus::Content;
+    }
+
+    fn jump_to_anchor(&mut self, anchor: &str) -> bool {
+        let anchor = anchor.trim_start_matches('#');
+        let Some(idx) = self
+            .doc
+            .outline
+            .iter()
+            .position(|item| item.anchor == anchor)
+        else {
+            self.status_message = Some(format!("missing #{anchor}"));
+            return false;
+        };
+        self.outline_state.select(Some(idx));
+        self.jump_to_selected_heading();
+        self.status_message = Some(format!("jumped to #{anchor}"));
+        true
+    }
+
+    fn activate_link_at(&mut self, line: usize, col: u16) -> bool {
+        let Some(target) = self.link_at(line, col) else {
+            return false;
+        };
+        self.activate_target(target);
+        true
+    }
+
+    fn link_at(&self, line: usize, col: u16) -> Option<LinkTarget> {
+        self.link_regions
+            .iter()
+            .find(|region| region.line == line && col >= region.start && col < region.end)
+            .map(|region| region.target.clone())
+    }
+
+    fn activate_target(&mut self, target: LinkTarget) {
+        match target {
+            LinkTarget::Anchor(anchor) => {
+                self.jump_to_anchor(&anchor);
+            }
+            LinkTarget::Url(url) => self.open_url(&url),
+        }
+    }
+
+    fn open_url(&mut self, url: &str) {
+        let target = open_target(url, self.base_dir.as_deref());
+        let label = truncate_plain(super::layout::sanitize(url).as_ref(), 54);
+        match open::that_detached(&target) {
+            Ok(()) => self.status_message = Some(format!("opened {label}")),
+            Err(err) => {
+                self.status_message = Some(format!(
+                    "open failed: {}",
+                    truncate_plain(&err.to_string(), 48)
+                ));
+            }
+        }
     }
 
     // ─── Search ──────────────────────────────────────────────────
@@ -744,22 +950,56 @@ impl App {
         self.apply_theme(next); // live preview
     }
 
+    fn picker_mouse(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::ScrollDown => self.picker_step(true),
+            MouseEventKind::ScrollUp => self.picker_step(false),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(idx) = self.picker_index_at(mouse.column, mouse.row) {
+                    self.picker_state.select(Some(idx));
+                    self.apply_theme(idx);
+                    self.show_picker = false;
+                    self.save_config();
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => self.drag_row = None,
+            _ => {}
+        }
+    }
+
+    fn picker_index_at(&self, column: u16, row: u16) -> Option<usize> {
+        let area = self.picker_area;
+        if !contains(area, column, row)
+            || row <= area.y
+            || row >= area.y.saturating_add(area.height).saturating_sub(1)
+        {
+            return None;
+        }
+        let visible_idx = usize::from(row.saturating_sub(area.y).saturating_sub(1));
+        let idx = self.picker_state.offset().saturating_add(visible_idx);
+        (idx < self.theme_names.len()).then_some(idx)
+    }
+
     // ─── Drawing ─────────────────────────────────────────────────
 
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
         let [body, status] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+        self.status_area = status;
 
         let content_area = if self.outline_visible && !self.doc.outline.is_empty() {
             let [outline, content] =
                 Layout::horizontal([Constraint::Length(OUTLINE_WIDTH), Constraint::Min(10)])
                     .areas(body);
+            self.outline_area = Some(outline);
             self.draw_outline(frame, outline);
             content
         } else {
+            self.outline_area = None;
             body
         };
+        self.content_area = content_area;
 
         self.viewport_h = content_area.height;
         self.ensure_content(content_area.width);
@@ -941,7 +1181,9 @@ impl App {
             .cloned()
             .unwrap_or_default();
 
-        let hint = if self.mode == Mode::Search {
+        let hint = if let Some(message) = &self.status_message {
+            super::layout::sanitize(message).into_owned()
+        } else if self.mode == Mode::Search {
             format!("/{}", super::layout::sanitize(&self.search_query))
         } else if !self.matches.is_empty() {
             format!(
@@ -979,6 +1221,7 @@ impl App {
 
     fn draw_picker(&mut self, frame: &mut Frame, area: Rect) {
         let popup = centered_rect(46, 70, area);
+        self.picker_area = popup;
         frame.render_widget(Clear, popup);
         let items: Vec<ListItem> = self
             .theme_names
@@ -1057,6 +1300,194 @@ impl App {
 }
 
 // ─── Free helpers ────────────────────────────────────────────────
+
+fn contains(area: Rect, column: u16, row: u16) -> bool {
+    column >= area.x
+        && column < area.x.saturating_add(area.width)
+        && row >= area.y
+        && row < area.y.saturating_add(area.height)
+}
+
+#[derive(Default)]
+struct TextCursor {
+    line: usize,
+    ch: usize,
+}
+
+struct LinkText {
+    text: String,
+    target: LinkTarget,
+}
+
+fn build_link_regions(doc: &RenderedDoc, content: &Text<'static>) -> Vec<LinkRegion> {
+    let plain: Vec<String> = content.lines.iter().map(line_plain_text).collect();
+    let mut texts = Vec::new();
+    collect_block_links(&doc.blocks, &doc.links, &mut texts);
+    let mut cursor = TextCursor::default();
+    let mut regions = Vec::new();
+    for text in texts {
+        for chunk in text.text.split_whitespace() {
+            if let Some(region) = find_link_region(&plain, chunk, &mut cursor, &text.target) {
+                regions.push(region);
+            }
+        }
+    }
+    regions
+}
+
+fn collect_block_links(blocks: &[Block], targets: &[LinkTarget], out: &mut Vec<LinkText>) {
+    for block in blocks {
+        match block {
+            Block::Heading { spans, .. } | Block::Paragraph(spans) => {
+                collect_span_links(spans, targets, out);
+            }
+            Block::CodeBlock { lines, .. } | Block::FieldStack(lines) => {
+                for line in lines {
+                    collect_span_links(line, targets, out);
+                }
+            }
+            Block::Quote(inner) | Block::Center(inner) => collect_block_links(inner, targets, out),
+            Block::List(list) => {
+                for item in &list.items {
+                    collect_block_links(&item.blocks, targets, out);
+                }
+            }
+            Block::Table(table) => {
+                for cell in &table.header {
+                    collect_span_links(cell, targets, out);
+                }
+                for row in &table.rows {
+                    for cell in row {
+                        collect_span_links(cell, targets, out);
+                    }
+                }
+            }
+            Block::Alert { body, .. } => collect_block_links(body, targets, out),
+            Block::DescriptionList(items) => {
+                for item in items {
+                    collect_span_links(&item.term, targets, out);
+                    collect_block_links(&item.details, targets, out);
+                }
+            }
+            Block::Image { .. } | Block::Math { .. } | Block::Rule => {}
+        }
+    }
+}
+
+fn collect_span_links(spans: &[ModelSpan], targets: &[LinkTarget], out: &mut Vec<LinkText>) {
+    let mut current: Option<(usize, String)> = None;
+    for span in spans {
+        if span.link == current.as_ref().map(|(id, _)| *id) {
+            if let Some((_id, text)) = &mut current {
+                text.push_str(&span.text);
+            }
+            continue;
+        }
+        flush_link_text(&mut current, targets, out);
+        if let Some(id) = span.link {
+            current = Some((id, span.text.clone()));
+        }
+    }
+    flush_link_text(&mut current, targets, out);
+}
+
+fn flush_link_text(
+    current: &mut Option<(usize, String)>,
+    targets: &[LinkTarget],
+    out: &mut Vec<LinkText>,
+) {
+    let Some((id, text)) = current.take() else {
+        return;
+    };
+    let Some(target) = targets.get(id) else {
+        return;
+    };
+    if !text.trim().is_empty() {
+        out.push(LinkText {
+            text,
+            target: target.clone(),
+        });
+    }
+}
+
+fn line_plain_text(line: &Line<'static>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn find_link_region(
+    lines: &[String],
+    needle: &str,
+    cursor: &mut TextCursor,
+    target: &LinkTarget,
+) -> Option<LinkRegion> {
+    let needle_chars: Vec<char> = needle.chars().collect();
+    if needle_chars.is_empty() {
+        return None;
+    }
+    for (line_idx, line) in lines.iter().enumerate().skip(cursor.line) {
+        let chars: Vec<char> = line.chars().collect();
+        let start = if line_idx == cursor.line {
+            cursor.ch.min(chars.len())
+        } else {
+            0
+        };
+        if needle_chars.len() > chars.len().saturating_sub(start) {
+            continue;
+        }
+        for pos in start..=chars.len() - needle_chars.len() {
+            if chars[pos..pos + needle_chars.len()] == needle_chars {
+                let (start, end) = char_cell_range(&chars, pos, needle_chars.len());
+                cursor.line = line_idx;
+                cursor.ch = pos + needle_chars.len();
+                return Some(LinkRegion {
+                    line: line_idx,
+                    start,
+                    end,
+                    target: target.clone(),
+                });
+            }
+        }
+    }
+    None
+}
+
+fn char_cell_range(chars: &[char], start: usize, len: usize) -> (u16, u16) {
+    let before: usize = chars[..start].iter().map(|ch| char_width(*ch)).sum();
+    let width: usize = chars[start..start + len]
+        .iter()
+        .map(|ch| char_width(*ch))
+        .sum();
+    let start = u16::try_from(before).unwrap_or(u16::MAX);
+    let end = u16::try_from(before.saturating_add(width.max(1))).unwrap_or(u16::MAX);
+    (start, end)
+}
+
+fn char_width(ch: char) -> usize {
+    ch.width().unwrap_or(0)
+}
+
+fn open_target(url: &str, base_dir: Option<&std::path::Path>) -> OsString {
+    if has_uri_scheme(url) || std::path::Path::new(url).is_absolute() {
+        return OsString::from(url);
+    }
+    base_dir.map_or_else(
+        || OsString::from(url),
+        |base| base.join(url).into_os_string(),
+    )
+}
+
+fn has_uri_scheme(value: &str) -> bool {
+    let Some((scheme, _rest)) = value.split_once(':') else {
+        return false;
+    };
+    !scheme.is_empty()
+        && scheme
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+}
 
 fn rgb_to_color(rgb: Rgb) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
@@ -1331,5 +1762,85 @@ mod tests {
             app.reader_config().theme.as_deref(),
             Some("silkcircuit-dawn")
         );
+    }
+
+    #[test]
+    fn link_regions_track_rendered_link_cells() {
+        let mut app = App::new_with_config(
+            "# Title\n\nA [SilkPrint](https://example.com) link.\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 20);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        let region = app
+            .link_regions
+            .iter()
+            .find(|region| matches!(&region.target, LinkTarget::Url(url) if url == "https://example.com"))
+            .expect("link region");
+
+        assert!(app.link_at(region.line, region.start).is_some());
+        assert!(app.link_at(region.line, region.end).is_none());
+    }
+
+    #[test]
+    fn anchor_link_activation_jumps_to_heading() {
+        let mut app = App::new_with_config(
+            "# Top\n\n[Jump](#target)\n\none\n\ntwo\n\nthree\n\n## Target\n\nArrived.\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 8);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        assert!(app.jump_to_anchor("target"));
+        assert!(app.scroll > 0);
+    }
+
+    #[test]
+    fn mouse_wheel_scrolls_content() {
+        let body = format!(
+            "# Title\n\n{}\n",
+            (0..40)
+                .map(|idx| format!("line {idx}"))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        );
+        let mut app = App::new_with_config(
+            &body,
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 8);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let before = app.scroll;
+
+        app.on_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: app.content_area.x.saturating_add(1),
+            row: app.content_area.y.saturating_add(1),
+            modifiers: KeyModifiers::NONE,
+        });
+
+        assert!(app.scroll > before);
     }
 }

@@ -44,6 +44,7 @@ terminal = [
     "dep:ansi-to-tui",
     "dep:ratatui-image",
     "dep:image",
+    "dep:open",
     "dep:opaline",
     "dep:directories",
     "dep:notify",
