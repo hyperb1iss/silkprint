@@ -139,7 +139,9 @@ impl ImageStore {
             rows,
             band_rows,
         };
-        if !self.slices.contains_key(&key) {
+        if self.slices.contains_key(&key) {
+            self.remember_slice(&key);
+        } else {
             let (y0, y1) = slice_bounds(loaded.height, start_row, rows, band_rows)?;
             let crop = loaded.image.crop_imm(0, y0, loaded.width, y1 - y0);
             let proto = picker.new_resize_protocol(crop);
@@ -149,7 +151,7 @@ impl ImageStore {
                 };
                 self.slices.remove(&oldest);
             }
-            self.slice_order.push_back(key.clone());
+            self.remember_slice(&key);
             self.slices.insert(key.clone(), SliceProto { proto });
         }
         self.slices.get_mut(&key).map(|s| &mut s.proto)
@@ -192,12 +194,17 @@ impl ImageStore {
             image,
         })
     }
+
+    fn remember_slice(&mut self, key: &SliceKey) {
+        self.slice_order.retain(|cached| cached != key);
+        self.slice_order.push_back(key.clone());
+    }
 }
 
 /// Max decoded image dimension (px per side) and total allocation.
 const MAX_IMAGE_DIM: u32 = 8000;
 const MAX_IMAGE_ALLOC: u64 = 256 * 1024 * 1024;
-const MAX_SLICE_PROTOS: usize = 12;
+const MAX_SLICE_PROTOS: usize = 48;
 const GENERATED_KEY_PREFIX: &str = "\u{0}";
 
 /// Fetch a remote image's bytes, reusing the PDF pipeline's downloader.

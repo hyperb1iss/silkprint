@@ -130,6 +130,8 @@ struct App {
     pending_g: bool,
     quit: bool,
 
+    defer_images_once: bool,
+    pending_image_redraw: bool,
     images: ImageStore,
     image_placements: Vec<Placement>,
     path: Option<PathBuf>,
@@ -201,6 +203,8 @@ impl App {
             picker_saved: 0,
             pending_g: false,
             quit: false,
+            defer_images_once: false,
+            pending_image_redraw: false,
             images: ImageStore::new(picker, base_dir),
             image_placements: Vec::new(),
             path: watch_path,
@@ -235,7 +239,7 @@ impl App {
         while !self.quit {
             if needs_redraw {
                 terminal.draw(|frame| self.draw(frame))?;
-                needs_redraw = false;
+                needs_redraw = self.take_pending_image_redraw();
             }
             if event::poll(Duration::from_millis(200))? {
                 match event::read()? {
@@ -442,7 +446,7 @@ impl App {
     }
 
     fn clamp_scroll(&mut self) {
-        self.scroll = self.scroll.min(self.max_scroll());
+        self.set_scroll(self.scroll);
     }
 
     fn apply_theme(&mut self, idx: usize) {
@@ -505,12 +509,12 @@ impl App {
             KeyCode::Char('N') => self.jump_match(false),
             KeyCode::Char('g') => {
                 if was_g {
-                    self.scroll = 0;
+                    self.set_scroll(0);
                 } else {
                     self.pending_g = true;
                 }
             }
-            KeyCode::Char('G') | KeyCode::End => self.scroll = self.max_scroll(),
+            KeyCode::Char('G') | KeyCode::End => self.set_scroll(self.max_scroll()),
             KeyCode::Char('d') if mods.contains(KeyModifiers::CONTROL) => {
                 self.scroll_by(i32::from(half));
             }
@@ -522,7 +526,7 @@ impl App {
             KeyCode::Enter if self.focus == Focus::Outline => self.jump_to_selected_heading(),
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.move_up(),
-            KeyCode::Home => self.scroll = 0,
+            KeyCode::Home => self.set_scroll(0),
             _ => {}
         }
     }
@@ -546,7 +550,19 @@ impl App {
     fn scroll_by(&mut self, delta: i32) {
         let next = i32::from(self.scroll) + delta;
         let clamped = next.clamp(0, i32::from(self.max_scroll()));
-        self.scroll = u16::try_from(clamped).unwrap_or(0);
+        self.set_scroll(u16::try_from(clamped).unwrap_or(0));
+    }
+
+    fn set_scroll(&mut self, scroll: u16) {
+        let scroll = scroll.min(self.max_scroll());
+        if self.scroll != scroll {
+            self.scroll = scroll;
+            self.defer_images_once = true;
+        }
+    }
+
+    fn take_pending_image_redraw(&mut self) -> bool {
+        std::mem::take(&mut self.pending_image_redraw)
     }
 
     fn outline_step(&mut self, forward: bool) {
@@ -571,9 +587,7 @@ impl App {
             return;
         };
         if let Some(offset) = self.block_jump.get(item.block_index) {
-            self.scroll = u16::try_from(*offset)
-                .unwrap_or(u16::MAX)
-                .min(self.max_scroll());
+            self.set_scroll(u16::try_from(*offset).unwrap_or(u16::MAX));
         }
         self.focus = Focus::Content;
     }
@@ -612,9 +626,7 @@ impl App {
             }
         }
         if !self.matches.is_empty() {
-            self.scroll = u16::try_from(self.matches[0])
-                .unwrap_or(0)
-                .min(self.max_scroll());
+            self.set_scroll(u16::try_from(self.matches[0]).unwrap_or(0));
         }
     }
 
@@ -629,7 +641,7 @@ impl App {
             (self.match_idx + len - 1) % len
         };
         let line = self.matches[self.match_idx];
-        self.scroll = u16::try_from(line).unwrap_or(0).min(self.max_scroll());
+        self.set_scroll(u16::try_from(line).unwrap_or(0));
     }
 
     // ─── Theme picker ────────────────────────────────────────────
@@ -728,19 +740,28 @@ impl App {
         // viewport is cropped to whatever rows are on screen, so large diagrams
         // scroll through smoothly instead of having to fit entirely in view.
         if self.image_placements.is_empty() {
+            self.defer_images_once = false;
+            return;
+        }
+        let scroll = u32::from(self.scroll);
+        let viewport = u32::from(area.height);
+        if !self
+            .image_placements
+            .iter()
+            .any(|placement| visible_band_rows(placement, scroll, viewport).is_some())
+        {
+            self.defer_images_once = false;
+            return;
+        }
+        if self.defer_images_this_frame() {
             return;
         }
         let placements = std::mem::take(&mut self.image_placements);
-        let scroll = u32::from(self.scroll);
-        let viewport = u32::from(area.height);
         for placement in &placements {
-            let band_top = u32::from(placement.line);
-            let band_bottom = band_top + u32::from(placement.rows);
-            let vis_top = band_top.max(scroll);
-            let vis_bottom = band_bottom.min(scroll + viewport);
-            if vis_top >= vis_bottom {
+            let Some((vis_top, vis_bottom)) = visible_band_rows(placement, scroll, viewport) else {
                 continue;
-            }
+            };
+            let band_top = u32::from(placement.line);
             let rel = u16::try_from(vis_top - scroll).unwrap_or(0);
             let start_row = u16::try_from(vis_top - band_top).unwrap_or(0);
             let rows = u16::try_from(vis_bottom - vis_top).unwrap_or(0);
@@ -761,6 +782,14 @@ impl App {
             }
         }
         self.image_placements = placements;
+    }
+
+    fn defer_images_this_frame(&mut self) -> bool {
+        let defer = std::mem::take(&mut self.defer_images_once);
+        if defer {
+            self.pending_image_redraw = true;
+        }
+        defer
     }
 
     fn draw_outline(&mut self, frame: &mut Frame, area: Rect) {
@@ -1043,6 +1072,14 @@ fn truncate_plain(s: &str, max: usize) -> String {
     out
 }
 
+fn visible_band_rows(placement: &Placement, scroll: u32, viewport: u32) -> Option<(u32, u32)> {
+    let band_top = u32::from(placement.line);
+    let band_bottom = band_top + u32::from(placement.rows);
+    let vis_top = band_top.max(scroll);
+    let vis_bottom = band_bottom.min(scroll + viewport);
+    (vis_top < vis_bottom).then_some((vis_top, vis_bottom))
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let [_, mid, _] = Layout::vertical([
         Constraint::Percentage((100 - percent_y) / 2),
@@ -1131,6 +1168,69 @@ mod tests {
         terminal.draw(|f| app.draw(f)).expect("draw");
         app.scroll_by(10_000);
         assert!(app.scroll <= app.max_scroll());
+    }
+
+    #[test]
+    fn scroll_defers_image_render_until_followup_frame() {
+        let mut app = sample();
+        let backend = TestBackend::new(100, 5);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        assert!(app.max_scroll() > 0, "sample should be scrollable");
+
+        app.image_placements.push(Placement {
+            src: "missing.png".to_string(),
+            line: app.scroll,
+            rows: 3,
+        });
+        app.scroll_by(1);
+        assert!(app.defer_images_once);
+        assert!(!app.pending_image_redraw);
+
+        terminal.draw(|f| app.draw(f)).expect("deferred draw");
+
+        assert!(!app.defer_images_once);
+        assert!(app.take_pending_image_redraw());
+        assert!(!app.take_pending_image_redraw());
+    }
+
+    #[test]
+    fn unchanged_scroll_does_not_schedule_image_redraw() {
+        let mut app = sample();
+        let backend = TestBackend::new(100, 5);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        app.image_placements.push(Placement {
+            src: "missing.png".to_string(),
+            line: app.scroll,
+            rows: 3,
+        });
+        app.set_scroll(app.scroll);
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        assert!(!app.defer_images_once);
+        assert!(!app.take_pending_image_redraw());
+    }
+
+    #[test]
+    fn offscreen_image_does_not_schedule_image_redraw() {
+        let mut app = sample();
+        let backend = TestBackend::new(100, 5);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        assert!(app.max_scroll() > 0, "sample should be scrollable");
+
+        app.image_placements.push(Placement {
+            src: "missing.png".to_string(),
+            line: app.scroll + app.viewport_h + 10,
+            rows: 3,
+        });
+        app.scroll_by(1);
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        assert!(!app.defer_images_once);
+        assert!(!app.take_pending_image_redraw());
     }
 
     #[test]
