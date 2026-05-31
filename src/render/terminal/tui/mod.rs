@@ -100,6 +100,8 @@ struct App {
 
     theme_names: Vec<String>,
     theme_idx: usize,
+    current_theme_name: Option<String>,
+    saved_theme_name: Option<String>,
     chrome: Chrome,
     title: String,
 
@@ -147,6 +149,29 @@ impl App {
         base_dir: Option<PathBuf>,
         watch_path: Option<PathBuf>,
     ) -> Self {
+        Self::new_with_config(
+            body,
+            theme,
+            theme_name,
+            glyph_override,
+            picker,
+            base_dir,
+            watch_path,
+            super::config::load(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_config(
+        body: &str,
+        theme: ResolvedTheme,
+        theme_name: &str,
+        glyph_override: Option<GlyphTier>,
+        picker: Option<Picker>,
+        base_dir: Option<PathBuf>,
+        watch_path: Option<PathBuf>,
+        saved: super::config::ReaderConfig,
+    ) -> Self {
         let arena = comrak::Arena::new();
         let root = crate::render::markdown::parse(&arena, body);
         let mut warnings = WarningCollector::new();
@@ -161,6 +186,10 @@ impl App {
             .iter()
             .position(|n| n == theme_name)
             .unwrap_or(0);
+        let current_theme_name = theme_names
+            .get(theme_idx)
+            .filter(|name| name.as_str() == theme_name)
+            .cloned();
 
         let title =
             super::layout::sanitize(doc.title.as_deref().unwrap_or("silkprint")).into_owned();
@@ -170,8 +199,8 @@ impl App {
         if !doc.outline.is_empty() {
             outline_state.select(Some(0));
         }
-        let saved = super::config::load();
         let outline_visible = saved.outline.unwrap_or(doc.outline.len() > 1);
+        let saved_theme_name = saved.theme;
 
         Self {
             doc,
@@ -180,6 +209,8 @@ impl App {
             chrome: Chrome::for_theme(theme_name),
             theme_names,
             theme_idx,
+            current_theme_name,
+            saved_theme_name,
             title,
             content: Text::default(),
             content_bg: Color::Reset,
@@ -298,16 +329,23 @@ impl App {
     }
 
     fn save_config(&self) {
+        super::config::save(&self.reader_config());
+    }
+
+    fn reader_config(&self) -> super::config::ReaderConfig {
         let glyphs = match self.glyphs.tier() {
             GlyphTier::NerdFont => "nerdfont",
             GlyphTier::Unicode => "unicode",
             GlyphTier::Ascii => "ascii",
         };
-        super::config::save(&super::config::ReaderConfig {
-            theme: self.theme_names.get(self.theme_idx).cloned(),
+        super::config::ReaderConfig {
+            theme: self
+                .current_theme_name
+                .clone()
+                .or_else(|| self.saved_theme_name.clone()),
             outline: Some(self.outline_visible),
             glyphs: Some(glyphs.to_string()),
-        });
+        }
     }
 
     // ─── Content rendering ───────────────────────────────────────
@@ -476,10 +514,12 @@ impl App {
     }
 
     fn apply_theme(&mut self, idx: usize) {
-        if let Some(name) = self.theme_names.get(idx) {
-            self.theme = load_theme_or_default(name);
-            self.chrome = Chrome::for_theme(name);
+        if let Some(name) = self.theme_names.get(idx).cloned() {
+            self.theme = load_theme_or_default(&name);
+            self.chrome = Chrome::for_theme(&name);
             self.theme_idx = idx;
+            self.current_theme_name = Some(name.clone());
+            self.saved_theme_name = Some(name);
             self.theme_dirty = true;
             // Generated rasters bake in the old theme's colors and must be rebuilt.
             self.images.clear_generated();
@@ -1132,13 +1172,18 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::terminal::config::ReaderConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     fn sample() -> App {
+        sample_with_config(ReaderConfig::default())
+    }
+
+    fn sample_with_config(saved: ReaderConfig) -> App {
         let body = "# Title\n\nSome **bold** text.\n\n## Section\n\n- a\n- b\n\n```rust\nfn main() {}\n```\n";
         let theme = load_theme_or_default("silk-light");
-        App::new(
+        App::new_with_config(
             body,
             theme,
             "silk-light",
@@ -1146,6 +1191,7 @@ mod tests {
             None,
             None,
             None,
+            saved,
         )
     }
 
@@ -1250,5 +1296,40 @@ mod tests {
         assert!(app.theme_dirty);
         terminal.draw(|f| app.draw(f)).expect("redraw");
         assert!(!app.theme_dirty, "redraw should re-render content");
+    }
+
+    #[test]
+    fn reader_config_records_selected_builtin_theme() {
+        let mut app = sample();
+        let next = (app.theme_idx + 1) % app.theme_names.len();
+        app.apply_theme(next);
+
+        assert_eq!(
+            app.reader_config().theme,
+            app.theme_names.get(next).cloned()
+        );
+    }
+
+    #[test]
+    fn reader_config_preserves_saved_theme_for_custom_theme() {
+        let app = App::new_with_config(
+            "# Title\n",
+            load_theme_or_default("silk-light"),
+            "Custom Theme",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig {
+                theme: Some("silkcircuit-dawn".to_string()),
+                outline: Some(true),
+                glyphs: Some("unicode".to_string()),
+            },
+        );
+
+        assert_eq!(
+            app.reader_config().theme.as_deref(),
+            Some("silkcircuit-dawn")
+        );
     }
 }
