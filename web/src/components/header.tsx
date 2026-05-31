@@ -36,10 +36,13 @@ export function Header() {
         {/* Desktop nav */}
         <nav className="hidden items-center gap-6 md:flex">
           <a
-            href="#editor"
+            href="#reader"
             className="text-sm text-sc-fg-muted transition-colors hover:text-sc-cyan"
           >
-            Editor
+            Reader
+          </a>
+          <a href="#pdf" className="text-sm text-sc-fg-muted transition-colors hover:text-sc-cyan">
+            PDF
           </a>
           <a
             href="#themes"
@@ -95,11 +98,19 @@ export function Header() {
           <div className="flex flex-col gap-1 px-4 py-4">
             {/* biome-ignore lint/a11y/useValidAnchor: hash nav + menu close */}
             <a
-              href="#editor"
+              href="#reader"
               onClick={closeMenu}
               className="rounded-lg px-3 py-2.5 text-sm font-medium text-sc-fg-muted transition-colors hover:bg-sc-bg-highlight hover:text-sc-cyan"
             >
-              Editor
+              Reader
+            </a>
+            {/* biome-ignore lint/a11y/useValidAnchor: hash nav + menu close */}
+            <a
+              href="#pdf"
+              onClick={closeMenu}
+              className="rounded-lg px-3 py-2.5 text-sm font-medium text-sc-fg-muted transition-colors hover:bg-sc-bg-highlight hover:text-sc-cyan"
+            >
+              PDF
             </a>
             {/* biome-ignore lint/a11y/useValidAnchor: hash nav + menu close */}
             <a

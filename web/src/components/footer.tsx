@@ -4,7 +4,9 @@ export function Footer() {
       <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 px-6 py-12 md:flex-row md:justify-between">
         <div className="flex flex-col items-center gap-1 md:items-start">
           <span className="gradient-text text-lg font-bold">SilkPrint</span>
-          <span className="text-xs text-sc-fg-dim">Markdown to PDF, made stunning.</span>
+          <span className="text-xs text-sc-fg-dim">
+            Read Markdown in your terminal, or render a stunning PDF.
+          </span>
         </div>
 
         <nav className="flex items-center gap-6 text-sm text-sc-fg-muted">
@@ -37,12 +39,12 @@ export function Footer() {
         <div className="text-xs text-sc-fg-dim">
           &copy; {new Date().getFullYear()}{' '}
           <a
-            href="https://github.com/hyperb1iss"
+            href="https://hyperbliss.tech"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sc-fg-muted transition-colors hover:text-sc-cyan"
           >
-            hyperb1iss
+            Hyperbliss Technologies
           </a>
           . MIT License.
         </div>

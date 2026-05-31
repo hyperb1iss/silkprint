@@ -68,8 +68,8 @@ export function ThemeGallery() {
           <span className="gradient-text">40+ Themes</span>
         </h2>
         <p className="mx-auto max-w-lg text-sc-fg-muted">
-          From developer favorites to print-perfect classics. Every theme is built with WCAG
-          contrast compliance and pixel-perfect typography.
+          From developer favorites to print-perfect classics — and every one styles your terminal
+          reader and your PDF the same way, with WCAG-checked contrast.
         </p>
       </div>
 

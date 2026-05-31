@@ -21,35 +21,42 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
+const TITLE = 'SilkPrint — Read Markdown in Your Terminal, or Render a Stunning PDF';
+const DESCRIPTION =
+  'A rich terminal reader and publication-ready PDFs from one themed engine. Inline images, mermaid diagrams, live theme switching, and 40 gorgeous themes that drive both.';
+
 export const metadata: Metadata = {
-  title: 'SilkPrint — Markdown to Stunning PDFs',
-  description:
-    'Transform your Markdown into beautiful, print-ready PDFs with 40+ gorgeous themes. No LaTeX, no setup, no suffering. Just paste and print.',
+  title: TITLE,
+  description: DESCRIPTION,
   keywords: [
+    'markdown terminal reader',
+    'terminal markdown viewer',
+    'markdown TUI',
     'markdown to pdf',
-    'markdown converter',
-    'pdf generator',
+    'terminal images kitty sixel',
+    'mermaid terminal',
     'markdown themes',
     'typst',
-    'document formatting',
-    'print-ready pdf',
-    'markdown editor online',
+    'ratatui',
+    'syntax highlighting terminal',
   ],
-  authors: [{ name: 'hyperb1iss', url: 'https://github.com/hyperb1iss' }],
+  authors: [{ name: 'Hyperbliss Technologies', url: 'https://hyperbliss.tech' }],
   openGraph: {
-    title: 'SilkPrint — Markdown to Stunning PDFs',
-    description:
-      'Transform your Markdown into beautiful, print-ready PDFs with 40+ gorgeous themes.',
+    title: TITLE,
+    description: DESCRIPTION,
     url: 'https://silkprint.md',
     siteName: 'SilkPrint',
     type: 'website',
     locale: 'en_US',
+    images: [
+      { url: '/reader/hero.png', width: 1904, height: 1360, alt: 'SilkPrint terminal reader' },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'SilkPrint — Markdown to Stunning PDFs',
-    description:
-      'Transform your Markdown into beautiful, print-ready PDFs with 40+ gorgeous themes.',
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ['/reader/hero.png'],
   },
   robots: {
     index: true,
