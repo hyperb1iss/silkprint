@@ -1903,6 +1903,39 @@ mod tests {
         assert_eq!(app.title, "Beta");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn link_navigation_jail_blocks_escapes() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().expect("tempdir");
+        let doc_dir = root.path().join("docs");
+        let secret_dir = root.path().join("secret");
+        std::fs::create_dir_all(&doc_dir).expect("doc dir");
+        std::fs::create_dir_all(&secret_dir).expect("secret dir");
+        std::fs::write(secret_dir.join("leak.md"), "# Secret\n").expect("secret");
+        let a = doc_dir.join("a.md");
+        std::fs::write(&a, "# A\n").expect("a");
+        // A .md symlink inside the doc dir pointing at a file outside it.
+        symlink(secret_dir.join("leak.md"), doc_dir.join("escape.md")).expect("symlink");
+
+        let theme = load_theme_or_default("silk-light");
+        let app = App::new(
+            "# A\n",
+            theme,
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(doc_dir.clone()),
+            Some(a),
+        );
+
+        // canonicalize resolves the symlink outside the jail, so even a .md
+        // target must be refused; absolute paths and traversal too.
+        assert!(app.local_markdown_target("escape.md").is_none());
+        assert!(app.local_markdown_target("/etc/hosts").is_none());
+        assert!(app.local_markdown_target("../secret/leak.md").is_none());
+    }
+
     #[test]
     fn outline_and_offsets_populated() {
         let mut app = sample();
