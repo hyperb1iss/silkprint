@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="220" viewBox="0 0 720 220" role="img" aria-label="SilkPrint terminal reader flow">
+  <rect width="720" height="220" rx="18" fill="#11131f"/>
+  <g font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle">
+    <rect x="38" y="72" width="150" height="76" rx="12" fill="#e135ff"/>
+    <text x="113" y="117" fill="#11131f">Markdown</text>
+    <rect x="216" y="72" width="150" height="76" rx="12" fill="#80ffea"/>
+    <text x="291" y="117" fill="#11131f">comrak AST</text>
+    <rect x="394" y="72" width="150" height="76" rx="12" fill="#ff6ac1"/>
+    <text x="469" y="117" fill="#11131f">Terminal model</text>
+    <rect x="572" y="72" width="110" height="76" rx="12" fill="#50fa7b"/>
+    <text x="627" y="117" fill="#11131f">TUI</text>
+  </g>
+  <g stroke="#f1fa8c" stroke-width="8" stroke-linecap="round" fill="none">
+    <path d="M188 110h28"/>
+    <path d="M366 110h28"/>
+    <path d="M544 110h28"/>
+  </g>
+  <text x="360" y="190" fill="#d7d7ef" font-family="JetBrains Mono, monospace" font-size="16" text-anchor="middle">scroll, search, outline, theme picker, images, mermaid</text>
+</svg>
