@@ -2,16 +2,30 @@
 
 ## What is this?
 
-Rust CLI that converts Markdown into stunning PDFs. Pipeline: Markdown -> comrak AST -> Typst markup -> World trait compile -> PDF.
+Rust CLI that renders Markdown two ways from one themed engine: a **terminal
+reader** (the default for a bare `silkprint <file>`, also `silkprint read`) and
+**PDFs** (`silkprint pdf`, or any PDF flag like `-o`). Both pipelines share the
+comrak parse + theme resolution:
+- PDF: Markdown -> comrak AST -> Typst markup -> World trait compile -> PDF.
+- Terminal: comrak AST -> width-independent `RenderedDoc` (semantic role model)
+  -> ANSI (one-shot) or a ratatui TUI.
+
+CLI routing is terminal-first: bare `silkprint file.md` reads (TUI in a TTY,
+one-shot ANSI when piped); `-o`/`--check`/`--dump-typst`/`--open` or the `pdf`
+subcommand force PDF. See `cli.rs::pdf_signaled` / `effective_input`.
 
 ## Architecture
 
-- `src/lib.rs` — Public API: `render()`, `render_to_typst()`
-- `src/cli.rs` — Clap derive CLI with styled help
-- `src/main.rs` — Entry point, miette error handler, tracing setup
+- `src/lib.rs` — Public API: `render()`, `render_to_typst()`, `render_to_terminal()`, `run_terminal_tui()`
+- `src/cli.rs` — Clap derive CLI, styled help, `pdf`/`read` subcommands, terminal-first routing
+- `src/main.rs` — Entry point, mode dispatch, miette error handler, tracing setup
 - `src/error.rs` — `SilkprintError` enum (thiserror + miette)
 - `src/warnings.rs` — `SilkprintWarning` + `WarningCollector`
 - `src/render/` — Pipeline orchestration, markdown parsing, Typst emission
+- `src/render/terminal/` — Terminal reader, gated behind the `terminal` feature.
+  `walk.rs` (AST -> `RenderedDoc`), `model.rs` (role-based block model), `ansi.rs`
+  (one-shot renderer), `caps.rs` (color/glyph/graphics detection), `tui/` (ratatui
+  reader: outline, search, theme picker, images, mermaid, in-doc link navigation)
 - `src/theme/` — TOML theme parsing, token resolution, WCAG contrast
 - `src/fonts/` — Font loading via rust-embed
 
@@ -30,12 +44,16 @@ cargo check          # Type-check
 cargo clippy         # Lint (strict pedantic config)
 cargo test           # Run all tests
 cargo run -- --help  # CLI help
-cargo run -- tests/fixtures/basic.md -o /tmp/test.pdf
+cargo run -- tests/fixtures/basic.md -o /tmp/test.pdf  # render a PDF
+cargo run -- tests/fixtures/basic.md                   # read in the terminal
 ```
+
+The terminal reader is behind the default `terminal` feature;
+`--no-default-features` builds a PDF-only library (keeps `silkprint-wasm` clean).
 
 ## Conventions
 
-- Edition 2024, rust-version 1.85
+- Edition 2024, rust-version 1.96
 - `unsafe_code = "forbid"`, `unwrap_used = "deny"`
 - Pedantic clippy lints at warn level
 - thiserror for typed errors, miette for rich diagnostics
