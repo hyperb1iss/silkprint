@@ -89,6 +89,22 @@ impl<'a> ContentStyleResolver<'a> {
             .or_else(|| self.body_color())
     }
 
+    fn link_color(&self) -> Option<Rgb> {
+        parse_hex(&self.tokens().links.color).or_else(|| self.body_color())
+    }
+
+    fn emphasis_color(&self, mods: Mods) -> Option<Rgb> {
+        if mods.strikethrough {
+            parse_hex(&self.tokens().emphasis.strikethrough_color).or_else(|| self.body_color())
+        } else if mods.bold {
+            self.heading_color(1)
+        } else if mods.italic || mods.underline {
+            self.link_color()
+        } else {
+            None
+        }
+    }
+
     /// Resolve the color + intrinsic flags for a syntax token role.
     pub fn syntax_style(&self, role: SyntaxRole) -> Style {
         let syntax = &self.tokens().syntax;
@@ -135,7 +151,7 @@ impl<'a> ContentStyleResolver<'a> {
                 ..Style::default()
             },
             Role::Link => Style {
-                fg: parse_hex(&self.tokens().links.color).or_else(|| self.body_color()),
+                fg: self.link_color(),
                 underline: self.tokens().links.underline,
                 ..Style::default()
             },
@@ -166,7 +182,11 @@ impl<'a> ContentStyleResolver<'a> {
             Role::Syntax(s) => self.syntax_style(s),
         };
 
-        // Overlay explicit inline decorations from the markdown.
+        if matches!(role, Role::Body | Role::Quote | Role::Muted)
+            && let Some(color) = self.emphasis_color(mods)
+        {
+            style.fg = Some(color);
+        }
         style.bold |= mods.bold;
         style.italic |= mods.italic;
         style.underline |= mods.underline;
@@ -179,6 +199,21 @@ impl<'a> ContentStyleResolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::tokens::ThemeTokens;
+
+    fn theme_with_terminal_accents() -> ResolvedTheme {
+        let mut tokens = ThemeTokens::default();
+        tokens.text.color = "#111111".to_string();
+        tokens.headings.color = "#e135ff".to_string();
+        tokens.links.color = "#80ffea".to_string();
+        tokens.emphasis.strikethrough_color = "#6a6a82".to_string();
+        tokens.code_inline.background = "#eeeeee".to_string();
+        tokens.syntax.text.color = "#222222".to_string();
+        ResolvedTheme {
+            tokens,
+            tmtheme_xml: String::new(),
+        }
+    }
 
     #[test]
     fn parses_six_digit_hex() {
@@ -195,5 +230,51 @@ mod tests {
         assert_eq!(parse_hex(""), None);
         assert_eq!(parse_hex("text_primary"), None);
         assert_eq!(parse_hex("#zz0011"), None);
+    }
+
+    #[test]
+    fn resolves_markdown_emphasis_to_theme_colors() {
+        let theme = theme_with_terminal_accents();
+        let resolver = ContentStyleResolver::new(&theme);
+
+        assert_eq!(
+            resolver.resolve(Role::Body, Mods::default().with_bold()).fg,
+            Some(Rgb(0xe1, 0x35, 0xff))
+        );
+        assert_eq!(
+            resolver
+                .resolve(Role::Body, Mods::default().with_italic())
+                .fg,
+            Some(Rgb(0x80, 0xff, 0xea))
+        );
+        assert_eq!(
+            resolver
+                .resolve(Role::Body, Mods::default().with_underline())
+                .fg,
+            Some(Rgb(0x80, 0xff, 0xea))
+        );
+        assert_eq!(
+            resolver
+                .resolve(Role::Body, Mods::default().with_strikethrough())
+                .fg,
+            Some(Rgb(0x6a, 0x6a, 0x82))
+        );
+    }
+
+    #[test]
+    fn keeps_semantic_role_colors_inside_emphasis() {
+        let theme = theme_with_terminal_accents();
+        let resolver = ContentStyleResolver::new(&theme);
+
+        assert_eq!(
+            resolver
+                .resolve(Role::InlineCode, Mods::default().with_bold())
+                .fg,
+            Some(Rgb(0x22, 0x22, 0x22))
+        );
+        assert_eq!(
+            resolver.resolve(Role::Link, Mods::default().with_bold()).fg,
+            Some(Rgb(0x80, 0xff, 0xea))
+        );
     }
 }

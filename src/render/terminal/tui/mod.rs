@@ -1625,6 +1625,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 mod tests {
     use super::*;
     use crate::render::terminal::config::ReaderConfig;
+    use crate::render::terminal::model::{Mods, Role};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -1734,6 +1735,54 @@ mod tests {
         assert!(
             !leaked,
             "every content span should carry an explicit background"
+        );
+    }
+
+    #[test]
+    fn content_spans_color_markdown_emphasis_with_theme_accents() {
+        let mut app = App::new_with_config(
+            "# Title\n\nPlain **bold** and *italic* and ~~gone~~.\n",
+            load_theme_or_default("silkcircuit-glow"),
+            "silkcircuit-glow",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 20);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let resolver = ContentStyleResolver::new(&app.theme);
+
+        let bold = content_span(&app, "bold");
+        assert!(bold.style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(
+            bold.style.fg,
+            resolver
+                .resolve(Role::Body, Mods::default().with_bold())
+                .fg
+                .map(rgb_to_color)
+        );
+
+        let italic = content_span(&app, "italic");
+        assert!(italic.style.add_modifier.contains(Modifier::ITALIC));
+        assert_eq!(
+            italic.style.fg,
+            resolver
+                .resolve(Role::Body, Mods::default().with_italic())
+                .fg
+                .map(rgb_to_color)
+        );
+
+        let gone = content_span(&app, "gone");
+        assert!(gone.style.add_modifier.contains(Modifier::CROSSED_OUT));
+        assert_eq!(
+            gone.style.fg,
+            resolver
+                .resolve(Role::Body, Mods::default().with_strikethrough())
+                .fg
+                .map(rgb_to_color)
         );
     }
 
@@ -2034,5 +2083,14 @@ mod tests {
             }),
             "rows outside the new scroll horizon should be canceled"
         );
+    }
+
+    fn content_span<'a>(app: &'a App, needle: &str) -> &'a Span<'static> {
+        app.content
+            .lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .find(|span| span.content.contains(needle))
+            .unwrap_or_else(|| panic!("missing content span {needle:?}"))
     }
 }
