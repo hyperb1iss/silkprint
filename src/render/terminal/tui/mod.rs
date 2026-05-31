@@ -41,6 +41,7 @@ const OUTLINE_WIDTH: u16 = 30;
 /// normally sized to the image's natural height and scrolled through; this only
 /// guards against a pathologically tall input flooding the content flow.
 const MAX_BAND_ROWS: u16 = 400;
+const IMAGE_PREFETCH_ROWS: u16 = 24;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -745,35 +746,58 @@ impl App {
         // then reuses every cached tile except the newly exposed edge row.
         let scroll = u32::from(self.scroll);
         let viewport = u32::from(area.height);
+        let prefetch = u32::from(IMAGE_PREFETCH_ROWS);
+        let prefetch_top = scroll.saturating_sub(prefetch);
+        let prefetch_bottom = scroll.saturating_add(viewport).saturating_add(prefetch);
         let placements = std::mem::take(&mut self.image_placements);
         for placement in &placements {
-            let Some((vis_top, vis_bottom)) = visible_band_rows(placement, scroll, viewport) else {
-                continue;
-            };
-            let band_top = u32::from(placement.line);
-            let rel = u16::try_from(vis_top - scroll).unwrap_or(0);
-            let start_row = u16::try_from(vis_top - band_top).unwrap_or(0);
-            let rows = u16::try_from(vis_bottom - vis_top).unwrap_or(0);
             let tile_width = area.width.saturating_sub(2);
-            if tile_width == 0 || rows == 0 {
+            if tile_width == 0 {
                 continue;
             }
-            for offset in 0..rows {
-                let tile_area = Rect {
-                    x: area.x.saturating_add(2),
-                    y: area.y.saturating_add(rel).saturating_add(offset),
-                    width: tile_width,
-                    height: 1,
-                };
-                if let Some(proto) = self.images.row_protocol(
+            let band_top = u32::from(placement.line);
+            let visible_rows = visible_band_rows(placement, scroll, viewport);
+            if let Some((vis_top, vis_bottom)) = visible_rows {
+                let rel = u16::try_from(vis_top - scroll).unwrap_or(0);
+                let start_row = u16::try_from(vis_top - band_top).unwrap_or(0);
+                let rows = u16::try_from(vis_bottom - vis_top).unwrap_or(0);
+                for offset in 0..rows {
+                    let tile_area = Rect {
+                        x: area.x.saturating_add(2),
+                        y: area.y.saturating_add(rel).saturating_add(offset),
+                        width: tile_width,
+                        height: 1,
+                    };
+                    if let Some(proto) = self.images.row_protocol(
+                        &placement.src,
+                        placement.line,
+                        start_row.saturating_add(offset),
+                        placement.rows,
+                        tile_area,
+                    ) {
+                        frame.render_stateful_widget(StatefulImage::new(), tile_area, proto);
+                    }
+                }
+            }
+            let Some((want_top, want_bottom)) =
+                visible_band_rows(placement, prefetch_top, prefetch_bottom - prefetch_top)
+            else {
+                continue;
+            };
+            for row_abs in want_top..want_bottom {
+                if visible_rows
+                    .is_some_and(|(vis_top, vis_bottom)| row_abs >= vis_top && row_abs < vis_bottom)
+                {
+                    continue;
+                }
+                let row = u16::try_from(row_abs - band_top).unwrap_or(0);
+                self.images.prefetch_row(
                     &placement.src,
                     placement.line,
-                    start_row.saturating_add(offset),
+                    row,
                     placement.rows,
-                    tile_area,
-                ) {
-                    frame.render_stateful_widget(StatefulImage::new(), tile_area, proto);
-                }
+                    tile_width,
+                );
             }
         }
         self.image_placements = placements;

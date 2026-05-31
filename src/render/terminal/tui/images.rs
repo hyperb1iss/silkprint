@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-use image::DynamicImage;
+use image::{DynamicImage, imageops::FilterType};
 use ratatui::layout::{Rect, Size};
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
@@ -124,6 +124,7 @@ pub struct ImageStore {
     slices: HashMap<SliceKey, SliceProto>,
     slice_order: VecDeque<SliceKey>,
     pending: HashMap<SliceKey, u64>,
+    wanted: HashSet<SliceKey>,
     visible: HashSet<SliceKey>,
     worker: Option<SliceWorker>,
     generation: u64,
@@ -147,6 +148,7 @@ impl ImageStore {
             slices: HashMap::new(),
             slice_order: VecDeque::new(),
             pending: HashMap::new(),
+            wanted: HashSet::new(),
             visible: HashSet::new(),
             worker,
             generation: 0,
@@ -210,6 +212,7 @@ impl ImageStore {
     }
 
     pub fn begin_frame(&mut self, view: ImageView) {
+        self.wanted.clear();
         self.visible.clear();
         if self.active_view == Some(view) {
             return;
@@ -226,7 +229,7 @@ impl ImageStore {
         let canceled: Vec<(SliceKey, u64)> = self
             .pending
             .iter()
-            .filter(|(key, _epoch)| !self.visible.contains(*key))
+            .filter(|(key, _epoch)| !self.wanted.contains(*key))
             .map(|(key, epoch)| (key.clone(), *epoch))
             .collect();
         for (key, epoch) in canceled {
@@ -254,12 +257,13 @@ impl ImageStore {
             if !self.cache.contains_key(&item.key.src) {
                 continue;
             }
-            let visible = self.visible.contains(&item.key);
-            if item.epoch != self.request_epoch && !visible {
+            let wanted = self.wanted.contains(&item.key);
+            if item.epoch != self.request_epoch && !wanted {
                 continue;
             }
+            let visible = self.visible.contains(&item.key);
             self.insert_slice(item.key, proto);
-            changed |= item.epoch == self.request_epoch || visible;
+            changed |= visible;
         }
         changed
     }
@@ -268,8 +272,8 @@ impl ImageStore {
         !self.pending.is_empty()
     }
 
-    /// Build (or reuse) the protocol for one terminal row of a `band_rows`-tall
-    /// band. `None` if `src` isn't loaded and no nearby row is ready yet.
+    /// Build or reuse the protocol for one terminal row of a `band_rows`-tall band.
+    /// `None` means the exact row is still preparing or the source cannot render.
     pub fn row_protocol(
         &mut self,
         src: &str,
@@ -278,24 +282,37 @@ impl ImageStore {
         band_rows: u16,
         area: Rect,
     ) -> Option<&mut StatefulProtocol> {
-        self.picker.as_ref()?;
-        let key = SliceKey {
-            src: src.to_string(),
-            placement_line,
-            row,
-            band_rows,
-            area_width: area.width,
-            generation: self.generation,
-        };
+        let request = self.build_request(src, placement_line, row, band_rows, area.width)?;
+        let key = request.key.clone();
+        self.wanted.insert(key.clone());
         self.visible.insert(key.clone());
-        let render_key = if self.slices.contains_key(&key) {
-            Some(key)
-        } else {
-            self.request_row(src, &key, row, band_rows, area);
-            self.nearest_ready_slice(&key)
-        }?;
-        self.remember_slice(&render_key);
-        self.slices.get_mut(&render_key).map(|s| &mut s.proto)
+        if self.slices.contains_key(&key) {
+            self.remember_slice(&key);
+            return self.slices.get_mut(&key).map(|s| &mut s.proto);
+        }
+        self.enqueue_request(request);
+        None
+    }
+
+    pub fn prefetch_row(
+        &mut self,
+        src: &str,
+        placement_line: u16,
+        row: u16,
+        band_rows: u16,
+        area_width: u16,
+    ) {
+        let Some(request) = self.build_request(src, placement_line, row, band_rows, area_width)
+        else {
+            return;
+        };
+        let key = request.key.clone();
+        self.wanted.insert(key.clone());
+        if self.slices.contains_key(&key) {
+            self.remember_slice(&key);
+            return;
+        }
+        self.enqueue_request(request);
     }
 
     /// Get a cached image (loading it on first request). `None` if the source
@@ -336,48 +353,54 @@ impl ImageStore {
         })
     }
 
-    fn request_row(&mut self, src: &str, key: &SliceKey, row: u16, band_rows: u16, area: Rect) {
-        if self.pending.contains_key(key) {
-            return;
+    fn build_request(
+        &self,
+        src: &str,
+        placement_line: u16,
+        row: u16,
+        band_rows: u16,
+        area_width: u16,
+    ) -> Option<SliceRequest> {
+        let picker = self.picker.as_ref()?;
+        let loaded = self.cache.get(src).and_then(Option::as_ref)?;
+        let render_size = Resize::Fit(None).size_for(
+            &loaded.image,
+            picker.font_size(),
+            Size::new(area_width, band_rows),
+        );
+        if render_size.width == 0 || render_size.height == 0 || row >= render_size.height {
+            return None;
         }
-        let Some(loaded) = self.cache.get(src).and_then(Option::as_ref) else {
-            return;
-        };
-        let Some((y0, y1)) = slice_bounds(loaded.height, row, 1, band_rows) else {
-            return;
-        };
-        if let Some(worker) = self.worker.as_ref() {
-            if worker
-                .send(SliceRequest {
-                    key: key.clone(),
-                    image: Arc::clone(&loaded.image),
-                    y0,
-                    y1,
-                    size: Size::new(area.width, 1),
-                    epoch: self.request_epoch,
-                })
-                .is_err()
-            {
-                self.pending.remove(key);
-            } else {
-                self.pending.insert(key.clone(), self.request_epoch);
-            }
-        }
+        let (y0, y1) = slice_bounds(loaded.height, row, 1, render_size.height)?;
+        Some(SliceRequest {
+            key: SliceKey {
+                src: src.to_string(),
+                placement_line,
+                row,
+                band_rows: render_size.height,
+                area_width: render_size.width,
+                generation: self.generation,
+            },
+            image: Arc::clone(&loaded.image),
+            y0,
+            y1,
+            size: Size::new(render_size.width, 1),
+            epoch: self.request_epoch,
+        })
     }
 
-    fn nearest_ready_slice(&self, key: &SliceKey) -> Option<SliceKey> {
-        self.slices
-            .keys()
-            .filter(|cached| {
-                cached.src == key.src
-                    && cached.placement_line == key.placement_line
-                    && cached.band_rows == key.band_rows
-                    && cached.area_width == key.area_width
-                    && cached.generation == key.generation
-            })
-            .min_by_key(|cached| cached.row.abs_diff(key.row))
-            .filter(|cached| cached.row.abs_diff(key.row) <= MAX_STALE_ROW_DISTANCE)
-            .cloned()
+    fn enqueue_request(&mut self, request: SliceRequest) {
+        let key = request.key.clone();
+        if self.pending.contains_key(&key) {
+            return;
+        }
+        if let Some(worker) = self.worker.as_ref() {
+            if worker.send(request).is_err() {
+                self.pending.remove(&key);
+            } else {
+                self.pending.insert(key, self.request_epoch);
+            }
+        }
     }
 
     fn insert_slice(&mut self, key: SliceKey, proto: StatefulProtocol) {
@@ -401,6 +424,7 @@ impl ImageStore {
     fn cancel_pending_requests(&mut self) {
         self.request_epoch = self.request_epoch.wrapping_add(1);
         self.pending.clear();
+        self.wanted.clear();
         self.visible.clear();
         self.active_view = None;
         if let Some(worker) = self.worker.as_ref() {
@@ -544,9 +568,12 @@ fn prepare_slice(picker: &Picker, request: &SliceRequest) -> Option<StatefulProt
         request.image.width(),
         request.y1 - request.y0,
     );
-    let mut proto = picker.new_resize_protocol(crop);
-    let fitted = proto.size_for(Resize::Fit(None), request.size);
-    proto.resize_encode(&Resize::Fit(None), fitted);
+    let font = picker.font_size();
+    let width = u32::from(request.size.width.max(1)) * u32::from(font.width.max(1));
+    let height = u32::from(font.height.max(1));
+    let scaled = crop.resize_exact(width, height, FilterType::Nearest);
+    let mut proto = picker.new_resize_protocol(scaled);
+    proto.resize_encode(&Resize::Fit(None), request.size);
     proto.last_encoding_result()?.ok()?;
     Some(proto)
 }
@@ -556,7 +583,6 @@ const MAX_IMAGE_DIM: u32 = 8000;
 const MAX_IMAGE_ALLOC: u64 = 256 * 1024 * 1024;
 const MAX_SLICE_PROTOS: usize = 512;
 const MAX_SLICE_WORKERS: usize = 4;
-const MAX_STALE_ROW_DISTANCE: u16 = 3;
 const GENERATED_KEY_PREFIX: &str = "\u{0}";
 
 /// Fetch a remote image's bytes, reusing the PDF pipeline's downloader.
@@ -730,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn row_protocol_uses_nearest_ready_row_while_new_row_prepares() {
+    fn row_protocol_does_not_substitute_missing_rows() {
         let mut store = ImageStore::new(Some(Picker::halfblocks()), None);
         store.ensure_generated("generated", || Some(test_image(80, 80)));
         let area = Rect::new(0, 0, 20, 1);
@@ -739,22 +765,49 @@ mod tests {
         wait_for_ready(&mut store);
         assert!(store.row_protocol("generated", 0, 0, 10, area).is_some());
 
-        assert!(store.row_protocol("generated", 0, 1, 10, area).is_some());
+        assert!(store.row_protocol("generated", 0, 1, 10, area).is_none());
         assert!(store.has_pending());
     }
 
     #[test]
-    fn row_protocol_does_not_use_far_stale_rows_as_fallback() {
+    fn prefetch_row_prepares_without_marking_visible() {
         let mut store = ImageStore::new(Some(Picker::halfblocks()), None);
-        store.ensure_generated("generated", || Some(test_image(80, 160)));
+        store.ensure_generated("generated", || Some(test_image(80, 80)));
         let area = Rect::new(0, 0, 20, 1);
 
-        assert!(store.row_protocol("generated", 0, 0, 20, area).is_none());
-        wait_for_ready(&mut store);
-        assert!(store.row_protocol("generated", 0, 0, 20, area).is_some());
+        store.prefetch_row("generated", 0, 1, 10, area.width);
 
-        assert!(store.row_protocol("generated", 0, 10, 20, area).is_none());
         assert!(store.has_pending());
+        assert!(store.visible.is_empty());
+        assert_eq!(store.wanted.len(), 1);
+    }
+
+    #[test]
+    fn prefetched_ready_row_does_not_request_redraw_until_visible() {
+        let (tx, _rx) = mpsc::channel();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let mut store = ImageStore::new(Some(Picker::halfblocks()), None);
+        store.ensure_generated("generated", || Some(test_image(80, 80)));
+        store.worker = Some(SliceWorker {
+            txs: vec![tx],
+            rx: ready_rx,
+        });
+        let request = store
+            .build_request("generated", 0, 1, 10, 20)
+            .expect("request");
+        let proto = prepare_slice(&Picker::halfblocks(), &request);
+        store.wanted.insert(request.key.clone());
+        store.pending.insert(request.key.clone(), request.epoch);
+        ready_tx
+            .send(SliceReady {
+                key: request.key.clone(),
+                proto,
+                epoch: request.epoch,
+            })
+            .expect("ready");
+
+        assert!(!store.poll_ready());
+        assert!(store.slices.contains_key(&request.key));
     }
 
     #[test]
@@ -895,7 +948,7 @@ mod tests {
             rx: ready_rx,
         });
         let request = test_request("a", 0);
-        store.visible.insert(request.key.clone());
+        store.wanted.insert(request.key.clone());
         store.pending.insert(request.key.clone(), request.epoch);
 
         store.finish_frame();
