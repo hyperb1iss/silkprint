@@ -37,7 +37,7 @@ use self::chrome::Chrome;
 use self::images::{ImageStore, Placement};
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::{Block, LinkTarget, RenderedDoc, Rgb, Span as ModelSpan};
+use super::model::{Block, LinkTarget, RenderedDoc, Rgb};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
@@ -47,7 +47,6 @@ const OUTLINE_WIDTH: u16 = 30;
 /// guards against a pathologically tall input flooding the content flow.
 const MAX_BAND_ROWS: u16 = 400;
 const IMAGE_PREFETCH_MIN_ROWS: u16 = 48;
-const IMAGE_PRIME_ROWS: u16 = 96;
 const MOUSE_SCROLL_ROWS: i32 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -75,6 +74,20 @@ struct LinkRegion {
     start: u16,
     end: u16,
     target: LinkTarget,
+}
+
+enum Osc8Target {
+    Open(LinkTarget),
+    Close,
+}
+
+#[derive(Clone)]
+struct ThemeSnapshot {
+    theme: ResolvedTheme,
+    chrome: Chrome,
+    theme_idx: usize,
+    current_theme_name: Option<String>,
+    saved_theme_name: Option<String>,
 }
 
 /// Launch the interactive reader. Sets up and tears down the terminal
@@ -171,7 +184,7 @@ struct App {
     show_help: bool,
     show_picker: bool,
     picker_state: ListState,
-    picker_saved: usize,
+    picker_saved: Option<ThemeSnapshot>,
     picker_area: Rect,
 
     pending_g: bool,
@@ -281,7 +294,7 @@ impl App {
             show_help: false,
             show_picker: false,
             picker_state: ListState::default(),
-            picker_saved: 0,
+            picker_saved: None,
             picker_area: Rect::default(),
             pending_g: false,
             drag_row: None,
@@ -426,6 +439,15 @@ impl App {
         };
         let (ansi, offsets) =
             super::ansi::render_with_offsets(&self.doc, &self.theme, &caps, self.glyphs);
+        let link_regions = if self.doc.links.is_empty() {
+            Vec::new()
+        } else {
+            let mut link_caps = caps;
+            link_caps.is_tty = true;
+            let (linked_ansi, _) =
+                super::ansi::render_with_offsets(&self.doc, &self.theme, &link_caps, self.glyphs);
+            link_regions_from_osc(&linked_ansi)
+        };
         self.content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
 
         let resolver = ContentStyleResolver::new(&self.theme);
@@ -447,13 +469,12 @@ impl App {
 
         self.block_spans = offsets;
         self.block_jump = self.block_spans.iter().map(|(start, _)| *start).collect();
+        self.link_regions = link_regions;
         self.image_placements.clear();
         if self.images.enabled() {
             let image_width = width.saturating_sub(2);
             self.reserve_bands(image_width);
-            self.prime_image_rows(image_width);
         }
-        self.link_regions = build_link_regions(&self.doc, &self.content);
         self.rendered_width = width;
         self.theme_dirty = false;
         self.clamp_scroll();
@@ -534,6 +555,13 @@ impl App {
             let shift =
                 isize::try_from(band).unwrap_or(0) - isize::try_from(end - start).unwrap_or(0);
             delta += shift;
+            self.link_regions
+                .retain(|region| region.line < start || region.line >= end);
+            for region in &mut self.link_regions {
+                if region.line >= end {
+                    region.line = shift_line(region.line, shift);
+                }
+            }
             for jump in self.block_jump.iter_mut().skip(block_index + 1) {
                 *jump = usize::try_from(isize::try_from(*jump).unwrap_or(0) + shift).unwrap_or(0);
             }
@@ -542,23 +570,6 @@ impl App {
                 line: u16::try_from(start).unwrap_or(u16::MAX),
                 rows: img_rows,
             });
-        }
-    }
-
-    fn prime_image_rows(&mut self, content_width: u16) {
-        let rows = self
-            .viewport_h
-            .saturating_mul(2)
-            .clamp(IMAGE_PREFETCH_MIN_ROWS, IMAGE_PRIME_ROWS);
-        for placement in &self.image_placements {
-            self.images.warm_rows(
-                &placement.src,
-                placement.line,
-                0,
-                rows,
-                placement.rows,
-                content_width,
-            );
         }
     }
 
@@ -846,15 +857,19 @@ impl App {
     }
 
     fn open_url(&mut self, url: &str) {
-        let target = open_target(url, self.base_dir.as_deref());
         let label = truncate_plain(super::layout::sanitize(url).as_ref(), 54);
-        match open::that_detached(&target) {
-            Ok(()) => self.status_message = Some(format!("opened {label}")),
-            Err(err) => {
-                self.status_message = Some(format!(
-                    "open failed: {}",
-                    truncate_plain(&err.to_string(), 48)
-                ));
+        match open_target(url, self.base_dir.as_deref()) {
+            Ok(target) => match open::that_detached(&target) {
+                Ok(()) => self.status_message = Some(format!("opened {label}")),
+                Err(err) => {
+                    self.status_message = Some(format!(
+                        "open failed: {}",
+                        truncate_plain(&err.to_string(), 48)
+                    ));
+                }
+            },
+            Err(reason) => {
+                self.status_message = Some(format!("blocked link: {reason}"));
             }
         }
     }
@@ -915,17 +930,20 @@ impl App {
 
     fn open_picker(&mut self) {
         self.show_picker = true;
-        self.picker_saved = self.theme_idx;
+        self.picker_saved = Some(self.theme_snapshot());
         self.picker_state.select(Some(self.theme_idx));
     }
 
     fn picker_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Esc => {
-                self.apply_theme(self.picker_saved);
+                if let Some(saved) = self.picker_saved.take() {
+                    self.restore_theme(saved);
+                }
                 self.show_picker = false;
             }
             KeyCode::Enter => {
+                self.picker_saved = None;
                 self.show_picker = false;
                 self.save_config();
             }
@@ -950,6 +968,26 @@ impl App {
         self.apply_theme(next); // live preview
     }
 
+    fn theme_snapshot(&self) -> ThemeSnapshot {
+        ThemeSnapshot {
+            theme: self.theme.clone(),
+            chrome: self.chrome,
+            theme_idx: self.theme_idx,
+            current_theme_name: self.current_theme_name.clone(),
+            saved_theme_name: self.saved_theme_name.clone(),
+        }
+    }
+
+    fn restore_theme(&mut self, snapshot: ThemeSnapshot) {
+        self.theme = snapshot.theme;
+        self.chrome = snapshot.chrome;
+        self.theme_idx = snapshot.theme_idx;
+        self.current_theme_name = snapshot.current_theme_name;
+        self.saved_theme_name = snapshot.saved_theme_name;
+        self.theme_dirty = true;
+        self.images.clear_generated();
+    }
+
     fn picker_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollDown => self.picker_step(true),
@@ -958,6 +996,7 @@ impl App {
                 if let Some(idx) = self.picker_index_at(mouse.column, mouse.row) {
                     self.picker_state.select(Some(idx));
                     self.apply_theme(idx);
+                    self.picker_saved = None;
                     self.show_picker = false;
                     self.save_config();
                 }
@@ -1047,7 +1086,9 @@ impl App {
         // then reuses every cached tile except the newly exposed edge row.
         let scroll = u32::from(self.scroll);
         let viewport = u32::from(area.height);
-        let prefetch = viewport.max(u32::from(IMAGE_PREFETCH_MIN_ROWS));
+        let prefetch = viewport
+            .saturating_mul(2)
+            .max(u32::from(IMAGE_PREFETCH_MIN_ROWS));
         let prefetch_top = scroll.saturating_sub(prefetch);
         let prefetch_bottom = scroll.saturating_add(viewport).saturating_add(prefetch);
         let placements = std::mem::take(&mut self.image_placements);
@@ -1308,185 +1349,165 @@ fn contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
-#[derive(Default)]
-struct TextCursor {
-    line: usize,
-    ch: usize,
-}
-
-struct LinkText {
-    text: String,
-    target: LinkTarget,
-}
-
-fn build_link_regions(doc: &RenderedDoc, content: &Text<'static>) -> Vec<LinkRegion> {
-    let plain: Vec<String> = content.lines.iter().map(line_plain_text).collect();
-    let mut texts = Vec::new();
-    collect_block_links(&doc.blocks, &doc.links, &mut texts);
-    let mut cursor = TextCursor::default();
+fn link_regions_from_osc(ansi: &str) -> Vec<LinkRegion> {
+    let mut chars = ansi.chars().peekable();
     let mut regions = Vec::new();
-    for text in texts {
-        for chunk in text.text.split_whitespace() {
-            if let Some(region) = find_link_region(&plain, chunk, &mut cursor, &text.target) {
-                regions.push(region);
+    let mut target: Option<LinkTarget> = None;
+    let mut active: Option<(usize, usize, LinkTarget)> = None;
+    let mut line = 0usize;
+    let mut col = 0usize;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            match chars.next() {
+                Some(']') => {
+                    flush_link_region(&mut active, line, col, &mut regions);
+                    match osc8_target(&read_osc(&mut chars)) {
+                        Some(Osc8Target::Open(next)) => target = Some(next),
+                        Some(Osc8Target::Close) => target = None,
+                        None => {}
+                    }
+                }
+                Some('[') => skip_csi(&mut chars),
+                _ => {}
             }
+            continue;
         }
+        if ch == '\n' {
+            flush_link_region(&mut active, line, col, &mut regions);
+            line = line.saturating_add(1);
+            col = 0;
+            continue;
+        }
+        let width = char_width(ch);
+        if let Some(link) = target.as_ref().filter(|_| !ch.is_whitespace() && width > 0) {
+            active.get_or_insert_with(|| (line, col, link.clone()));
+        } else {
+            flush_link_region(&mut active, line, col, &mut regions);
+        }
+        col = col.saturating_add(width);
     }
+    flush_link_region(&mut active, line, col, &mut regions);
     regions
 }
 
-fn collect_block_links(blocks: &[Block], targets: &[LinkTarget], out: &mut Vec<LinkText>) {
-    for block in blocks {
-        match block {
-            Block::Heading { spans, .. } | Block::Paragraph(spans) => {
-                collect_span_links(spans, targets, out);
-            }
-            Block::CodeBlock { lines, .. } | Block::FieldStack(lines) => {
-                for line in lines {
-                    collect_span_links(line, targets, out);
-                }
-            }
-            Block::Quote(inner) | Block::Center(inner) => collect_block_links(inner, targets, out),
-            Block::List(list) => {
-                for item in &list.items {
-                    collect_block_links(&item.blocks, targets, out);
-                }
-            }
-            Block::Table(table) => {
-                for cell in &table.header {
-                    collect_span_links(cell, targets, out);
-                }
-                for row in &table.rows {
-                    for cell in row {
-                        collect_span_links(cell, targets, out);
-                    }
-                }
-            }
-            Block::Alert { body, .. } => collect_block_links(body, targets, out),
-            Block::DescriptionList(items) => {
-                for item in items {
-                    collect_span_links(&item.term, targets, out);
-                    collect_block_links(&item.details, targets, out);
-                }
-            }
-            Block::Image { .. } | Block::Math { .. } | Block::Rule => {}
+fn read_osc(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut payload = String::new();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{7}' {
+            break;
+        }
+        if ch == '\u{1b}' && matches!(chars.peek(), Some('\\')) {
+            chars.next();
+            break;
+        }
+        payload.push(ch);
+    }
+    payload
+}
+
+fn skip_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    for ch in chars.by_ref() {
+        if ('\u{40}'..='\u{7e}').contains(&ch) {
+            break;
         }
     }
 }
 
-fn collect_span_links(spans: &[ModelSpan], targets: &[LinkTarget], out: &mut Vec<LinkText>) {
-    let mut current: Option<(usize, String)> = None;
-    for span in spans {
-        if span.link == current.as_ref().map(|(id, _)| *id) {
-            if let Some((_id, text)) = &mut current {
-                text.push_str(&span.text);
-            }
-            continue;
-        }
-        flush_link_text(&mut current, targets, out);
-        if let Some(id) = span.link {
-            current = Some((id, span.text.clone()));
-        }
+fn osc8_target(payload: &str) -> Option<Osc8Target> {
+    let value = payload.strip_prefix("8;;")?;
+    if value.is_empty() {
+        return Some(Osc8Target::Close);
     }
-    flush_link_text(&mut current, targets, out);
-}
-
-fn flush_link_text(
-    current: &mut Option<(usize, String)>,
-    targets: &[LinkTarget],
-    out: &mut Vec<LinkText>,
-) {
-    let Some((id, text)) = current.take() else {
-        return;
-    };
-    let Some(target) = targets.get(id) else {
-        return;
-    };
-    if !text.trim().is_empty() {
-        out.push(LinkText {
-            text,
-            target: target.clone(),
-        });
-    }
-}
-
-fn line_plain_text(line: &Line<'static>) -> String {
-    line.spans
-        .iter()
-        .map(|span| span.content.as_ref())
-        .collect()
-}
-
-fn find_link_region(
-    lines: &[String],
-    needle: &str,
-    cursor: &mut TextCursor,
-    target: &LinkTarget,
-) -> Option<LinkRegion> {
-    let needle_chars: Vec<char> = needle.chars().collect();
-    if needle_chars.is_empty() {
-        return None;
-    }
-    for (line_idx, line) in lines.iter().enumerate().skip(cursor.line) {
-        let chars: Vec<char> = line.chars().collect();
-        let start = if line_idx == cursor.line {
-            cursor.ch.min(chars.len())
+    Some(Osc8Target::Open(
+        if let Some(anchor) = value.strip_prefix('#') {
+            LinkTarget::Anchor(anchor.to_string())
         } else {
-            0
-        };
-        if needle_chars.len() > chars.len().saturating_sub(start) {
-            continue;
-        }
-        for pos in start..=chars.len() - needle_chars.len() {
-            if chars[pos..pos + needle_chars.len()] == needle_chars {
-                let (start, end) = char_cell_range(&chars, pos, needle_chars.len());
-                cursor.line = line_idx;
-                cursor.ch = pos + needle_chars.len();
-                return Some(LinkRegion {
-                    line: line_idx,
-                    start,
-                    end,
-                    target: target.clone(),
-                });
-            }
-        }
-    }
-    None
+            LinkTarget::Url(value.to_string())
+        },
+    ))
 }
 
-fn char_cell_range(chars: &[char], start: usize, len: usize) -> (u16, u16) {
-    let before: usize = chars[..start].iter().map(|ch| char_width(*ch)).sum();
-    let width: usize = chars[start..start + len]
-        .iter()
-        .map(|ch| char_width(*ch))
-        .sum();
-    let start = u16::try_from(before).unwrap_or(u16::MAX);
-    let end = u16::try_from(before.saturating_add(width.max(1))).unwrap_or(u16::MAX);
-    (start, end)
+fn flush_link_region(
+    active: &mut Option<(usize, usize, LinkTarget)>,
+    line: usize,
+    end: usize,
+    regions: &mut Vec<LinkRegion>,
+) {
+    let Some((start_line, start, target)) = active.take() else {
+        return;
+    };
+    if start_line != line || start >= end {
+        return;
+    }
+    regions.push(LinkRegion {
+        line,
+        start: u16::try_from(start).unwrap_or(u16::MAX),
+        end: u16::try_from(end).unwrap_or(u16::MAX),
+        target,
+    });
+}
+
+fn shift_line(line: usize, shift: isize) -> usize {
+    if shift >= 0 {
+        line.saturating_add(shift.unsigned_abs())
+    } else {
+        line.saturating_sub(shift.unsigned_abs())
+    }
 }
 
 fn char_width(ch: char) -> usize {
     ch.width().unwrap_or(0)
 }
 
-fn open_target(url: &str, base_dir: Option<&std::path::Path>) -> OsString {
-    if has_uri_scheme(url) || std::path::Path::new(url).is_absolute() {
-        return OsString::from(url);
+fn open_target(url: &str, base_dir: Option<&std::path::Path>) -> Result<OsString, &'static str> {
+    if let Some(scheme) = uri_scheme(url) {
+        return if matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "mailto"
+        ) {
+            Ok(OsString::from(url))
+        } else {
+            Err("unsupported scheme")
+        };
     }
-    base_dir.map_or_else(
-        || OsString::from(url),
-        |base| base.join(url).into_os_string(),
-    )
+    let path = std::path::Path::new(url);
+    if path.is_absolute() {
+        return Err("absolute path");
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    }) {
+        return Err("path escapes document");
+    }
+    let Some(base) = base_dir else {
+        return Ok(OsString::from(url));
+    };
+    let canon_base = base
+        .canonicalize()
+        .map_err(|_| "document directory unavailable")?;
+    let target = canon_base
+        .join(path)
+        .canonicalize()
+        .map_err(|_| "local link missing")?;
+    if !target.starts_with(&canon_base) {
+        return Err("path escapes document");
+    }
+    Ok(target.into_os_string())
 }
 
-fn has_uri_scheme(value: &str) -> bool {
-    let Some((scheme, _rest)) = value.split_once(':') else {
-        return false;
-    };
-    !scheme.is_empty()
-        && scheme
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+fn uri_scheme(value: &str) -> Option<&str> {
+    let (scheme, _rest) = value.split_once(':')?;
+    let mut chars = scheme.chars();
+    let first = chars.next()?;
+    (first.is_ascii_alphabetic()
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
+    .then_some(scheme)
 }
 
 fn rgb_to_color(rgb: Rgb) -> Color {
@@ -1765,6 +1786,88 @@ mod tests {
     }
 
     #[test]
+    fn picker_escape_restores_custom_theme_snapshot() {
+        let mut app = App::new_with_config(
+            "# Title\n",
+            load_theme_or_default("silk-light"),
+            "Custom Theme",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig {
+                theme: Some("silkcircuit-dawn".to_string()),
+                outline: Some(true),
+                glyphs: Some("unicode".to_string()),
+            },
+        );
+
+        app.open_picker();
+        app.picker_step(true);
+        assert!(app.current_theme_name.is_some());
+        app.picker_key(KeyCode::Esc);
+
+        assert!(app.current_theme_name.is_none());
+        assert_eq!(
+            app.reader_config().theme.as_deref(),
+            Some("silkcircuit-dawn")
+        );
+    }
+
+    #[test]
+    fn open_target_allows_safe_links_and_blocks_risky_targets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let base = dir.path();
+        std::fs::write(base.join("chapter.md"), "# Chapter\n").expect("chapter");
+        std::fs::write(base.join("1:note.md"), "# Note\n").expect("note");
+
+        assert!(open_target("https://example.com", Some(base)).is_ok());
+        assert!(open_target("HTTPS://example.com", Some(base)).is_ok());
+        assert!(open_target("mailto:hi@example.com", Some(base)).is_ok());
+        assert!(open_target("MAILTO:hi@example.com", Some(base)).is_ok());
+        assert!(open_target("chapter.md", Some(base)).is_ok());
+        assert!(open_target("1:note.md", Some(base)).is_ok());
+        assert!(open_target("javascript:alert(1)", Some(base)).is_err());
+        assert!(open_target("/etc/passwd", Some(base)).is_err());
+        assert!(open_target("../secret.md", Some(base)).is_err());
+
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().expect("outside");
+            let secret = outside.path().join("secret.md");
+            std::fs::write(&secret, "# Secret\n").expect("secret");
+            std::os::unix::fs::symlink(&secret, base.join("linked-secret.md")).expect("symlink");
+            assert!(open_target("linked-secret.md", Some(base)).is_err());
+        }
+    }
+
+    #[test]
+    fn osc_link_regions_ignore_styled_non_links() {
+        let regions = link_regions_from_osc(
+            "\u{1b}[4mfoo\u{1b}[0m \u{1b}]8;;https://example.com\u{1b}\\\
+             \u{1b}[4mfoo\u{1b}[0m\u{1b}]8;;\u{1b}\\",
+        );
+
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start, 4);
+        assert!(matches!(
+            &regions[0].target,
+            LinkTarget::Url(url) if url == "https://example.com"
+        ));
+    }
+
+    #[test]
+    fn osc_link_regions_keep_anchor_targets() {
+        let regions = link_regions_from_osc("\u{1b}]8;;#target\u{1b}\\Jump\u{1b}]8;;\u{1b}\\");
+
+        assert_eq!(regions.len(), 1);
+        assert!(matches!(
+            &regions[0].target,
+            LinkTarget::Anchor(anchor) if anchor == "target"
+        ));
+    }
+
+    #[test]
     fn link_regions_track_rendered_link_cells() {
         let mut app = App::new_with_config(
             "# Title\n\nA [SilkPrint](https://example.com) link.\n",
@@ -1788,6 +1891,32 @@ mod tests {
 
         assert!(app.link_at(region.line, region.start).is_some());
         assert!(app.link_at(region.line, region.end).is_none());
+    }
+
+    #[test]
+    fn link_regions_ignore_matching_plain_text() {
+        let mut app = App::new_with_config(
+            "# Title\n\nfoo [foo](https://example.com)\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 20);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let region = app
+            .link_regions
+            .iter()
+            .find(|region| matches!(&region.target, LinkTarget::Url(url) if url == "https://example.com"))
+            .expect("link region");
+
+        assert!(region.start > 2, "plain leading foo should not be linked");
+        assert!(app.link_at(region.line, 2).is_none());
+        assert!(app.link_at(region.line, region.start).is_some());
     }
 
     #[test]
@@ -1842,5 +1971,68 @@ mod tests {
         });
 
         assert!(app.scroll > before);
+    }
+
+    #[test]
+    fn draw_content_prefetches_scroll_horizon_and_cancels_old_rows() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let image_path = dir.path().join("big.png");
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            128,
+            4096,
+            image::Rgba([64, 96, 160, 255]),
+        ))
+        .save(&image_path)
+        .expect("save image");
+        let mut app = App::new_with_config(
+            "# Title\n\n![Big](big.png)\n\nAfter\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            Some(Picker::halfblocks()),
+            Some(dir.path().to_path_buf()),
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(80, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let placement = app
+            .image_placements
+            .iter()
+            .find(|placement| placement.src == "big.png")
+            .cloned()
+            .expect("image placement");
+        let first_rows = app.images.pending_rows_for(&placement.src, placement.line);
+        let first_visible_bottom = u32::from(app.scroll) + u32::from(app.content_area.height);
+        assert!(
+            first_rows
+                .iter()
+                .any(|row| u32::from(placement.line) + u32::from(*row) >= first_visible_bottom),
+            "first draw should prefetch beyond visible rows"
+        );
+
+        app.set_scroll(app.max_scroll());
+        terminal.draw(|f| app.draw(f)).expect("redraw");
+        let rows = app.images.pending_rows_for(&placement.src, placement.line);
+        let scroll = u32::from(app.scroll);
+        let viewport = u32::from(app.content_area.height);
+        let prefetch = viewport
+            .saturating_mul(2)
+            .max(u32::from(IMAGE_PREFETCH_MIN_ROWS));
+        let top = scroll.saturating_sub(prefetch);
+        let bottom = scroll.saturating_add(viewport).saturating_add(prefetch);
+
+        assert!(
+            !rows.is_empty(),
+            "redraw should keep new horizon rows pending"
+        );
+        assert!(
+            rows.iter().all(|row| {
+                let abs = u32::from(placement.line) + u32::from(*row);
+                abs >= top && abs < bottom
+            }),
+            "rows outside the new scroll horizon should be canceled"
+        );
     }
 }

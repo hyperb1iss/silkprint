@@ -159,6 +159,10 @@ impl Renderer<'_> {
                     let safe = super::layout::sanitize(url);
                     let _ = write!(out, "\x1b]8;;{safe}\x1b\\{painted}\x1b]8;;\x1b\\");
                 }
+                Some(LinkTarget::Anchor(anchor)) if self.caps.is_tty => {
+                    let safe = super::layout::sanitize(anchor);
+                    let _ = write!(out, "\x1b]8;;#{safe}\x1b\\{painted}\x1b]8;;\x1b\\");
+                }
                 _ => out.push_str(&painted),
             }
         }
