@@ -13,7 +13,7 @@ pub fn validate_links<'a>(
     for node in root.descendants() {
         let target = match &node.data.borrow().value {
             NodeValue::Link(link) | NodeValue::Image(link) => Some(link.url.clone()),
-            NodeValue::WikiLink(link) => Some(link.url.clone()),
+            NodeValue::WikiLink(link) => Some(wikilink_target(&link.url)),
             _ => None,
         };
         let Some(target) = target else {
@@ -60,6 +60,28 @@ fn local_target_path(target: &str, base_dir: Option<&Path>) -> PathBuf {
     }
 }
 
+fn wikilink_target(target: &str) -> String {
+    let (path, anchor) = target
+        .split_once('#')
+        .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
+    if path.is_empty() || uri_scheme(path).is_some() || Path::new(path).extension().is_some() {
+        return target.to_string();
+    }
+    anchor.map_or_else(
+        || format!("{path}.md"),
+        |anchor| format!("{path}.md#{anchor}"),
+    )
+}
+
+fn uri_scheme(value: &str) -> Option<&str> {
+    let (scheme, _rest) = value.split_once(':')?;
+    let mut chars = scheme.chars();
+    let first = chars.next()?;
+    (first.is_ascii_alphabetic()
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
+    .then_some(scheme)
+}
+
 #[cfg(test)]
 mod tests {
     use super::validate_links;
@@ -75,5 +97,18 @@ mod tests {
         validate_links(root, Some(&dir.path().join("doc.md")), &mut warnings);
 
         assert_eq!(warnings.warnings().len(), 1);
+    }
+
+    #[test]
+    fn wikilink_validation_uses_markdown_target() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("Guide.md"), "# Guide\n").expect("guide");
+        let arena = comrak::Arena::new();
+        let root = crate::render::markdown::parse(&arena, "[[Guide]]");
+        let mut warnings = WarningCollector::new();
+
+        validate_links(root, Some(&dir.path().join("doc.md")), &mut warnings);
+
+        assert!(warnings.is_empty());
     }
 }

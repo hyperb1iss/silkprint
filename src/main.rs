@@ -627,6 +627,12 @@ fn read_document_input(input_path: &std::path::Path) -> miette::Result<InputDocu
             source: e,
         }
     })?;
+    if is_csv_path(input_path) {
+        return Ok(InputDocument {
+            body: format!("```csv\n{}\n```\n", body.trim_end()),
+            watch_path: Some(input_path.to_path_buf()),
+        });
+    }
     Ok(InputDocument {
         body,
         watch_path: Some(input_path.to_path_buf()),
@@ -654,6 +660,12 @@ fn is_direct_asset_path(path: &std::path::Path) -> bool {
                 "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "avif" | "ico" | "svg"
             )
         })
+}
+
+fn is_csv_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
 }
 
 fn append_link_warnings(
@@ -1111,7 +1123,7 @@ fn main() -> miette::Result<()> {
 mod tests {
     use std::path::Path;
 
-    use super::{direct_asset_markdown, should_page_output};
+    use super::{direct_asset_markdown, read_document_input, should_page_output};
 
     #[test]
     fn pages_only_tty_output_that_exceeds_height() {
@@ -1129,5 +1141,17 @@ mod tests {
         let markdown = direct_asset_markdown(Path::new("screen shot.svg")).expect("asset");
 
         assert_eq!(markdown, "![screen shot](<screen shot.svg>)\n");
+    }
+
+    #[test]
+    fn direct_csv_inputs_become_csv_fences() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("data.csv");
+        std::fs::write(&path, "name,count\nalpha,1\n").expect("write csv");
+
+        let document = read_document_input(&path).expect("read document");
+
+        assert_eq!(document.body, "```csv\nname,count\nalpha,1\n```\n");
+        assert_eq!(document.watch_path.as_deref(), Some(path.as_path()));
     }
 }

@@ -18,7 +18,7 @@ use std::io;
 use std::io::Write as _;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, ExitStatus};
 use std::time::Duration;
 use url::Url;
 
@@ -29,6 +29,7 @@ use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
     MouseButton, MouseEvent, MouseEventKind,
 };
+use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -372,6 +373,7 @@ struct App {
     theme: ResolvedTheme,
     glyphs: Glyphs,
     keybindings: KeyBindings,
+    picker: Option<Picker>,
 
     theme_names: Vec<String>,
     theme_idx: usize,
@@ -556,7 +558,7 @@ impl App {
             .cloned();
 
         let glyphs = Glyphs::new(glyph_override.unwrap_or(GlyphTier::NerdFont));
-        let tab = TabState::from_body(body, picker, base_dir, watch_path, origin);
+        let tab = TabState::from_body(body, picker.clone(), base_dir, watch_path, origin);
         let keybindings = KeyBindings::from_config(&settings.user.keybindings);
         let bookmarks = bookmarks_from_config(&settings.user.bookmarks);
         let saved = settings.reader;
@@ -569,6 +571,7 @@ impl App {
             theme,
             glyphs,
             keybindings,
+            picker,
             chrome: Chrome::for_theme(theme_name),
             theme_names,
             theme_idx,
@@ -686,7 +689,7 @@ impl App {
         let mut restored: Vec<TabState> = session
             .tabs
             .iter()
-            .filter_map(Self::load_session_tab)
+            .filter_map(|tab| self.load_session_tab(tab))
             .collect();
         if restored.is_empty() {
             return;
@@ -700,8 +703,9 @@ impl App {
         self.tabs = restored;
     }
 
-    fn load_session_tab(saved: &super::config::SessionTab) -> Option<TabState> {
+    fn load_session_tab(&self, saved: &super::config::SessionTab) -> Option<TabState> {
         let body = std::fs::read_to_string(&saved.path).ok()?;
+        let body = markdown_body_for_path(&saved.path, body);
         let base = saved
             .path
             .canonicalize()
@@ -710,7 +714,7 @@ impl App {
             .or_else(|| saved.path.parent().map(std::path::Path::to_path_buf));
         let mut tab = TabState::from_body(
             &body,
-            None,
+            self.picker.clone(),
             base,
             Some(saved.path.clone()),
             Some(DocumentOrigin::local(saved.path.clone())),
@@ -748,6 +752,7 @@ impl App {
         let Ok(body) = std::fs::read_to_string(&path) else {
             return;
         };
+        let body = markdown_body_for_path(&path, body);
         self.rewalk(&body);
     }
 
@@ -795,6 +800,7 @@ impl App {
             ));
             return false;
         };
+        let body = markdown_body_for_path(path, body);
         let base = path
             .canonicalize()
             .ok()
@@ -1628,7 +1634,7 @@ impl App {
             .or_else(|| path.parent().map(Path::to_path_buf));
         let tab = TabState::from_body(
             &body,
-            None,
+            self.picker.clone(),
             base,
             Some(path.to_path_buf()),
             Some(DocumentOrigin::local(path.to_path_buf())),
@@ -1651,11 +1657,31 @@ impl App {
             let width = self.content_area.width.max(80);
             self.ensure_content(width);
             self.run_search();
+            self.scroll_to_search_result_line(line);
         }
         self.status_message = Some(format!(
             "opened {}:{line}",
             truncate_plain(&path.display().to_string(), 42)
         ));
+    }
+
+    fn scroll_to_search_result_line(&mut self, line: usize) {
+        if self.matches.is_empty() {
+            return;
+        }
+        let needle = self.search_query.to_lowercase();
+        let occurrence = self
+            .source
+            .lines()
+            .take(line)
+            .filter(|source_line| source_line.to_lowercase().contains(&needle))
+            .count()
+            .saturating_sub(1);
+        let idx = occurrence.min(self.matches.len().saturating_sub(1));
+        if let Some(&matched_line) = self.matches.get(idx) {
+            self.match_idx = idx;
+            self.set_scroll(u16::try_from(matched_line).unwrap_or(u16::MAX));
+        }
     }
 
     fn move_down(&mut self) {
@@ -1793,7 +1819,9 @@ impl App {
     }
 
     fn reveal_raw_at_cursor(&mut self) {
-        let raw_idx = usize::from(self.scroll);
+        let raw_idx = self
+            .raw_line_at_rendered_cursor()
+            .unwrap_or(usize::from(self.scroll));
         let Some(line) = self.source.lines().nth(raw_idx) else {
             self.status_message = Some("raw: <end of file>".to_string());
             return;
@@ -1802,6 +1830,27 @@ impl App {
             "raw: {}",
             truncate_plain(super::layout::sanitize(line).as_ref(), 68)
         ));
+    }
+
+    fn raw_line_at_rendered_cursor(&self) -> Option<usize> {
+        let line = usize::from(self.scroll);
+        let (target_idx, _) =
+            self.block_spans
+                .iter()
+                .enumerate()
+                .find(|(_, (start, height))| {
+                    let end = start.saturating_add(*height).max(start.saturating_add(1));
+                    line >= *start && line < end
+                })?;
+        let mut start_line = 0;
+        for (idx, block) in self.doc.blocks.iter().enumerate().take(target_idx + 1) {
+            let found = source_line_for_block(block, &self.source, start_line)?;
+            if idx == target_idx {
+                return Some(found);
+            }
+            start_line = found.saturating_add(1);
+        }
+        None
     }
 
     fn open_editor(&mut self) {
@@ -1813,12 +1862,14 @@ impl App {
             self.status_message = Some("set EDITOR to edit this file".to_string());
             return;
         };
-        match ProcessCommand::new(&program).args(args).arg(&path).spawn() {
-            Ok(_) => {
+        match run_editor(&program, &args, &path) {
+            Ok(status) => {
                 self.status_message = Some(format!(
-                    "editor opened {}",
-                    truncate_plain(&path.display().to_string(), 42)
+                    "editor {} {}",
+                    if status.success() { "saved" } else { "exited" },
+                    truncate_plain(&path.display().to_string(), 42),
                 ));
+                self.reload();
             }
             Err(err) => {
                 self.status_message = Some(format!(
@@ -2658,6 +2709,21 @@ fn editor_command() -> Option<(String, Vec<String>)> {
     Some((program, args))
 }
 
+fn run_editor(program: &str, args: &[String], path: &Path) -> io::Result<ExitStatus> {
+    {
+        let mut stdout = io::stdout();
+        ratatui::crossterm::execute!(stdout, DisableMouseCapture, LeaveAlternateScreen)?;
+    }
+    ratatui::crossterm::terminal::disable_raw_mode()?;
+    let status = ProcessCommand::new(program).args(args).arg(path).status();
+    ratatui::crossterm::terminal::enable_raw_mode()?;
+    {
+        let mut stdout = io::stdout();
+        ratatui::crossterm::execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    }
+    status
+}
+
 fn selected_text(
     lines: &[Line<'static>],
     start: (usize, u16),
@@ -2696,6 +2762,69 @@ fn plain_line(line: &Line<'static>) -> String {
         .iter()
         .map(|span| span.content.as_ref())
         .collect()
+}
+
+fn source_line_for_block(block: &Block, source: &str, start_line: usize) -> Option<usize> {
+    let needle = match block {
+        Block::Heading { spans, .. }
+        | Block::Paragraph(spans)
+        | Block::Details { summary: spans, .. } => spans_plain_text(spans),
+        Block::Image { src, alt } => {
+            if alt.is_empty() {
+                src.clone()
+            } else {
+                alt.clone()
+            }
+        }
+        Block::CodeBlock { lang, lines } => lang.clone().unwrap_or_else(|| {
+            lines
+                .first()
+                .map_or_else(String::new, |line| spans_plain_text(line))
+        }),
+        Block::Math { source, .. } => source.clone(),
+        Block::Table(table) => table
+            .header
+            .first()
+            .map_or_else(String::new, |cell| spans_plain_text(cell)),
+        Block::Quote(inner) | Block::Center(inner) => {
+            return inner
+                .first()
+                .and_then(|block| source_line_for_block(block, source, start_line));
+        }
+        Block::Alert { title, .. } => title.clone(),
+        Block::List(list) => {
+            return list
+                .items
+                .first()
+                .and_then(|item| item.blocks.first())
+                .and_then(|block| source_line_for_block(block, source, start_line));
+        }
+        Block::DescriptionList(items) => items
+            .first()
+            .map_or_else(String::new, |item| spans_plain_text(&item.term)),
+        Block::FieldStack(lines) => lines
+            .first()
+            .map_or_else(String::new, |line| spans_plain_text(line)),
+        Block::Rule => String::new(),
+    };
+    let needle = needle.trim();
+    source
+        .lines()
+        .enumerate()
+        .skip(start_line)
+        .find_map(|(idx, line)| {
+            if needle.is_empty() {
+                (!line.trim().is_empty()).then_some(idx)
+            } else {
+                (line.contains(needle)
+                    || line.contains(&needle.chars().take(24).collect::<String>()))
+                .then_some(idx)
+            }
+        })
+}
+
+fn spans_plain_text(spans: &[super::model::Span]) -> String {
+    spans.iter().map(|span| span.text.as_str()).collect()
 }
 
 fn slice_chars(value: &str, start: usize, end: usize) -> String {
@@ -2892,6 +3021,20 @@ fn is_markdown_path(path: &Path) -> bool {
                 "md" | "markdown" | "mdown" | "mkd" | "mdwn" | "mkdn"
             )
         })
+}
+
+fn markdown_body_for_path(path: &Path, body: String) -> String {
+    if is_csv_path(path) {
+        format!("```csv\n{}\n```\n", body.trim_end())
+    } else {
+        body
+    }
+}
+
+fn is_csv_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
 }
 
 fn link_preview(target: &LinkTarget) -> String {
@@ -3390,6 +3533,30 @@ mod tests {
     }
 
     #[test]
+    fn reload_keeps_csv_files_as_tables() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("data.csv");
+        std::fs::write(&path, "name,count\nalpha,1\n").expect("write");
+        let mut app = App::new(
+            "```csv\nname,count\nalpha,1\n```\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(path.clone()),
+        );
+
+        std::fs::write(&path, "name,count\nbeta,2\n").expect("rewrite");
+        app.reload();
+
+        let Some(Block::Table(table)) = app.doc.blocks.first() else {
+            panic!("expected csv table: {:?}", app.doc.blocks);
+        };
+        assert_eq!(table.rows[0][0][0].text, "beta");
+    }
+
+    #[test]
     fn follows_local_markdown_links_with_history() {
         let dir = tempfile::tempdir().expect("tempdir");
         let a = dir.path().join("a.md");
@@ -3770,7 +3937,7 @@ mod tests {
             load_theme_or_default("silk-light"),
             "silk-light",
             Some(GlyphTier::Unicode),
-            None,
+            Some(Picker::halfblocks()),
             Some(dir.path().to_path_buf()),
             Some(a.clone()),
         );
@@ -3807,7 +3974,7 @@ mod tests {
             load_theme_or_default("silk-light"),
             "silk-light",
             Some(GlyphTier::Unicode),
-            None,
+            Some(Picker::halfblocks()),
             Some(dir.path().to_path_buf()),
             Some(a.clone()),
         );
@@ -3831,6 +3998,7 @@ mod tests {
         assert_eq!(app.active_tab, 1);
         assert_eq!(app.title, "B");
         assert_eq!(app.scroll, 9);
+        assert!(app.images.enabled());
     }
 
     #[test]
@@ -3898,7 +4066,7 @@ mod tests {
             load_theme_or_default("silk-light"),
             "silk-light",
             Some(GlyphTier::Unicode),
-            None,
+            Some(Picker::halfblocks()),
             Some(dir.path().to_path_buf()),
             Some(current),
         );
@@ -3915,6 +4083,7 @@ mod tests {
         assert_eq!(app.tabs.len(), 2);
         assert_eq!(app.active_tab, 1);
         assert_eq!(app.title, "Other");
+        assert!(app.images.enabled());
     }
 
     #[test]
@@ -4005,6 +4174,46 @@ mod tests {
         assert_eq!(app.title, "Other");
         assert_eq!(app.search_query, "needle");
         assert!(!app.matches.is_empty());
+    }
+
+    #[test]
+    fn global_search_opens_selected_result_occurrence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let other = dir.path().join("other.md");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(
+            &other,
+            "# Other\n\nneedle first\n\nmiddle\n\nneedle second\n",
+        )
+        .expect("other");
+        let mut app = App::new(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current),
+        );
+
+        app.start_global_search();
+        app.global_query = "needle".to_string();
+        app.run_global_search();
+        let idx = app
+            .browser_entries
+            .iter()
+            .position(|entry| {
+                entry.path == other
+                    && matches!(entry.kind, BrowserEntryKind::SearchResult { line: 7 })
+            })
+            .expect("second result");
+        app.browser_state.select(Some(idx));
+        app.open_browser_selection();
+
+        assert_eq!(app.title, "Other");
+        assert_eq!(app.match_idx, 1);
+        assert_eq!(usize::from(app.scroll), app.matches[1]);
     }
 
     #[test]
@@ -4448,6 +4657,37 @@ mod tests {
         app.reveal_raw_at_cursor();
 
         assert_eq!(app.status_message.as_deref(), Some("raw: raw body"));
+    }
+
+    #[test]
+    fn reveal_raw_uses_block_source_line_for_wrapped_content() {
+        let body = "# Title\n\nthis paragraph is deliberately long enough to wrap inside a narrow test terminal\n";
+        let mut app = App::new_with_config(
+            body,
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(34, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let (start, height) = app.block_spans[1];
+        assert!(height > 1, "paragraph should wrap");
+        app.scroll = u16::try_from(start + 1).expect("scroll");
+
+        app.reveal_raw_at_cursor();
+
+        assert!(matches!(
+            app.status_message.as_deref(),
+            Some(message)
+                if message.starts_with(
+                    "raw: this paragraph is deliberately long enough to wrap"
+                )
+        ));
     }
 
     #[test]

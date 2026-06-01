@@ -312,8 +312,40 @@ impl<'a> Walker<'a, '_> {
 
     fn inlines_of(&mut self, nodes: &[&'a AstNode<'a>]) -> Vec<Span> {
         let mut out = Vec::new();
-        for &child in nodes {
+        let mut i = 0;
+        while i < nodes.len() {
+            if let NodeValue::HtmlInline(html) = &nodes[i].data.borrow().value
+                && is_opening_html_tag(html)
+            {
+                let mut buf = html.clone();
+                let mut depth = 1_usize;
+                i += 1;
+                while i < nodes.len() && depth > 0 {
+                    match &nodes[i].data.borrow().value {
+                        NodeValue::HtmlInline(s) => {
+                            buf.push_str(s);
+                            if is_opening_html_tag(s) {
+                                depth += 1;
+                            } else if is_closing_html_tag(s) {
+                                depth = depth.saturating_sub(1);
+                            }
+                        }
+                        NodeValue::Text(t) => buf.push_str(t),
+                        _ => break,
+                    }
+                    i += 1;
+                }
+                out.extend(inline_html_spans(
+                    &buf,
+                    &mut self.doc.links,
+                    self.origin,
+                    self.warnings,
+                ));
+                continue;
+            }
+            let child = nodes[i];
             self.inline_node(child, Role::Body, Mods::default(), None, &mut out);
+            i += 1;
         }
         out
     }
@@ -658,6 +690,53 @@ fn inline_html_text(html: &str) -> Option<String> {
     }
 }
 
+fn inline_html_spans(
+    html: &str,
+    links: &mut Vec<LinkTarget>,
+    origin: Option<&DocumentOrigin>,
+    warnings: &mut WarningCollector,
+) -> Vec<Span> {
+    let before = warnings.warnings().len();
+    let blocks = super::html::to_blocks_with_origin(html, links, origin);
+    let mut spans = Vec::new();
+    flatten_inline_blocks(&blocks, &mut spans);
+    if spans.is_empty() && warnings.warnings().len() == before {
+        warnings.push(SilkprintWarning::UnsupportedHtmlTag {
+            tag: tag_name(html),
+        });
+    }
+    spans
+}
+
+fn flatten_inline_blocks(blocks: &[Block], out: &mut Vec<Span>) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(spans) | Block::Heading { spans, .. } => {
+                if !out.is_empty() {
+                    out.push(Span::body(" "));
+                }
+                out.extend(spans.iter().cloned());
+            }
+            Block::Center(inner) | Block::Quote(inner) => flatten_inline_blocks(inner, out),
+            Block::Details { summary, .. } => out.extend(summary.iter().cloned()),
+            _ => {}
+        }
+    }
+}
+
+fn is_opening_html_tag(s: &str) -> bool {
+    let trimmed = s.trim();
+    trimmed.starts_with('<')
+        && !trimmed.starts_with("</")
+        && !trimmed.ends_with("/>")
+        && !trimmed.starts_with("<!--")
+        && trimmed.contains('>')
+}
+
+fn is_closing_html_tag(s: &str) -> bool {
+    s.trim().starts_with("</")
+}
+
 fn tag_name(html: &str) -> String {
     html.trim_start_matches(['<', '/'])
         .split(['>', ' '])
@@ -790,6 +869,29 @@ mod tests {
 
         assert!(matches!(&doc.links[0], LinkTarget::Url(url) if url == "Guide.md"));
         assert!(matches!(&doc.links[1], LinkTarget::Url(url) if url == "Docs/Intro.md#top"));
+    }
+
+    #[test]
+    fn inline_html_anchors_render_as_links() {
+        let arena = Arena::new();
+        let root = crate::render::markdown::parse(
+            &arena,
+            r#"A <a href="https://example.com">site</a> link."#,
+        );
+        let mut warnings = WarningCollector::new();
+
+        let doc = walk(root, &mut warnings);
+
+        assert!(warnings.is_empty());
+        assert!(matches!(&doc.links[0], LinkTarget::Url(url) if url == "https://example.com"));
+        let Block::Paragraph(spans) = &doc.blocks[0] else {
+            panic!("expected paragraph");
+        };
+        let span = spans
+            .iter()
+            .find(|span| span.text == "site")
+            .expect("linked span");
+        assert_eq!(span.link, Some(0));
     }
 
     #[test]
