@@ -82,6 +82,7 @@ enum Action {
     Search,
     GlobalSearch,
     Bookmarks,
+    ToggleDetails,
     ToggleFocus,
     NextMatch,
     PrevMatch,
@@ -191,6 +192,7 @@ struct TabState {
     match_idx: usize,
     images: ImageStore,
     image_placements: Vec<Placement>,
+    details_open: BTreeMap<usize, bool>,
     base_dir: Option<PathBuf>,
     path: Option<PathBuf>,
     origin: Option<DocumentOrigin>,
@@ -238,6 +240,7 @@ impl TabState {
             match_idx: 0,
             images: ImageStore::new(picker, base_dir.clone()),
             image_placements: Vec::new(),
+            details_open: BTreeMap::new(),
             base_dir,
             path: watch_path,
             origin,
@@ -762,6 +765,8 @@ impl App {
         if !has_outline {
             self.focus = Focus::Content; // outline may have vanished
         }
+        let len = self.doc.blocks.len();
+        self.details_open.retain(|idx, _| *idx < len);
         self.theme_dirty = true; // force ensure_content to re-render
     }
 
@@ -1000,15 +1005,16 @@ impl App {
             is_tty: false, // suppress OSC 8 — ratatui owns the screen
             in_tmux: false,
         };
+        let doc = details_view(&self.doc, &self.details_open);
         let (ansi, offsets) =
-            super::ansi::render_with_offsets(&self.doc, &self.theme, &caps, self.glyphs);
+            super::ansi::render_with_offsets(&doc, &self.theme, &caps, self.glyphs);
         let link_regions = if self.doc.links.is_empty() {
             Vec::new()
         } else {
             let mut link_caps = caps;
             link_caps.is_tty = true;
             let (linked_ansi, _) =
-                super::ansi::render_with_offsets(&self.doc, &self.theme, &link_caps, self.glyphs);
+                super::ansi::render_with_offsets(&doc, &self.theme, &link_caps, self.glyphs);
             link_regions_from_osc(&linked_ansi)
         };
         self.content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
@@ -1244,6 +1250,7 @@ impl App {
             }
             KeyCode::Char('S') => self.start_global_search(),
             KeyCode::Char('B') => self.open_bookmarks(),
+            KeyCode::Char('z') => self.toggle_details_at_cursor(),
             KeyCode::Tab => self.step_focus(),
             KeyCode::Char('n') => self.jump_match(true),
             KeyCode::Char('N') => self.jump_match(false),
@@ -1311,6 +1318,7 @@ impl App {
             }
             Action::GlobalSearch => self.start_global_search(),
             Action::Bookmarks => self.open_bookmarks(),
+            Action::ToggleDetails => self.toggle_details_at_cursor(),
             Action::ToggleFocus => self.step_focus(),
             Action::NextMatch => self.jump_match(true),
             Action::PrevMatch => self.jump_match(false),
@@ -1706,6 +1714,38 @@ impl App {
         self.jump_to_selected_heading();
         self.status_message = Some(format!("jumped to #{anchor}"));
         true
+    }
+
+    fn toggle_details_at_cursor(&mut self) {
+        let line = usize::from(self.scroll);
+        let Some((idx, block)) =
+            self.block_spans
+                .iter()
+                .enumerate()
+                .find_map(|(idx, (start, height))| {
+                    let end = start.saturating_add(*height).max(start.saturating_add(1));
+                    if line >= *start && line < end {
+                        self.doc.blocks.get(idx).map(|block| (idx, block))
+                    } else {
+                        None
+                    }
+                })
+        else {
+            self.status_message = Some("no details block here".to_string());
+            return;
+        };
+        let Block::Details { open, .. } = block else {
+            self.status_message = Some("no details block here".to_string());
+            return;
+        };
+        let next = !self.details_open.get(&idx).copied().unwrap_or(*open);
+        self.details_open.insert(idx, next);
+        self.theme_dirty = true;
+        self.status_message = Some(if next {
+            "details expanded".to_string()
+        } else {
+            "details folded".to_string()
+        });
     }
 
     fn activate_link_at(&mut self, line: usize, col: u16) -> bool {
@@ -2339,7 +2379,7 @@ impl App {
                 self.matches.len()
             )
         } else {
-            "j/k scroll  /search S all  e files B marks  t theme  ?help  q quit".to_string()
+            "j/k scroll  /search S all  e files B marks  z fold  ?help  q quit".to_string()
         };
 
         let accent = Style::default().fg(self.chrome.accent);
@@ -2459,6 +2499,7 @@ impl App {
             ("e", "file browser"),
             ("S", "workspace search"),
             ("B", "bookmarks"),
+            ("z", "fold details"),
             ("o", "toggle outline"),
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
@@ -2509,6 +2550,18 @@ fn contains(area: Rect, column: u16, row: u16) -> bool {
 
 fn session_path_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn details_view(doc: &RenderedDoc, states: &BTreeMap<usize, bool>) -> RenderedDoc {
+    let mut doc = doc.clone();
+    for (idx, block) in doc.blocks.iter_mut().enumerate() {
+        if let Block::Details { open, .. } = block
+            && let Some(state) = states.get(&idx)
+        {
+            *open = *state;
+        }
+    }
+    doc
 }
 
 fn bookmarks_from_config(config: &BTreeMap<String, String>) -> Vec<Bookmark> {
@@ -2683,6 +2736,7 @@ fn parse_action(action: &str) -> Option<Action> {
         "search" => Some(Action::Search),
         "global_search" | "workspace_search" | "search_all" => Some(Action::GlobalSearch),
         "bookmarks" | "bookmark_picker" => Some(Action::Bookmarks),
+        "details" | "toggle_details" | "fold_details" => Some(Action::ToggleDetails),
         "focus" | "toggle_focus" => Some(Action::ToggleFocus),
         "next_match" => Some(Action::NextMatch),
         "prev_match" | "previous_match" => Some(Action::PrevMatch),
@@ -4159,6 +4213,44 @@ mod tests {
             .find(|placement| placement.src.starts_with("\u{0}math:"))
             .expect("math placement");
         assert!(placement.rows > 0);
+    }
+
+    #[test]
+    fn details_blocks_fold_and_expand() {
+        let mut app = App::new_with_config(
+            "<details><summary>More</summary><p>Hidden body</p></details>\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(80, 10);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        let collapsed = app
+            .content
+            .lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(collapsed.contains("More"));
+        assert!(!collapsed.contains("Hidden body"));
+
+        app.toggle_details_at_cursor();
+        terminal.draw(|f| app.draw(f)).expect("redraw");
+        let expanded = app
+            .content
+            .lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(expanded.contains("Hidden body"));
     }
 
     fn content_span<'a>(app: &'a App, needle: &str) -> &'a Span<'static> {

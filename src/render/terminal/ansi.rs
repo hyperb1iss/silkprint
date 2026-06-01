@@ -131,6 +131,11 @@ impl Renderer<'_> {
             Block::List(list) => self.list(&list.items, list.tight, width),
             Block::Table(table) => self.table(table, width),
             Block::Alert { kind, title, body } => self.alert(*kind, title, body, width),
+            Block::Details {
+                summary,
+                body,
+                open,
+            } => self.details(summary, body, *open, width),
             Block::Image { src, alt } => self.image(src, alt),
             Block::Rule => vec![self.rule(width)],
             Block::Math { source, display } => self.math(source, *display, width),
@@ -461,6 +466,33 @@ impl Renderer<'_> {
             out.extend(self.wrap_render(&term_spans, width));
             let details = self.blocks_lines(&item.details, width.saturating_sub(2));
             for line in details {
+                if line.is_empty() {
+                    out.push(String::new());
+                } else {
+                    out.push(format!("  {line}"));
+                }
+            }
+        }
+        out
+    }
+
+    fn details(&self, summary: &[Span], body: &[Block], open: bool, width: usize) -> Vec<String> {
+        let marker = if open { "\u{25be} " } else { "\u{25b8} " };
+        let mut header = Vec::with_capacity(summary.len() + 1);
+        header.push(Span::new(marker, Role::Muted, Mods::default()));
+        if summary.is_empty() {
+            header.push(Span::new(
+                "Details",
+                Role::Muted,
+                Mods::default().with_bold(),
+            ));
+        } else {
+            header.extend(summary.iter().cloned());
+        }
+
+        let mut out = self.wrap_render(&header, width);
+        if open {
+            for line in self.blocks_lines(body, width.saturating_sub(2)) {
                 if line.is_empty() {
                     out.push(String::new());
                 } else {

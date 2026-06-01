@@ -531,8 +531,14 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         }
 
         // ─── Link / wikilink ────────────────────────────────────────
-        ExtractedNode::Link { url } | ExtractedNode::WikiLink { url } => {
+        ExtractedNode::Link { url } => {
             let _ = write!(ctx.out, "#link(\"{}\")[", escape_typst_string(&url));
+            emit_children(node, ctx);
+            ctx.push("]");
+        }
+        ExtractedNode::WikiLink { url } => {
+            let target = wikilink_target(&url);
+            let _ = write!(ctx.out, "#link(\"{}\")[", escape_typst_string(&target));
             emit_children(node, ctx);
             ctx.push("]");
         }
@@ -612,6 +618,10 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
                 ctx.newline();
                 let content = literal.trim();
                 let _ = writeln!(ctx.out, "$ {content} $");
+            } else if lang == "csv"
+                && let Some(rows) = super::csv::parse_rows(&literal)
+            {
+                emit_csv_table(ctx, &rows);
             } else if lang == "mermaid" {
                 // Emit image reference — SVG will be rendered before compilation
                 let idx = ctx.mermaid_counter;
@@ -1273,6 +1283,54 @@ fn emit_image_placeholder(ctx: &mut EmitContext<'_>, label: &str, standalone: bo
     }
 }
 
+fn emit_csv_table(ctx: &mut EmitContext<'_>, rows: &[Vec<String>]) {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if columns == 0 {
+        return;
+    }
+    let align = std::iter::repeat_n("auto", columns)
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    ctx.newline();
+    let _ = writeln!(
+        ctx.out,
+        "#table(\n  columns: {columns},\n  align: ({align},),"
+    );
+    for row in rows {
+        for idx in 0..columns {
+            let cell = row.get(idx).map_or("", String::as_str);
+            let _ = writeln!(ctx.out, "  [{}],", escape_typst_content(cell));
+        }
+    }
+    ctx.push(")\n");
+}
+
+fn wikilink_target(target: &str) -> String {
+    let (path, anchor) = target
+        .split_once('#')
+        .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
+    if path.is_empty()
+        || uri_scheme(path).is_some()
+        || std::path::Path::new(path).extension().is_some()
+    {
+        return target.to_string();
+    }
+    anchor.map_or_else(
+        || format!("{path}.md"),
+        |anchor| format!("{path}.md#{anchor}"),
+    )
+}
+
+fn uri_scheme(value: &str) -> Option<&str> {
+    let (scheme, _rest) = value.split_once(':')?;
+    let mut chars = scheme.chars();
+    let first = chars.next()?;
+    (first.is_ascii_alphabetic()
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
+    .then_some(scheme)
+}
+
 fn is_standalone_image(node: &AstNode<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return false;
@@ -1379,6 +1437,7 @@ const KNOWN_LANGUAGES: &[&str] = &[
     "csharp",
     "c#",
     "cs",
+    "csv",
     "css",
     "dart",
     "diff",
@@ -1564,6 +1623,16 @@ mod tests {
     }
 
     #[test]
+    fn check_content_accepts_csv_language() {
+        let arena = comrak::Arena::new();
+        let root = parse(&arena, "```csv\nname,count\nalpha,1\n```");
+        let mut warnings = WarningCollector::new();
+        let clean = check_content(root, &mut warnings);
+        assert!(clean);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
     fn check_content_ignores_empty_language() {
         let arena = comrak::Arena::new();
         let root = parse(&arena, "```\nplain code\n```");
@@ -1633,6 +1702,12 @@ mod tests {
     }
 
     #[test]
+    fn emit_wikilink_targets_markdown_file() {
+        let result = emit("[[Guide]]");
+        assert!(result.contains("#link(\"Guide.md\")[Guide]"));
+    }
+
+    #[test]
     fn emit_code_block() {
         let result = emit("```rust\nfn main() {}\n```");
         assert!(result.contains("```rust"));
@@ -1699,6 +1774,15 @@ mod tests {
         let result = emit("| A | B |\n|---|---|\n| 1 | 2 |");
         assert!(result.contains("#table("));
         assert!(result.contains("columns: 2"));
+    }
+
+    #[test]
+    fn emit_csv_fence_as_table() {
+        let result = emit("```csv\nname,count\nalpha,1\n```");
+        assert!(result.contains("#table("));
+        assert!(result.contains("columns: 2"));
+        assert!(result.contains("[alpha]"));
+        assert!(!result.contains("```csv"));
     }
 
     #[test]

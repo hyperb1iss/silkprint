@@ -108,6 +108,10 @@ impl<'a> Walker<'a, '_> {
                         source: cb.literal.trim().to_string(),
                         display: true,
                     });
+                } else if lang_token == "csv"
+                    && let Some(rows) = crate::render::csv::parse_rows(&cb.literal)
+                {
+                    out.push(csv_table_block(rows));
                 } else {
                     let lang = (!lang_token.is_empty()).then(|| lang_token.to_string());
                     let lines = highlight_block(&cb.literal, lang.as_deref());
@@ -367,7 +371,7 @@ impl<'a> Walker<'a, '_> {
                 self.inline_kids(node, Role::Link, mods.with_underline(), Some(id), out);
             }
             NodeValue::WikiLink(w) => {
-                let url = self.resolve_reference(&w.url);
+                let url = self.resolve_reference(&wikilink_target(&w.url));
                 let id = self.doc.add_link(LinkTarget::from_url(&url));
                 self.inline_kids(node, Role::Link, mods.with_underline(), Some(id), out);
             }
@@ -570,6 +574,56 @@ fn convert_align(a: TableAlignment) -> Align {
     }
 }
 
+fn csv_table_block(rows: Vec<Vec<String>>) -> Block {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let mut rows = rows.into_iter().map(|row| pad_row(row, columns));
+    let header = rows
+        .next()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|cell| vec![Span::body(cell)])
+        .collect();
+    let rows = rows
+        .map(|row| row.into_iter().map(|cell| vec![Span::body(cell)]).collect())
+        .collect();
+
+    Block::Table(super::model::TableBlock {
+        aligns: vec![Align::None; columns],
+        header,
+        rows,
+    })
+}
+
+fn pad_row(mut row: Vec<String>, columns: usize) -> Vec<String> {
+    row.resize(columns, String::new());
+    row
+}
+
+fn wikilink_target(target: &str) -> String {
+    let (path, anchor) = target
+        .split_once('#')
+        .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
+    if path.is_empty()
+        || uri_scheme(path).is_some()
+        || std::path::Path::new(path).extension().is_some()
+    {
+        return target.to_string();
+    }
+    anchor.map_or_else(
+        || format!("{path}.md"),
+        |anchor| format!("{path}.md#{anchor}"),
+    )
+}
+
+fn uri_scheme(value: &str) -> Option<&str> {
+    let (scheme, _rest) = value.split_once(':')?;
+    let mut chars = scheme.chars();
+    let first = chars.next()?;
+    (first.is_ascii_alphabetic()
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
+    .then_some(scheme)
+}
+
 fn alert_kind(t: comrak::nodes::AlertType) -> AlertKind {
     use comrak::nodes::AlertType;
     match t {
@@ -724,5 +778,33 @@ mod tests {
         ));
         assert!(matches!(&doc.links[1], LinkTarget::Anchor(anchor) if anchor == "usage"));
         assert_eq!(doc.origin, Some(origin));
+    }
+
+    #[test]
+    fn wikilinks_resolve_to_markdown_targets() {
+        let arena = Arena::new();
+        let root = crate::render::markdown::parse(&arena, "[[Guide]] and [[Docs/Intro#top]]");
+        let mut warnings = WarningCollector::new();
+
+        let doc = walk(root, &mut warnings);
+
+        assert!(matches!(&doc.links[0], LinkTarget::Url(url) if url == "Guide.md"));
+        assert!(matches!(&doc.links[1], LinkTarget::Url(url) if url == "Docs/Intro.md#top"));
+    }
+
+    #[test]
+    fn csv_fences_lower_to_tables() {
+        let arena = Arena::new();
+        let root =
+            crate::render::markdown::parse(&arena, "```csv\nname,count\nalpha,1\nbeta,2\n```\n");
+        let mut warnings = WarningCollector::new();
+
+        let doc = walk(root, &mut warnings);
+
+        let Some(Block::Table(table)) = doc.blocks.first() else {
+            panic!("expected csv table: {:?}", doc.blocks);
+        };
+        assert_eq!(table.header[0][0].text, "name");
+        assert_eq!(table.rows[1][1][0].text, "2");
     }
 }

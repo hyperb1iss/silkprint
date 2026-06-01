@@ -197,6 +197,10 @@ impl Builder<'_> {
                 self.flush();
                 self.table(node);
             }
+            "details" => {
+                self.flush();
+                self.details(node, el.attr("open").is_some());
+            }
             "blockquote" => {
                 self.flush();
                 let mut sub = Builder {
@@ -212,7 +216,7 @@ impl Builder<'_> {
             }
             // Block containers: flush surrounding inline, recurse, flush again.
             "p" | "div" | "section" | "article" | "header" | "footer" | "main" | "center"
-            | "figure" | "figcaption" | "nav" | "details" | "summary" | "aside" => {
+            | "figure" | "figcaption" | "nav" | "summary" | "aside" => {
                 self.flush();
                 if el.name() == "center" || is_centered(el) {
                     let mut sub = Builder {
@@ -253,6 +257,36 @@ impl Builder<'_> {
             // transparent — just descend.
             _ => self.children(node, mods, role, link),
         }
+    }
+
+    fn details(&mut self, node: NodeRef<'_, Node>, open: bool) {
+        let mut summary = Vec::new();
+        let mut body = Vec::new();
+
+        for child in node.children() {
+            let is_summary = matches!(child.value(), Node::Element(el) if el.name() == "summary");
+            let mut sub = Builder {
+                blocks: Vec::new(),
+                inline: Vec::new(),
+                links: self.links,
+                inline_only: false,
+                origin: self.origin,
+            };
+            if is_summary && summary.is_empty() {
+                sub.children(child, Mods::default(), Role::Body, None);
+                summary = sub.inline;
+            } else {
+                sub.walk(child, Mods::default(), Role::Body, None);
+                sub.flush();
+                body.extend(sub.blocks);
+            }
+        }
+
+        self.blocks.push(Block::Details {
+            summary,
+            body,
+            open,
+        });
     }
 
     fn list(&mut self, node: NodeRef<'_, Node>, ordered: bool) {
@@ -519,6 +553,27 @@ mod tests {
         assert_eq!(table.header.len(), 2, "two header cells");
         assert_eq!(table.rows.len(), 1, "one data row");
         assert_eq!(table.rows[0].len(), 2, "two cells in the row");
+    }
+
+    #[test]
+    fn lowers_details_to_foldable_block() {
+        let mut links = Vec::new();
+        let blocks = to_blocks(
+            "<details><summary>More</summary><p>Hidden body</p></details>",
+            &mut links,
+        );
+
+        let Some(Block::Details {
+            summary,
+            body,
+            open,
+        }) = blocks.first()
+        else {
+            panic!("expected details block: {blocks:?}");
+        };
+        assert!(!open);
+        assert_eq!(spans_text(summary), "More");
+        assert!(matches!(body.first(), Some(Block::Paragraph(_))));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod csv;
 pub mod emoji;
 pub mod escape;
 pub mod frontmatter;

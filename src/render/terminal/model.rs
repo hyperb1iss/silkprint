@@ -204,6 +204,11 @@ pub enum Block {
         title: String,
         body: Vec<Block>,
     },
+    Details {
+        summary: Vec<Span>,
+        body: Vec<Block>,
+        open: bool,
+    },
     Image {
         src: String,
         alt: String,
