@@ -824,6 +824,7 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
                 origin: source.origin,
                 watch_path: source.watch_path,
                 font_dirs: options.font_dirs.clone(),
+                settings: Some(reader_settings.clone()),
             },
         )
         .map_err(|e| silkprint::error::SilkprintError::RenderFailed {

@@ -10,6 +10,7 @@ mod diagrams;
 mod images;
 mod math;
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::io;
@@ -66,6 +67,56 @@ enum Mode {
     Search,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Quit,
+    Help,
+    Theme,
+    ToggleOutline,
+    Search,
+    ToggleFocus,
+    NextMatch,
+    PrevMatch,
+    Back,
+    Forward,
+    Top,
+    Bottom,
+    HalfDown,
+    HalfUp,
+    PageDown,
+    PageUp,
+    Down,
+    Up,
+    HeadingNext,
+    HeadingPrev,
+}
+
+#[derive(Clone, Copy)]
+struct KeyChord {
+    code: KeyCode,
+    mods: KeyModifiers,
+}
+
+#[derive(Default)]
+struct KeyBindings(Vec<(KeyChord, Action)>);
+
+impl KeyBindings {
+    fn from_config(config: &BTreeMap<String, String>) -> Self {
+        let bindings = config
+            .iter()
+            .filter_map(|(action, key)| Some((parse_key_chord(key)?, parse_action(action)?)))
+            .collect();
+        Self(bindings)
+    }
+
+    fn action_for(&self, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+        self.0
+            .iter()
+            .find(|(chord, _)| chord.code == code && chord.mods == mods)
+            .map(|(_, action)| *action)
+    }
+}
+
 /// A content region that renders as an image: inline image, diagram, or math.
 enum BandSpec {
     Image(String),
@@ -111,6 +162,7 @@ pub struct TerminalTuiOptions {
     pub watch_path: Option<PathBuf>,
     pub origin: Option<DocumentOrigin>,
     pub font_dirs: Vec<PathBuf>,
+    pub settings: Option<super::config::ReaderSettings>,
 }
 
 impl Default for TerminalTuiOptions {
@@ -122,6 +174,7 @@ impl Default for TerminalTuiOptions {
             watch_path: None,
             origin: None,
             font_dirs: Vec::new(),
+            settings: None,
         }
     }
 }
@@ -134,23 +187,31 @@ pub fn run(
     theme_name: &str,
     options: TerminalTuiOptions,
 ) -> io::Result<()> {
+    let TerminalTuiOptions {
+        glyph_override,
+        images,
+        base_dir,
+        watch_path,
+        origin,
+        font_dirs,
+        settings,
+    } = options;
     // Query the terminal's graphics protocol + font size before entering the
     // alternate screen. `None` (or `--no-images`) falls back to text-only.
-    let picker = options
-        .images
-        .then(Picker::from_query_stdio)
-        .and_then(Result::ok);
-    let mut app = App::new_with_origin(
+    let picker = images.then(Picker::from_query_stdio).and_then(Result::ok);
+    let settings = settings.unwrap_or_else(super::config::load_settings);
+    let mut app = App::new_with_settings_and_origin(
         body,
         theme,
         theme_name,
-        options.glyph_override,
+        glyph_override,
         picker,
-        options.base_dir,
-        options.watch_path,
-        options.origin,
+        base_dir,
+        watch_path,
+        origin,
+        settings,
     );
-    app.font_dirs = options.font_dirs;
+    app.font_dirs = font_dirs;
     let mut terminal = ratatui::init();
     let mouse = match MouseCapture::enable() {
         Ok(mouse) => mouse,
@@ -189,6 +250,7 @@ struct App {
     doc: RenderedDoc,
     theme: ResolvedTheme,
     glyphs: Glyphs,
+    keybindings: KeyBindings,
 
     theme_names: Vec<String>,
     theme_idx: usize,
@@ -269,6 +331,7 @@ impl App {
         )
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn new_with_origin(
         body: &str,
@@ -280,7 +343,7 @@ impl App {
         watch_path: Option<PathBuf>,
         origin: Option<DocumentOrigin>,
     ) -> Self {
-        Self::new_with_config_and_origin(
+        Self::new_with_settings_and_origin(
             body,
             theme,
             theme_name,
@@ -289,7 +352,7 @@ impl App {
             base_dir,
             watch_path,
             origin,
-            super::config::load(),
+            super::config::load_settings(),
         )
     }
 
@@ -305,7 +368,7 @@ impl App {
         watch_path: Option<PathBuf>,
         saved: super::config::ReaderConfig,
     ) -> Self {
-        Self::new_with_config_and_origin(
+        Self::new_with_settings_and_origin(
             body,
             theme,
             theme_name,
@@ -314,12 +377,40 @@ impl App {
             base_dir,
             watch_path,
             None,
-            saved,
+            super::config::ReaderSettings {
+                reader: saved,
+                user: super::config::UserConfig::default(),
+            },
+        )
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_settings(
+        body: &str,
+        theme: ResolvedTheme,
+        theme_name: &str,
+        glyph_override: Option<GlyphTier>,
+        picker: Option<Picker>,
+        base_dir: Option<PathBuf>,
+        watch_path: Option<PathBuf>,
+        settings: super::config::ReaderSettings,
+    ) -> Self {
+        Self::new_with_settings_and_origin(
+            body,
+            theme,
+            theme_name,
+            glyph_override,
+            picker,
+            base_dir,
+            watch_path,
+            None,
+            settings,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new_with_config_and_origin(
+    fn new_with_settings_and_origin(
         body: &str,
         theme: ResolvedTheme,
         theme_name: &str,
@@ -328,7 +419,7 @@ impl App {
         base_dir: Option<PathBuf>,
         watch_path: Option<PathBuf>,
         origin: Option<DocumentOrigin>,
-        saved: super::config::ReaderConfig,
+        settings: super::config::ReaderSettings,
     ) -> Self {
         let arena = comrak::Arena::new();
         let root = crate::render::markdown::parse(&arena, body);
@@ -358,6 +449,8 @@ impl App {
         if !doc.outline.is_empty() {
             outline_state.select(Some(0));
         }
+        let keybindings = KeyBindings::from_config(&settings.user.keybindings);
+        let saved = settings.reader;
         let outline_visible = saved.outline.unwrap_or(doc.outline.len() > 1);
         let saved_theme_name = saved.theme;
 
@@ -365,6 +458,7 @@ impl App {
             doc,
             theme,
             glyphs,
+            keybindings,
             chrome: Chrome::for_theme(theme_name),
             theme_names,
             theme_idx,
@@ -925,6 +1019,11 @@ impl App {
         let was_bracket = self.pending_bracket.take();
         self.pending_g = false;
 
+        if let Some(action) = self.keybindings.action_for(code, mods) {
+            self.run_action(action);
+            return;
+        }
+
         match code {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.show_help = true,
@@ -985,6 +1084,47 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => self.move_up(),
             KeyCode::Home => self.set_scroll(0),
             _ => {}
+        }
+    }
+
+    fn run_action(&mut self, action: Action) {
+        let half = self.viewport_h / 2;
+        let page = self.viewport_h.saturating_sub(2).max(1);
+        match action {
+            Action::Quit => self.quit = true,
+            Action::Help => self.show_help = true,
+            Action::Theme => self.open_picker(),
+            Action::ToggleOutline => {
+                self.outline_visible = !self.outline_visible;
+                if !self.outline_visible {
+                    self.focus = Focus::Content;
+                }
+            }
+            Action::Search => {
+                self.mode = Mode::Search;
+                self.search_query.clear();
+            }
+            Action::ToggleFocus => {
+                self.focus = if self.focus == Focus::Content && self.outline_visible {
+                    Focus::Outline
+                } else {
+                    Focus::Content
+                };
+            }
+            Action::NextMatch => self.jump_match(true),
+            Action::PrevMatch => self.jump_match(false),
+            Action::Back => self.go_back(),
+            Action::Forward => self.go_forward(),
+            Action::Top => self.set_scroll(0),
+            Action::Bottom => self.set_scroll(self.max_scroll()),
+            Action::HalfDown => self.scroll_by(i32::from(half)),
+            Action::HalfUp => self.scroll_by(-i32::from(half)),
+            Action::PageDown => self.scroll_by(i32::from(page)),
+            Action::PageUp => self.scroll_by(-i32::from(page)),
+            Action::Down => self.move_down(),
+            Action::Up => self.move_up(),
+            Action::HeadingNext => self.jump_heading(true),
+            Action::HeadingPrev => self.jump_heading(false),
         }
     }
 
@@ -1746,6 +1886,92 @@ fn link_preview(target: &LinkTarget) -> String {
     format!("link: {}", truncate_plain(&label, 72))
 }
 
+fn parse_action(action: &str) -> Option<Action> {
+    match action.trim().replace('-', "_").as_str() {
+        "quit" => Some(Action::Quit),
+        "help" => Some(Action::Help),
+        "theme" | "theme_picker" => Some(Action::Theme),
+        "outline" | "toggle_outline" => Some(Action::ToggleOutline),
+        "search" => Some(Action::Search),
+        "focus" | "toggle_focus" => Some(Action::ToggleFocus),
+        "next_match" => Some(Action::NextMatch),
+        "prev_match" | "previous_match" => Some(Action::PrevMatch),
+        "back" => Some(Action::Back),
+        "forward" => Some(Action::Forward),
+        "top" => Some(Action::Top),
+        "bottom" => Some(Action::Bottom),
+        "half_down" => Some(Action::HalfDown),
+        "half_up" => Some(Action::HalfUp),
+        "page_down" => Some(Action::PageDown),
+        "page_up" => Some(Action::PageUp),
+        "down" | "scroll_down" => Some(Action::Down),
+        "up" | "scroll_up" => Some(Action::Up),
+        "heading_next" | "next_heading" => Some(Action::HeadingNext),
+        "heading_prev" | "heading_previous" | "prev_heading" | "previous_heading" => {
+            Some(Action::HeadingPrev)
+        }
+        _ => None,
+    }
+}
+
+fn parse_key_chord(key: &str) -> Option<KeyChord> {
+    let trimmed = key.trim();
+    if trimmed.is_empty() || matches!(trimmed, "[[" | "]]" | "gg") {
+        return None;
+    }
+    let mut mods = KeyModifiers::NONE;
+    let mut rest = trimmed;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        if let Some(next) = lower
+            .strip_prefix("ctrl-")
+            .or_else(|| lower.strip_prefix("ctrl+"))
+        {
+            mods |= KeyModifiers::CONTROL;
+            rest = &rest[rest.len() - next.len()..];
+        } else if let Some(next) = lower
+            .strip_prefix("alt-")
+            .or_else(|| lower.strip_prefix("alt+"))
+        {
+            mods |= KeyModifiers::ALT;
+            rest = &rest[rest.len() - next.len()..];
+        } else if let Some(next) = lower
+            .strip_prefix("shift-")
+            .or_else(|| lower.strip_prefix("shift+"))
+        {
+            mods |= KeyModifiers::SHIFT;
+            rest = &rest[rest.len() - next.len()..];
+        } else {
+            break;
+        }
+    }
+    let lower = rest.to_ascii_lowercase();
+    let code = match lower.as_str() {
+        "space" => KeyCode::Char(' '),
+        "enter" | "return" => KeyCode::Enter,
+        "tab" => KeyCode::Tab,
+        "esc" | "escape" => KeyCode::Esc,
+        "backspace" => KeyCode::Backspace,
+        "up" => KeyCode::Up,
+        "down" => KeyCode::Down,
+        "left" => KeyCode::Left,
+        "right" => KeyCode::Right,
+        "home" => KeyCode::Home,
+        "end" => KeyCode::End,
+        "pageup" | "page_up" => KeyCode::PageUp,
+        "pagedown" | "page_down" => KeyCode::PageDown,
+        _ => {
+            let mut chars = rest.chars();
+            let ch = chars.next()?;
+            if chars.next().is_some() {
+                return None;
+            }
+            KeyCode::Char(ch)
+        }
+    };
+    Some(KeyChord { code, mods })
+}
+
 fn code_lines_source(lines: &[Vec<super::model::Span>]) -> String {
     lines
         .iter()
@@ -2078,7 +2304,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::terminal::config::ReaderConfig;
+    use crate::render::terminal::config::{ReaderConfig, ReaderSettings, UserConfig};
     use crate::render::terminal::model::{Mods, Role};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -2188,7 +2414,7 @@ mod tests {
     fn remote_markdown_links_follow_only_same_origin_markdown() {
         let origin_url =
             Url::parse("https://raw.githubusercontent.com/o/r/HEAD/README.md").expect("url");
-        let app = App::new_with_config_and_origin(
+        let app = App::new_with_settings_and_origin(
             "# Remote\n",
             load_theme_or_default("silk-light"),
             "silk-light",
@@ -2197,7 +2423,10 @@ mod tests {
             None,
             None,
             Some(DocumentOrigin::remote(origin_url)),
-            ReaderConfig::default(),
+            ReaderSettings {
+                reader: ReaderConfig::default(),
+                user: UserConfig::default(),
+            },
         );
 
         let (target, anchor) = app
@@ -2444,6 +2673,37 @@ mod tests {
             app.reader_config().theme.as_deref(),
             Some("silkcircuit-dawn")
         );
+    }
+
+    #[test]
+    fn user_keybindings_add_tui_actions() {
+        let mut user = UserConfig::default();
+        user.keybindings
+            .insert("heading_next".to_string(), "J".to_string());
+        user.keybindings
+            .insert("quit".to_string(), "ctrl-x".to_string());
+        let mut app = App::new_with_settings(
+            "# Top\n\none\n\n## Next\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderSettings {
+                reader: ReaderConfig::default(),
+                user,
+            },
+        );
+        let backend = TestBackend::new(100, 8);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        app.normal_key(KeyCode::Char('J'), KeyModifiers::NONE);
+        assert_eq!(app.outline_state.selected(), Some(1));
+
+        app.normal_key(KeyCode::Char('x'), KeyModifiers::CONTROL);
+        assert!(app.quit);
     }
 
     #[test]
