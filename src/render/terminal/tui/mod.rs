@@ -11,6 +11,7 @@ mod images;
 mod math;
 
 use std::collections::BTreeMap;
+use std::env;
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::io;
@@ -68,6 +69,7 @@ enum Focus {
 enum Mode {
     Normal,
     Search,
+    GlobalSearch,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -78,6 +80,8 @@ enum Action {
     ToggleOutline,
     ToggleBrowser,
     Search,
+    GlobalSearch,
+    Bookmarks,
     ToggleFocus,
     NextMatch,
     PrevMatch,
@@ -159,6 +163,13 @@ enum BrowserEntryKind {
     Parent,
     Directory,
     Markdown,
+    SearchResult { line: usize },
+}
+
+#[derive(Clone)]
+struct Bookmark {
+    name: String,
+    path: PathBuf,
 }
 
 struct TabState {
@@ -363,15 +374,20 @@ struct App {
     browser_root: Option<PathBuf>,
     browser_entries: Vec<BrowserEntry>,
     browser_state: ListState,
+    bookmarks: Vec<Bookmark>,
     focus: Focus,
 
     mode: Mode,
 
     show_help: bool,
+    show_bookmarks: bool,
+    bookmark_state: ListState,
+    bookmark_area: Rect,
     show_picker: bool,
     picker_state: ListState,
     picker_saved: Option<ThemeSnapshot>,
     picker_area: Rect,
+    global_query: String,
 
     pending_g: bool,
     pending_bracket: Option<char>,
@@ -531,6 +547,7 @@ impl App {
         let glyphs = Glyphs::new(glyph_override.unwrap_or(GlyphTier::NerdFont));
         let tab = TabState::from_body(body, picker, base_dir, watch_path, origin);
         let keybindings = KeyBindings::from_config(&settings.user.keybindings);
+        let bookmarks = bookmarks_from_config(&settings.user.bookmarks);
         let saved = settings.reader;
         let outline_visible = saved.outline.unwrap_or(tab.doc.outline.len() > 1);
         let saved_theme_name = saved.theme;
@@ -551,13 +568,18 @@ impl App {
             browser_root: None,
             browser_entries: Vec::new(),
             browser_state: ListState::default(),
+            bookmarks,
             focus: Focus::Content,
             mode: Mode::Normal,
             show_help: false,
+            show_bookmarks: false,
+            bookmark_state: ListState::default(),
+            bookmark_area: Rect::default(),
             show_picker: false,
             picker_state: ListState::default(),
             picker_saved: None,
             picker_area: Rect::default(),
+            global_query: String::new(),
             pending_g: false,
             pending_bracket: None,
             drag_row: None,
@@ -1170,13 +1192,24 @@ impl App {
             self.show_help = false;
             return;
         }
+        if self.show_bookmarks {
+            self.bookmark_key(code);
+            return;
+        }
         if self.show_picker {
             self.picker_key(code);
             return;
         }
-        if self.mode == Mode::Search {
-            self.search_key(code);
-            return;
+        match self.mode {
+            Mode::Search => {
+                self.search_key(code);
+                return;
+            }
+            Mode::GlobalSearch => {
+                self.global_search_key(code);
+                return;
+            }
+            Mode::Normal => {}
         }
         self.status_message = None;
         self.normal_key(code, mods);
@@ -1209,6 +1242,8 @@ impl App {
                 self.mode = Mode::Search;
                 self.search_query.clear();
             }
+            KeyCode::Char('S') => self.start_global_search(),
+            KeyCode::Char('B') => self.open_bookmarks(),
             KeyCode::Tab => self.step_focus(),
             KeyCode::Char('n') => self.jump_match(true),
             KeyCode::Char('N') => self.jump_match(false),
@@ -1274,6 +1309,8 @@ impl App {
                 self.mode = Mode::Search;
                 self.search_query.clear();
             }
+            Action::GlobalSearch => self.start_global_search(),
+            Action::Bookmarks => self.open_bookmarks(),
             Action::ToggleFocus => self.step_focus(),
             Action::NextMatch => self.jump_match(true),
             Action::PrevMatch => self.jump_match(false),
@@ -1300,6 +1337,10 @@ impl App {
             if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                 self.show_help = false;
             }
+            return;
+        }
+        if self.show_bookmarks {
+            self.bookmark_mouse(mouse);
             return;
         }
         if self.show_picker {
@@ -1466,9 +1507,8 @@ impl App {
         }
     }
 
-    fn refresh_browser(&mut self) {
-        let root = self
-            .browser_root
+    fn browser_root_or_default(&self) -> PathBuf {
+        self.browser_root
             .clone()
             .or_else(|| self.base_dir.clone())
             .or_else(|| {
@@ -1477,7 +1517,11 @@ impl App {
                     .and_then(Path::parent)
                     .map(Path::to_path_buf)
             })
-            .unwrap_or_else(|| PathBuf::from("."));
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    fn refresh_browser(&mut self) {
+        let root = self.browser_root_or_default();
         self.browser_root = Some(root.clone());
         self.browser_entries = browser_entries(&root);
         self.browser_state
@@ -1510,17 +1554,20 @@ impl App {
                 self.browser_root = Some(entry.path);
                 self.refresh_browser();
             }
-            BrowserEntryKind::Markdown => self.open_path_in_tab(&entry.path),
+            BrowserEntryKind::Markdown => {
+                self.open_path_in_tab(&entry.path);
+            }
+            BrowserEntryKind::SearchResult { line } => self.open_search_result(&entry.path, line),
         }
     }
 
-    fn open_path_in_tab(&mut self, path: &Path) {
+    fn open_path_in_tab(&mut self, path: &Path) -> bool {
         let Ok(body) = std::fs::read_to_string(path) else {
             self.status_message = Some(format!(
                 "can't open {}",
                 truncate_plain(&path.display().to_string(), 48)
             ));
-            return;
+            return false;
         };
         let base = path
             .canonicalize()
@@ -1539,6 +1586,24 @@ impl App {
         self.active_tab = self.tabs.len() - 1;
         self.focus = Focus::Content;
         self.status_message = Some(format!("opened {}", truncate_plain(&title, 40)));
+        true
+    }
+
+    fn open_search_result(&mut self, path: &Path, line: usize) {
+        let query = self.global_query.clone();
+        if !self.open_path_in_tab(path) {
+            return;
+        }
+        if !query.is_empty() {
+            self.search_query = query;
+            let width = self.content_area.width.max(80);
+            self.ensure_content(width);
+            self.run_search();
+        }
+        self.status_message = Some(format!(
+            "opened {}:{line}",
+            truncate_plain(&path.display().to_string(), 42)
+        ));
     }
 
     fn move_down(&mut self) {
@@ -1695,6 +1760,49 @@ impl App {
 
     // ─── Search ──────────────────────────────────────────────────
 
+    fn start_global_search(&mut self) {
+        self.mode = Mode::GlobalSearch;
+        self.global_query.clear();
+    }
+
+    fn global_search_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Esc => {
+                self.mode = Mode::Normal;
+                self.global_query.clear();
+            }
+            KeyCode::Enter => {
+                self.run_global_search();
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Backspace => {
+                self.global_query.pop();
+            }
+            KeyCode::Char(c) => self.global_query.push(c),
+            _ => {}
+        }
+    }
+
+    fn run_global_search(&mut self) {
+        let query = self.global_query.trim().to_string();
+        if query.is_empty() {
+            self.status_message = Some("empty workspace search".to_string());
+            return;
+        }
+        let root = self.browser_root_or_default();
+        self.browser_root = Some(root.clone());
+        self.browser_entries = global_search_entries(&root, &query);
+        self.browser_state
+            .select((!self.browser_entries.is_empty()).then_some(0));
+        self.browser_visible = true;
+        self.focus = Focus::Browser;
+        self.status_message = if self.browser_entries.is_empty() {
+            Some(format!("no workspace matches for {query:?}"))
+        } else {
+            Some(format!("{} workspace matches", self.browser_entries.len()))
+        };
+    }
+
     fn search_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Esc => {
@@ -1842,6 +1950,92 @@ impl App {
         (idx < self.theme_names.len()).then_some(idx)
     }
 
+    // ─── Bookmarks ───────────────────────────────────────────────
+
+    fn open_bookmarks(&mut self) {
+        if self.bookmarks.is_empty() {
+            self.status_message = Some("no bookmarks configured".to_string());
+            return;
+        }
+        self.show_bookmarks = true;
+        self.bookmark_state.select(Some(0));
+    }
+
+    fn bookmark_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Esc => self.show_bookmarks = false,
+            KeyCode::Enter => self.open_bookmark_selection(),
+            KeyCode::Char('j') | KeyCode::Down => self.bookmark_step(true),
+            KeyCode::Char('k') | KeyCode::Up => self.bookmark_step(false),
+            _ => {}
+        }
+    }
+
+    fn bookmark_step(&mut self, forward: bool) {
+        if self.bookmarks.is_empty() {
+            return;
+        }
+        let len = self.bookmarks.len();
+        let cur = self.bookmark_state.selected().unwrap_or(0);
+        let next = if forward {
+            (cur + 1) % len
+        } else {
+            (cur + len - 1) % len
+        };
+        self.bookmark_state.select(Some(next));
+    }
+
+    fn bookmark_mouse(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::ScrollDown => self.bookmark_step(true),
+            MouseEventKind::ScrollUp => self.bookmark_step(false),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(idx) = self.bookmark_index_at(mouse.column, mouse.row) {
+                    self.bookmark_state.select(Some(idx));
+                    self.open_bookmark_selection();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn bookmark_index_at(&self, column: u16, row: u16) -> Option<usize> {
+        let area = self.bookmark_area;
+        if !contains(area, column, row)
+            || row <= area.y
+            || row >= area.y.saturating_add(area.height).saturating_sub(1)
+        {
+            return None;
+        }
+        let visible_idx = usize::from(row.saturating_sub(area.y).saturating_sub(1));
+        let idx = self.bookmark_state.offset().saturating_add(visible_idx);
+        (idx < self.bookmarks.len()).then_some(idx)
+    }
+
+    fn open_bookmark_selection(&mut self) {
+        let Some(idx) = self.bookmark_state.selected() else {
+            return;
+        };
+        let Some(bookmark) = self.bookmarks.get(idx).cloned() else {
+            return;
+        };
+        self.show_bookmarks = false;
+        if bookmark.path.is_dir() {
+            self.browser_root = Some(bookmark.path);
+            self.browser_visible = true;
+            self.refresh_browser();
+            self.focus = Focus::Browser;
+            self.status_message = Some(format!("bookmark {}", truncate_plain(&bookmark.name, 32)));
+        } else if is_markdown_path(&bookmark.path) {
+            self.open_path_in_tab(&bookmark.path);
+        } else {
+            self.status_message = Some(format!(
+                "bookmark target unavailable: {}",
+                truncate_plain(&bookmark.path.display().to_string(), 40)
+            ));
+        }
+    }
+
     // ─── Drawing ─────────────────────────────────────────────────
 
     fn draw(&mut self, frame: &mut Frame) {
@@ -1888,6 +2082,9 @@ impl App {
 
         if self.show_picker {
             self.draw_picker(frame, area);
+        }
+        if self.show_bookmarks {
+            self.draw_bookmarks(frame, area);
         }
         if self.show_help {
             self.draw_help(frame, area);
@@ -1996,6 +2193,7 @@ impl App {
                     BrowserEntryKind::Parent => "..",
                     BrowserEntryKind::Directory => "d",
                     BrowserEntryKind::Markdown => "m",
+                    BrowserEntryKind::SearchResult { .. } => "s",
                 };
                 ListItem::new(Line::from(vec![
                     Span::styled(format!("{icon} "), Style::default().fg(self.chrome.accent)),
@@ -2018,13 +2216,22 @@ impl App {
             .and_then(|path| path.file_name())
             .and_then(|name| name.to_str())
             .unwrap_or("Files");
+        let title = if self
+            .browser_entries
+            .iter()
+            .any(|entry| matches!(entry.kind, BrowserEntryKind::SearchResult { .. }))
+        {
+            format!(" Search {} ", truncate_plain(&self.global_query, 18))
+        } else {
+            format!(" {} ", truncate_plain(title, 22))
+        };
         let list = List::new(items)
             .block(
                 WBlock::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(border))
                     .title(Span::styled(
-                        format!(" {} ", truncate_plain(title, 22)),
+                        title,
                         Style::default()
                             .fg(self.chrome.accent2)
                             .add_modifier(Modifier::BOLD),
@@ -2123,6 +2330,8 @@ impl App {
             super::layout::sanitize(message).into_owned()
         } else if self.mode == Mode::Search {
             format!("/{}", super::layout::sanitize(&self.search_query))
+        } else if self.mode == Mode::GlobalSearch {
+            format!("S {}", super::layout::sanitize(&self.global_query))
         } else if !self.matches.is_empty() {
             format!(
                 "match {}/{}  /search ?help t theme o outline q quit",
@@ -2130,7 +2339,7 @@ impl App {
                 self.matches.len()
             )
         } else {
-            "j/k scroll  /search  e files  b/f back  t theme  o outline  ?help  q quit".to_string()
+            "j/k scroll  /search S all  e files B marks  t theme  ?help  q quit".to_string()
         };
 
         let accent = Style::default().fg(self.chrome.accent);
@@ -2195,6 +2404,49 @@ impl App {
         frame.render_stateful_widget(list, popup, &mut self.picker_state);
     }
 
+    fn draw_bookmarks(&mut self, frame: &mut Frame, area: Rect) {
+        let popup = centered_rect(58, 60, area);
+        self.bookmark_area = popup;
+        frame.render_widget(Clear, popup);
+        let items: Vec<ListItem> = self
+            .bookmarks
+            .iter()
+            .map(|bookmark| {
+                let path = truncate_plain(&bookmark.path.display().to_string(), 42);
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("{}  ", super::layout::sanitize(&bookmark.name)),
+                        Style::default().fg(self.chrome.accent),
+                    ),
+                    Span::styled(
+                        super::layout::sanitize(&path).into_owned(),
+                        Style::default().fg(self.chrome.text),
+                    ),
+                ]))
+            })
+            .collect();
+        let list = List::new(items)
+            .block(
+                WBlock::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(self.chrome.border_focused))
+                    .title(Span::styled(
+                        " Bookmarks  (Enter open · Esc cancel) ",
+                        Style::default()
+                            .fg(self.chrome.accent)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+            )
+            .style(Style::default().bg(self.chrome.panel_bg))
+            .highlight_style(
+                Style::default()
+                    .bg(self.chrome.selection_bg)
+                    .fg(self.chrome.accent)
+                    .add_modifier(Modifier::BOLD),
+            );
+        frame.render_stateful_widget(list, popup, &mut self.bookmark_state);
+    }
+
     fn draw_help(&self, frame: &mut Frame, area: Rect) {
         let popup = centered_rect(54, 60, area);
         frame.render_widget(Clear, popup);
@@ -2205,6 +2457,8 @@ impl App {
             ("g g / G", "top / bottom"),
             ("[[ / ]]", "prev / next heading"),
             ("e", "file browser"),
+            ("S", "workspace search"),
+            ("B", "bookmarks"),
             ("o", "toggle outline"),
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
@@ -2257,6 +2511,32 @@ fn session_path_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+fn bookmarks_from_config(config: &BTreeMap<String, String>) -> Vec<Bookmark> {
+    config
+        .iter()
+        .filter_map(|(name, path)| {
+            let name = name.trim();
+            let path = path.trim();
+            (!name.is_empty() && !path.is_empty()).then(|| Bookmark {
+                name: name.to_string(),
+                path: expand_bookmark_path(path),
+            })
+        })
+        .collect()
+}
+
+fn expand_bookmark_path(path: &str) -> PathBuf {
+    if path == "~" {
+        return env::var_os("HOME").map_or_else(|| PathBuf::from(path), PathBuf::from);
+    }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = env::var_os("HOME")
+    {
+        return PathBuf::from(home).join(rest);
+    }
+    PathBuf::from(path)
+}
+
 fn browser_entries(root: &Path) -> Vec<BrowserEntry> {
     let mut entries = Vec::new();
     if let Some(parent) = root.parent().filter(|parent| *parent != root) {
@@ -2297,17 +2577,81 @@ fn browser_entries(root: &Path) -> Vec<BrowserEntry> {
             BrowserEntryKind::Parent => 0,
             BrowserEntryKind::Directory => 1,
             BrowserEntryKind::Markdown => 2,
+            BrowserEntryKind::SearchResult { .. } => 3,
         };
         let bk = match b.kind {
             BrowserEntryKind::Parent => 0,
             BrowserEntryKind::Directory => 1,
             BrowserEntryKind::Markdown => 2,
+            BrowserEntryKind::SearchResult { .. } => 3,
         };
         ak.cmp(&bk)
             .then_with(|| a.label.to_lowercase().cmp(&b.label.to_lowercase()))
     });
     entries.extend(children);
     entries
+}
+
+fn global_search_entries(root: &Path, query: &str) -> Vec<BrowserEntry> {
+    let needle = query.to_lowercase();
+    let mut entries = Vec::new();
+    for path in markdown_files_recursive(root) {
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = path.strip_prefix(root).unwrap_or(&path);
+        let rel = rel.display().to_string();
+        for (idx, line) in body.lines().enumerate() {
+            if !line.to_lowercase().contains(&needle) {
+                continue;
+            }
+            let line_no = idx + 1;
+            let preview = truncate_plain(line.trim(), 48);
+            entries.push(BrowserEntry {
+                path: path.clone(),
+                label: format!("{rel}:{line_no}  {preview}"),
+                kind: BrowserEntryKind::SearchResult { line: line_no },
+            });
+        }
+    }
+    entries
+}
+
+fn markdown_files_recursive(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_markdown_files(root, &mut files);
+    files
+}
+
+fn collect_markdown_files(root: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(read_dir) = std::fs::read_dir(root) else {
+        return;
+    };
+    let mut dirs = Vec::new();
+    let mut local_files = Vec::new();
+    for entry in read_dir.filter_map(Result::ok) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            dirs.push(path);
+        } else if is_markdown_path(&path) {
+            local_files.push(path);
+        }
+    }
+    dirs.sort_by_key(|path| path.file_name().map(OsString::from));
+    local_files.sort_by_key(|path| path.file_name().map(OsString::from));
+    files.extend(local_files);
+    for dir in dirs {
+        collect_markdown_files(&dir, files);
+    }
 }
 
 fn is_markdown_path(path: &Path) -> bool {
@@ -2337,6 +2681,8 @@ fn parse_action(action: &str) -> Option<Action> {
         "browser" | "file_browser" | "toggle_browser" => Some(Action::ToggleBrowser),
         "outline" | "toggle_outline" => Some(Action::ToggleOutline),
         "search" => Some(Action::Search),
+        "global_search" | "workspace_search" | "search_all" => Some(Action::GlobalSearch),
+        "bookmarks" | "bookmark_picker" => Some(Action::Bookmarks),
         "focus" | "toggle_focus" => Some(Action::ToggleFocus),
         "next_match" => Some(Action::NextMatch),
         "prev_match" | "previous_match" => Some(Action::PrevMatch),
@@ -3372,6 +3718,129 @@ mod tests {
                 .iter()
                 .any(|entry| entry.label == "guide.md")
         );
+    }
+
+    #[test]
+    fn global_search_entries_find_nested_markdown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir(&docs).expect("docs");
+        std::fs::write(dir.path().join("root.md"), "needle root\n").expect("root");
+        std::fs::write(docs.join("guide.md"), "nope\nNeedle nested\n").expect("guide");
+        std::fs::write(docs.join("ignore.txt"), "needle txt\n").expect("txt");
+
+        let entries = global_search_entries(dir.path(), "needle");
+
+        let labels: Vec<&str> = entries.iter().map(|entry| entry.label.as_str()).collect();
+        assert!(labels.iter().any(|label| label.starts_with("root.md:1")));
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.starts_with("docs/guide.md:2"))
+        );
+        assert!(!labels.iter().any(|label| label.contains("ignore.txt")));
+    }
+
+    #[test]
+    fn global_search_opens_result_in_new_tab() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let other = dir.path().join("other.md");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(&other, "# Other\n\nneedle here\n").expect("other");
+        let mut app = App::new(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current),
+        );
+
+        app.start_global_search();
+        app.global_query = "needle".to_string();
+        app.run_global_search();
+        let idx = app
+            .browser_entries
+            .iter()
+            .position(|entry| entry.path == other)
+            .expect("other result");
+        app.browser_state.select(Some(idx));
+        app.open_browser_selection();
+
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.title, "Other");
+        assert_eq!(app.search_query, "needle");
+        assert!(!app.matches.is_empty());
+    }
+
+    #[test]
+    fn bookmark_picker_opens_configured_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir(&docs).expect("docs");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(docs.join("guide.md"), "# Guide\n").expect("guide");
+        let mut user = UserConfig::default();
+        user.bookmarks
+            .insert("docs".to_string(), docs.display().to_string());
+        let mut app = App::new_with_settings(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current),
+            ReaderSettings {
+                reader: ReaderConfig::default(),
+                user,
+            },
+        );
+
+        app.open_bookmarks();
+        app.open_bookmark_selection();
+
+        assert!(app.browser_visible);
+        assert_eq!(app.browser_root.as_deref(), Some(docs.as_path()));
+        assert!(
+            app.browser_entries
+                .iter()
+                .any(|entry| entry.label == "guide.md")
+        );
+    }
+
+    #[test]
+    fn bookmark_picker_opens_configured_markdown_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let saved = dir.path().join("saved.md");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(&saved, "# Saved\n").expect("saved");
+        let mut user = UserConfig::default();
+        user.bookmarks
+            .insert("saved".to_string(), saved.display().to_string());
+        let mut app = App::new_with_settings(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current),
+            ReaderSettings {
+                reader: ReaderConfig::default(),
+                user,
+            },
+        );
+
+        app.open_bookmarks();
+        app.open_bookmark_selection();
+
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.title, "Saved");
     }
 
     #[test]

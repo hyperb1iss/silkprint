@@ -25,6 +25,7 @@ pub struct UserConfig {
     pub color: Option<String>,
     pub pager: Option<String>,
     pub glyphs: Option<String>,
+    pub bookmarks: BTreeMap<String, String>,
     pub keybindings: BTreeMap<String, String>,
 }
 
@@ -187,6 +188,9 @@ color = "never"
 pager = "less -R"
 glyphs = "unicode"
 
+[bookmarks]
+docs = "/tmp/docs"
+
 [keybindings]
 quit = "q"
 "#,
@@ -198,6 +202,10 @@ quit = "q"
         assert_eq!(config.color.as_deref(), Some("never"));
         assert_eq!(config.pager.as_deref(), Some("less -R"));
         assert_eq!(config.glyphs.as_deref(), Some("unicode"));
+        assert_eq!(
+            config.bookmarks.get("docs").map(String::as_str),
+            Some("/tmp/docs")
+        );
         assert_eq!(
             config.keybindings.get("quit").map(String::as_str),
             Some("q")
