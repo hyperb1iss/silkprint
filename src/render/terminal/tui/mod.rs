@@ -15,7 +15,7 @@ use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use url::Url;
 
@@ -292,6 +292,9 @@ pub fn run(
         settings,
     );
     app.font_dirs = font_dirs;
+    let current_path = app.path.clone();
+    let session = super::config::load_session();
+    app.restore_session_tabs(&session, current_path.as_deref());
     let mut terminal = ratatui::init();
     let mouse = match MouseCapture::enable() {
         Ok(mouse) => mouse,
@@ -599,7 +602,80 @@ impl App {
             }
         }
         self.save_config();
+        self.save_session();
         Ok(())
+    }
+
+    fn restore_session_tabs(
+        &mut self,
+        session: &super::config::ReaderSession,
+        current_path: Option<&Path>,
+    ) {
+        if session.tabs.is_empty() {
+            return;
+        }
+        let current_key = current_path.map(session_path_key);
+        let saved_contains_current = current_key.as_ref().is_some_and(|current| {
+            session
+                .tabs
+                .iter()
+                .any(|tab| session_path_key(&tab.path) == *current)
+        });
+        let mut restored: Vec<TabState> = session
+            .tabs
+            .iter()
+            .filter_map(Self::load_session_tab)
+            .collect();
+        if restored.is_empty() {
+            return;
+        }
+        if !saved_contains_current && let Some(current) = self.tabs.pop() {
+            restored.insert(0, current);
+            self.active_tab = 0;
+        } else {
+            self.active_tab = session.active_tab.min(restored.len() - 1);
+        }
+        self.tabs = restored;
+    }
+
+    fn load_session_tab(saved: &super::config::SessionTab) -> Option<TabState> {
+        let body = std::fs::read_to_string(&saved.path).ok()?;
+        let base = saved
+            .path
+            .canonicalize()
+            .ok()
+            .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+            .or_else(|| saved.path.parent().map(std::path::Path::to_path_buf));
+        let mut tab = TabState::from_body(
+            &body,
+            None,
+            base,
+            Some(saved.path.clone()),
+            Some(DocumentOrigin::local(saved.path.clone())),
+        );
+        tab.scroll = saved.scroll;
+        Some(tab)
+    }
+
+    fn save_session(&self) {
+        super::config::save_session(&self.reader_session());
+    }
+
+    fn reader_session(&self) -> super::config::ReaderSession {
+        let mut active_tab = 0;
+        let mut tabs = Vec::new();
+        for (idx, tab) in self.tabs.iter().enumerate() {
+            if let Some(path) = tab.path.clone() {
+                if idx == self.active_tab {
+                    active_tab = tabs.len();
+                }
+                tabs.push(super::config::SessionTab {
+                    path,
+                    scroll: tab.scroll,
+                });
+            }
+        }
+        super::config::ReaderSession { active_tab, tabs }
     }
 
     /// Re-read and re-walk the watched file (live reload).
@@ -1959,6 +2035,10 @@ fn contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
+fn session_path_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn link_preview(target: &LinkTarget) -> String {
     let label = match target {
         LinkTarget::Url(url) => super::layout::sanitize(url).into_owned(),
@@ -2388,7 +2468,9 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::terminal::config::{ReaderConfig, ReaderSettings, UserConfig};
+    use crate::render::terminal::config::{
+        ReaderConfig, ReaderSession, ReaderSettings, SessionTab, UserConfig,
+    };
     use crate::render::terminal::model::{Mods, Role};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -2813,6 +2895,113 @@ mod tests {
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.active_tab, 0);
         assert_ne!(app.title, "Second");
+    }
+
+    #[test]
+    fn reader_session_records_local_tabs_and_active_scroll() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "# A\n").expect("a");
+        std::fs::write(&b, "# B\n").expect("b");
+        let mut app = App::new(
+            "# A\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(a.clone()),
+        );
+        app.tabs.push(TabState::from_body(
+            "# B\n",
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(b.clone()),
+            Some(DocumentOrigin::local(b.clone())),
+        ));
+        app.tabs[0].scroll = 3;
+        app.tabs[1].scroll = 7;
+        app.active_tab = 1;
+
+        let session = app.reader_session();
+
+        assert_eq!(session.active_tab, 1);
+        assert_eq!(session.tabs.len(), 2);
+        assert_eq!(session.tabs[0].path, a);
+        assert_eq!(session.tabs[0].scroll, 3);
+        assert_eq!(session.tabs[1].path, b);
+        assert_eq!(session.tabs[1].scroll, 7);
+    }
+
+    #[test]
+    fn restore_session_tabs_recovers_saved_active_tab() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "# A\n").expect("a");
+        std::fs::write(&b, "# B\n").expect("b");
+        let mut app = App::new(
+            "# A\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(a.clone()),
+        );
+
+        let session = ReaderSession {
+            active_tab: 1,
+            tabs: vec![
+                SessionTab {
+                    path: a.clone(),
+                    scroll: 2,
+                },
+                SessionTab {
+                    path: b.clone(),
+                    scroll: 9,
+                },
+            ],
+        };
+        app.restore_session_tabs(&session, Some(a.as_path()));
+
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab, 1);
+        assert_eq!(app.title, "B");
+        assert_eq!(app.scroll, 9);
+    }
+
+    #[test]
+    fn restore_session_tabs_keeps_new_requested_file_active() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let saved = dir.path().join("saved.md");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(&saved, "# Saved\n").expect("saved");
+        let mut app = App::new(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current.clone()),
+        );
+
+        let session = ReaderSession {
+            active_tab: 0,
+            tabs: vec![SessionTab {
+                path: saved,
+                scroll: 4,
+            }],
+        };
+        app.restore_session_tabs(&session, Some(current.as_path()));
+
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab, 0);
+        assert_eq!(app.title, "Current");
+        assert_eq!(app.tabs[1].title, "Saved");
     }
 
     #[test]
