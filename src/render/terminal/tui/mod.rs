@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::io;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::time::Duration;
 use url::Url;
@@ -140,6 +141,33 @@ struct NavEntry {
     scroll: u16,
 }
 
+struct TabState {
+    doc: RenderedDoc,
+    title: String,
+    content: Text<'static>,
+    content_bg: Color,
+    content_fg: Color,
+    link_regions: Vec<LinkRegion>,
+    block_spans: Vec<(usize, usize)>,
+    block_jump: Vec<usize>,
+    rendered_width: u16,
+    theme_dirty: bool,
+    scroll: u16,
+    viewport_h: u16,
+    outline_state: ListState,
+    search_query: String,
+    matches: Vec<usize>,
+    match_idx: usize,
+    images: ImageStore,
+    image_placements: Vec<Placement>,
+    base_dir: Option<PathBuf>,
+    path: Option<PathBuf>,
+    origin: Option<DocumentOrigin>,
+    back: Vec<NavEntry>,
+    forward: Vec<NavEntry>,
+    pending_anchor: Option<String>,
+}
+
 enum Osc8Target {
     Open(LinkTarget),
     Close,
@@ -247,7 +275,8 @@ impl Drop for MouseCapture {
 
 #[allow(clippy::struct_excessive_bools)]
 struct App {
-    doc: RenderedDoc,
+    tabs: Vec<TabState>,
+    active_tab: usize,
     theme: ResolvedTheme,
     glyphs: Glyphs,
     keybindings: KeyBindings,
@@ -257,29 +286,10 @@ struct App {
     current_theme_name: Option<String>,
     saved_theme_name: Option<String>,
     chrome: Chrome,
-    title: String,
-
-    content: Text<'static>,
-    content_bg: Color,
-    content_fg: Color,
-    link_regions: Vec<LinkRegion>,
-    /// Per-block `(start_line, line_count)` from the renderer (pre-band-insert).
-    block_spans: Vec<(usize, usize)>,
-    /// Per-block start line adjusted for inserted graphical bands (outline jumps).
-    block_jump: Vec<usize>,
-    rendered_width: u16,
-    theme_dirty: bool,
-
-    scroll: u16,
-    viewport_h: u16,
     outline_visible: bool,
     focus: Focus,
-    outline_state: ListState,
 
     mode: Mode,
-    search_query: String,
-    matches: Vec<usize>,
-    match_idx: usize,
 
     show_help: bool,
     show_picker: bool,
@@ -293,19 +303,26 @@ struct App {
     status_message: Option<String>,
     quit: bool,
 
-    images: ImageStore,
-    image_placements: Vec<Placement>,
     font_dirs: Vec<PathBuf>,
-    base_dir: Option<PathBuf>,
-    path: Option<PathBuf>,
-    origin: Option<DocumentOrigin>,
-    back: Vec<NavEntry>,
-    forward: Vec<NavEntry>,
-    /// Heading anchor to jump to once the next document's layout is computed.
-    pending_anchor: Option<String>,
     content_area: Rect,
     outline_area: Option<Rect>,
     status_area: Rect,
+}
+
+impl Deref for App {
+    type Target = TabState;
+
+    fn deref(&self) -> &Self::Target {
+        let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        &self.tabs[idx]
+    }
+}
+
+impl DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        &mut self.tabs[idx]
+    }
 }
 
 impl App {
@@ -453,17 +470,8 @@ impl App {
         let saved = settings.reader;
         let outline_visible = saved.outline.unwrap_or(doc.outline.len() > 1);
         let saved_theme_name = saved.theme;
-
-        Self {
+        let tab = TabState {
             doc,
-            theme,
-            glyphs,
-            keybindings,
-            chrome: Chrome::for_theme(theme_name),
-            theme_names,
-            theme_idx,
-            current_theme_name,
-            saved_theme_name,
             title,
             content: Text::default(),
             content_bg: Color::Reset,
@@ -475,13 +483,34 @@ impl App {
             theme_dirty: true,
             scroll: 0,
             viewport_h: 1,
-            outline_visible,
-            focus: Focus::Content,
             outline_state,
-            mode: Mode::Normal,
             search_query: String::new(),
             matches: Vec::new(),
             match_idx: 0,
+            images: ImageStore::new(picker, base_dir.clone()),
+            image_placements: Vec::new(),
+            base_dir,
+            path: watch_path,
+            origin,
+            back: Vec::new(),
+            forward: Vec::new(),
+            pending_anchor: None,
+        };
+
+        Self {
+            tabs: vec![tab],
+            active_tab: 0,
+            theme,
+            glyphs,
+            keybindings,
+            chrome: Chrome::for_theme(theme_name),
+            theme_names,
+            theme_idx,
+            current_theme_name,
+            saved_theme_name,
+            outline_visible,
+            focus: Focus::Content,
+            mode: Mode::Normal,
             show_help: false,
             show_picker: false,
             picker_state: ListState::default(),
@@ -492,15 +521,7 @@ impl App {
             drag_row: None,
             status_message: None,
             quit: false,
-            images: ImageStore::new(picker, base_dir.clone()),
-            image_placements: Vec::new(),
             font_dirs: Vec::new(),
-            base_dir,
-            path: watch_path,
-            origin,
-            back: Vec::new(),
-            forward: Vec::new(),
-            pending_anchor: None,
             content_area: Rect::default(),
             outline_area: None,
             status_area: Rect::default(),
@@ -592,15 +613,15 @@ impl App {
             super::layout::sanitize(self.doc.title.as_deref().unwrap_or("silkprint")).into_owned();
         self.images.clear_cache();
         self.image_placements.clear();
+        let has_outline = !self.doc.outline.is_empty();
         match self.outline_state.selected() {
             Some(sel) if sel >= self.doc.outline.len() => {
-                self.outline_state
-                    .select((!self.doc.outline.is_empty()).then_some(0));
+                self.outline_state.select(has_outline.then_some(0));
             }
-            None if !self.doc.outline.is_empty() => self.outline_state.select(Some(0)),
+            None if has_outline => self.outline_state.select(Some(0)),
             _ => {}
         }
-        if self.doc.outline.is_empty() {
+        if !has_outline {
             self.focus = Focus::Content; // outline may have vanished
         }
         self.theme_dirty = true; // force ensure_content to re-render
@@ -824,10 +845,12 @@ impl App {
         self.content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
 
         let resolver = ContentStyleResolver::new(&self.theme);
-        self.content_bg = resolver
+        let page_bg = resolver
             .page_background()
             .map_or(Color::Reset, rgb_to_color);
-        self.content_fg = resolver.body_color().map_or(Color::Reset, rgb_to_color);
+        let body_fg = resolver.body_color().map_or(Color::Reset, rgb_to_color);
+        self.content_bg = page_bg;
+        self.content_fg = body_fg;
         // ansi-to-tui leaves text spans with a Reset background, which paints as
         // the terminal's own default — black on a dark profile even for a light
         // document theme. Pin every unset span background to the page color so
@@ -835,7 +858,7 @@ impl App {
         for line in &mut self.content.lines {
             for span in &mut line.spans {
                 if span.style.bg.is_none() || span.style.bg == Some(Color::Reset) {
-                    span.style.bg = Some(self.content_bg);
+                    span.style.bg = Some(page_bg);
                 }
             }
         }
@@ -1416,18 +1439,22 @@ impl App {
     }
 
     fn run_search(&mut self) {
-        self.matches.clear();
         self.match_idx = 0;
         if self.search_query.is_empty() {
+            self.matches.clear();
             return;
         }
         let needle = self.search_query.to_lowercase();
-        for (idx, line) in self.content.lines.iter().enumerate() {
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            if text.to_lowercase().contains(&needle) {
-                self.matches.push(idx);
-            }
-        }
+        self.matches = self
+            .content
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, line)| {
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                text.to_lowercase().contains(&needle).then_some(idx)
+            })
+            .collect();
         if !self.matches.is_empty() {
             self.set_scroll(u16::try_from(self.matches[0]).unwrap_or(0));
         }
@@ -1602,15 +1629,16 @@ impl App {
             .style(Style::default().fg(self.content_fg).bg(self.content_bg));
         frame.render_widget(para, area);
 
+        let current_scroll = self.scroll;
         self.images.begin_frame(images::ImageView {
-            scroll: self.scroll,
+            scroll: current_scroll,
             height: area.height,
             width: area.width.saturating_sub(2),
         });
 
         // Draw visible image bands as terminal-row tiles. Scrolling by one row
         // then reuses every cached tile except the newly exposed edge row.
-        let scroll = u32::from(self.scroll);
+        let scroll = u32::from(current_scroll);
         let viewport = u32::from(area.height);
         let prefetch = viewport
             .saturating_mul(2)
