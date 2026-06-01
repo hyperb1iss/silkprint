@@ -623,31 +623,94 @@ fn resolve_theme_source(theme_arg: &str) -> ThemeSource {
     }
 }
 
+fn theme_flag_explicit() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter()
+        .any(|a| a == "--theme" || a.starts_with("--theme="))
+        || args.windows(2).any(|w| w[0] == "-t")
+        || args.iter().any(|a| a.starts_with("-t") && a.len() > 2)
+}
+
 /// Build `RenderOptions` from the parsed CLI arguments.
 fn build_render_options(cli: &Cli) -> miette::Result<RenderOptions> {
     let paper = PaperSize::from_str_case_insensitive(&cli.paper)?;
     let theme = resolve_theme_source(&cli.theme);
     let font_dirs = cli.font_dir.iter().cloned().collect();
 
-    // Detect if --theme / -t was explicitly passed (vs. clap default).
-    // clap's -t always requires a value, so valid forms are:
-    //   --theme NAME, --theme=NAME, -t NAME, -tNAME
-    let theme_explicit = {
-        let args: Vec<String> = std::env::args().collect();
-        args.iter()
-            .any(|a| a == "--theme" || a.starts_with("--theme="))
-            || args.windows(2).any(|w| w[0] == "-t")
-            || args.iter().any(|a| a.starts_with("-t") && a.len() > 2)
-    };
-
     Ok(RenderOptions {
         theme,
-        theme_explicit,
+        theme_explicit: theme_flag_explicit(),
         paper,
         font_dirs,
         toc: cli.toc_override(),
         title_page: cli.title_page_override(),
     })
+}
+
+#[cfg(feature = "terminal")]
+fn long_flag_explicit(name: &str) -> bool {
+    let assignment = format!("{name}=");
+    std::env::args().any(|arg| arg == name || arg.starts_with(&assignment))
+}
+
+#[cfg(feature = "terminal")]
+fn env_string(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(feature = "terminal")]
+fn env_u16(name: &str) -> Option<u16> {
+    env_string(name).and_then(|value| value.parse().ok())
+}
+
+#[cfg(feature = "terminal")]
+fn effective_reader_color(
+    cli: &Cli,
+    settings: &silkprint::render::terminal::config::ReaderSettings,
+) -> String {
+    if long_flag_explicit("--color") {
+        return cli.color.clone();
+    }
+    env_string("SILKPRINT_COLOR")
+        .or_else(|| settings.color().map(str::to_string))
+        .unwrap_or_else(|| cli.color.clone())
+}
+
+#[cfg(feature = "terminal")]
+fn effective_reader_width(
+    cli: &Cli,
+    settings: &silkprint::render::terminal::config::ReaderSettings,
+) -> Option<u16> {
+    cli.width
+        .or_else(|| env_u16("SILKPRINT_WIDTH"))
+        .or_else(|| settings.width())
+}
+
+#[cfg(feature = "terminal")]
+fn effective_reader_glyphs(
+    cli: &Cli,
+    settings: &silkprint::render::terminal::config::ReaderSettings,
+) -> Option<silkprint::GlyphTier> {
+    cli.glyphs
+        .as_deref()
+        .and_then(silkprint::GlyphTier::parse)
+        .or_else(|| {
+            env_string("SILKPRINT_GLYPHS").and_then(|value| silkprint::GlyphTier::parse(&value))
+        })
+        .or_else(|| settings.glyphs().and_then(silkprint::GlyphTier::parse))
+}
+
+#[cfg(feature = "terminal")]
+fn effective_reader_pager(
+    settings: &silkprint::render::terminal::config::ReaderSettings,
+) -> String {
+    env_string("SILKPRINT_PAGER")
+        .or_else(|| env_string("PAGER"))
+        .or_else(|| settings.pager().map(str::to_string))
+        .unwrap_or_else(|| "less -R".to_string())
 }
 
 /// Handle `read` mode: render Markdown to styled terminal output.
@@ -727,24 +790,16 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
         .into());
     }
 
-    // Saved reader preferences fill in where no flag was given (CLI explicit
-    // theme/glyphs still win).
-    let reader_config = silkprint::render::terminal::config::load();
-    let glyph_tier = cli
-        .glyphs
-        .as_deref()
-        .and_then(silkprint::GlyphTier::parse)
-        .or_else(|| {
-            reader_config
-                .glyphs
-                .as_deref()
-                .and_then(silkprint::GlyphTier::parse)
-        });
+    let reader_settings = silkprint::render::terminal::config::load_settings();
+    let glyph_tier = effective_reader_glyphs(cli, &reader_settings);
     let mut options = build_render_options(cli)?;
-    if !options.theme_explicit
-        && let Some(saved) = &reader_config.theme
-    {
-        options.theme = silkprint::ThemeSource::BuiltIn(saved.clone());
+    if !options.theme_explicit {
+        if let Some(theme) = env_string("SILKPRINT_THEME") {
+            options.theme = resolve_theme_source(&theme);
+            options.theme_explicit = true;
+        } else if let Some(theme) = reader_settings.theme() {
+            options.theme = resolve_theme_source(theme);
+        }
     }
 
     // Interactive TTY → TUI; piped or --plain → one-shot. Both resolve the
@@ -773,10 +828,10 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
     }
 
     let terminal_options = silkprint::TerminalRenderOptions {
-        color: silkprint::ColorChoice::parse(&cli.color),
+        color: silkprint::ColorChoice::parse(&effective_reader_color(cli, &reader_settings)),
         glyphs: glyph_tier,
         images: !cli.no_images,
-        width: cli.width,
+        width: effective_reader_width(cli, &reader_settings),
     };
 
     let (output, warnings) = silkprint::render_to_terminal_with_origin(
@@ -786,7 +841,7 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
         &terminal_options,
     )?;
 
-    emit_one_shot_output(cli, &output);
+    emit_one_shot_output(cli, &reader_settings, &output);
 
     if !cli.quiet {
         display_warnings(&warnings);
@@ -795,13 +850,17 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
 }
 
 #[cfg(feature = "terminal")]
-fn emit_one_shot_output(cli: &Cli, output: &str) {
+fn emit_one_shot_output(
+    cli: &Cli,
+    settings: &silkprint::render::terminal::config::ReaderSettings,
+    output: &str,
+) {
     if should_page_output(
         output,
         io::stdout().is_terminal(),
         cli.no_pager,
         terminal_height(),
-    ) && page_output(output).is_ok()
+    ) && page_output(output, &effective_reader_pager(settings)).is_ok()
     {
         return;
     }
@@ -834,15 +893,10 @@ fn terminal_height() -> Option<u16> {
 }
 
 #[cfg(feature = "terminal")]
-fn page_output(output: &str) -> io::Result<()> {
-    use std::ffi::OsString;
+fn page_output(output: &str, pager: &str) -> io::Result<()> {
     use std::process::{Command, Stdio};
 
-    let spec = std::env::var_os("PAGER")
-        .filter(|spec| !spec.is_empty())
-        .unwrap_or_else(|| OsString::from("less -R"));
-    let spec = spec.to_string_lossy();
-    let mut parts = spec.split_whitespace();
+    let mut parts = pager.split_whitespace();
     let Some(program) = parts.next() else {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty pager"));
     };
