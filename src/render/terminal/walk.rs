@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use comrak::nodes::{AstNode, ListType, NodeValue, TableAlignment};
 
+use crate::render::origin::DocumentOrigin;
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
 use super::highlight::highlight_block;
@@ -20,12 +21,22 @@ use super::model::{
 
 /// Walk the AST into a `RenderedDoc`.
 pub fn walk<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector) -> RenderedDoc {
-    let footnotes = collect_footnotes(root, warnings);
+    walk_with_origin(root, warnings, None)
+}
+
+/// Walk the AST into a `RenderedDoc`, resolving relative remote references.
+pub fn walk_with_origin<'a>(
+    root: &'a AstNode<'a>,
+    warnings: &mut WarningCollector,
+    origin: Option<&DocumentOrigin>,
+) -> RenderedDoc {
+    let footnotes = collect_footnotes(root, warnings, origin);
     let mut walker = Walker {
         warnings,
         footnotes,
         footnote_order: Vec::new(),
         doc: RenderedDoc::default(),
+        origin,
         _marker: std::marker::PhantomData,
     };
 
@@ -36,6 +47,7 @@ pub fn walk<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector) -> Rende
     doc.title = first_heading_text(&blocks);
     doc.outline = build_outline(&blocks);
     doc.blocks = blocks;
+    doc.origin = origin.cloned();
     doc
 }
 
@@ -44,6 +56,7 @@ struct Walker<'a, 'w> {
     footnotes: HashMap<String, Vec<Block>>,
     footnote_order: Vec<String>,
     doc: RenderedDoc,
+    origin: Option<&'w DocumentOrigin>,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
@@ -131,7 +144,11 @@ impl<'a> Walker<'a, '_> {
             }),
 
             NodeValue::HtmlBlock(html) => {
-                out.extend(super::html::to_blocks(&html.literal, &mut self.doc.links));
+                out.extend(super::html::to_blocks_with_origin(
+                    &html.literal,
+                    &mut self.doc.links,
+                    self.origin,
+                ));
             }
 
             // Anything else at block position is treated as inline content.
@@ -154,7 +171,7 @@ impl<'a> Walker<'a, '_> {
             let mut alt = String::new();
             collect_text(children[0], &mut alt);
             out.push(Block::Image {
-                src: link.url.clone(),
+                src: self.resolve_reference(&link.url),
                 alt,
             });
             return;
@@ -345,11 +362,13 @@ impl<'a> Walker<'a, '_> {
                 link,
             }),
             NodeValue::Link(l) => {
-                let id = self.doc.add_link(LinkTarget::from_url(&l.url));
+                let url = self.resolve_reference(&l.url);
+                let id = self.doc.add_link(LinkTarget::from_url(&url));
                 self.inline_kids(node, Role::Link, mods.with_underline(), Some(id), out);
             }
             NodeValue::WikiLink(w) => {
-                let id = self.doc.add_link(LinkTarget::from_url(&w.url));
+                let url = self.resolve_reference(&w.url);
+                let id = self.doc.add_link(LinkTarget::from_url(&url));
                 self.inline_kids(node, Role::Link, mods.with_underline(), Some(id), out);
             }
             NodeValue::Image(l) => {
@@ -445,6 +464,13 @@ impl<'a> Walker<'a, '_> {
             blocks.extend(def);
         }
     }
+
+    fn resolve_reference(&self, target: &str) -> String {
+        self.origin.map_or_else(
+            || target.to_string(),
+            |origin| origin.resolve_reference(target),
+        )
+    }
 }
 
 // ─── Free helpers ────────────────────────────────────────────────
@@ -452,6 +478,7 @@ impl<'a> Walker<'a, '_> {
 fn collect_footnotes<'a>(
     root: &'a AstNode<'a>,
     warnings: &mut WarningCollector,
+    origin: Option<&DocumentOrigin>,
 ) -> HashMap<String, Vec<Block>> {
     let mut map = HashMap::new();
     for node in root.descendants() {
@@ -464,6 +491,7 @@ fn collect_footnotes<'a>(
             footnotes: HashMap::new(),
             footnote_order: Vec::new(),
             doc: RenderedDoc::default(),
+            origin,
             _marker: std::marker::PhantomData,
         };
         let blocks = sub.block_children(node);
@@ -660,5 +688,41 @@ impl LinkTarget {
         } else {
             LinkTarget::Url(url.to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use comrak::Arena;
+    use url::Url;
+
+    use super::*;
+
+    #[test]
+    fn remote_origin_resolves_images_and_links() {
+        let arena = Arena::new();
+        let root = crate::render::markdown::parse(
+            &arena,
+            "![logo](assets/logo.png)\n\n[guide](docs/guide.md#intro)\n\n[in-page](#usage)",
+        );
+        let origin = DocumentOrigin::remote(
+            Url::parse("https://raw.githubusercontent.com/o/r/HEAD/README.md").expect("url"),
+        );
+        let mut warnings = WarningCollector::new();
+
+        let doc = walk_with_origin(root, &mut warnings, Some(&origin));
+
+        assert!(matches!(
+            &doc.blocks[0],
+            Block::Image { src, .. }
+                if src == "https://raw.githubusercontent.com/o/r/HEAD/assets/logo.png"
+        ));
+        assert!(matches!(
+            &doc.links[0],
+            LinkTarget::Url(url)
+                if url == "https://raw.githubusercontent.com/o/r/HEAD/docs/guide.md#intro"
+        ));
+        assert!(matches!(&doc.links[1], LinkTarget::Anchor(anchor) if anchor == "usage"));
+        assert_eq!(doc.origin, Some(origin));
     }
 }

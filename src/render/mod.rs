@@ -5,7 +5,9 @@ pub mod html;
 pub mod image;
 pub mod markdown;
 pub mod mermaid;
+pub mod origin;
 pub mod preamble;
+pub mod remote;
 #[cfg(feature = "terminal")]
 pub mod terminal;
 pub mod typst;

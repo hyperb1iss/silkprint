@@ -20,6 +20,7 @@ pub mod tui;
 pub mod walk;
 
 use crate::error::SilkprintError;
+use crate::render::origin::DocumentOrigin;
 use crate::theme::ResolvedTheme;
 use crate::warnings::WarningCollector;
 
@@ -57,11 +58,22 @@ pub fn render_to_string(
     options: &TerminalRenderOptions,
     warnings: &mut WarningCollector,
 ) -> Result<String, SilkprintError> {
+    render_to_string_with_origin(body, theme, options, warnings, None)
+}
+
+/// Render a markdown body to a styled ANSI string with a document origin.
+pub fn render_to_string_with_origin(
+    body: &str,
+    theme: &ResolvedTheme,
+    options: &TerminalRenderOptions,
+    warnings: &mut WarningCollector,
+    origin: Option<&DocumentOrigin>,
+) -> Result<String, SilkprintError> {
     let arena = comrak::Arena::new();
     let root = super::markdown::parse(&arena, body);
     super::markdown::check_content(root, warnings);
 
-    let doc = walk::walk(root, warnings);
+    let doc = walk::walk_with_origin(root, warnings, origin);
 
     let mut caps = Capabilities::detect(options.color, options.glyphs, options.images);
     if let Some(width) = options.width {

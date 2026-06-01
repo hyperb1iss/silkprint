@@ -9,9 +9,6 @@ use crate::warnings::{SilkprintWarning, WarningCollector};
 /// Virtual path prefix for downloaded remote images served through the Typst world.
 pub const REMOTE_IMAGE_VPATH_PREFIX: &str = "/__remote_image_";
 
-#[cfg(not(target_arch = "wasm32"))]
-const MAX_REMOTE_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageMode {
     Compile,
@@ -237,148 +234,12 @@ fn image_typst_path(original_src: &str, resolved_path: &Path) -> String {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn fetch_remote_image(url: &str) -> Result<(Vec<u8>, String), String> {
-    use std::time::Duration;
+    let bytes = super::remote::fetch_remote_bytes(url)?;
 
-    // Markdown can be untrusted; remote images must not become SSRF probes.
-    if !is_public_host(url) {
-        return Err("blocked non-public or unresolvable host".to_string());
-    }
-
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(20)))
-        // Keep the preflight meaningful: a public URL must not hop private.
-        .max_redirects(0)
-        .build()
-        .into();
-
-    let mut response = agent
-        .get(url)
-        .header(
-            "User-Agent",
-            concat!("silkprint/", env!("CARGO_PKG_VERSION")),
-        )
-        .call()
-        .map_err(|err| err.to_string())?;
-
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_string();
-
-    let bytes = response
-        .body_mut()
-        .with_config()
-        .limit(MAX_REMOTE_IMAGE_BYTES)
-        .read_to_vec()
-        .map_err(|err| err.to_string())?;
-
-    let ext = detect_image_extension(&bytes, content_type.as_str(), url)
+    let ext = detect_image_extension(&bytes, "", url)
         .ok_or_else(|| "unsupported or unknown image format".to_string())?;
 
     Ok((bytes, ext.to_string()))
-}
-
-/// Whether a URL's host resolves entirely to globally-routable addresses.
-///
-/// Rejects `localhost`, `*.local`, unresolvable hosts, and any host resolving
-/// to a loopback/private/link-local/unique-local address (blocks the obvious
-/// SSRF and cloud-metadata vectors).
-#[cfg(not(target_arch = "wasm32"))]
-fn is_public_host(url: &str) -> bool {
-    use std::net::ToSocketAddrs;
-
-    let authority = url
-        .split("://")
-        .nth(1)
-        .and_then(|rest| rest.split(['/', '?', '#']).next())
-        .map(|auth| auth.rsplit('@').next().unwrap_or(auth))
-        .unwrap_or_default();
-    let host = if let Some(rest) = authority.strip_prefix('[') {
-        rest.split(']').next().unwrap_or(authority)
-    } else {
-        authority.split(':').next().unwrap_or(authority)
-    };
-    let lower = host.to_ascii_lowercase();
-    let last_label = lower.rsplit('.').next().unwrap_or(lower.as_str());
-    if lower.is_empty() || last_label == "localhost" || last_label == "local" {
-        return false;
-    }
-    if let Ok(ip) = host.parse() {
-        return is_global_ip(ip);
-    }
-
-    match (host, 443u16).to_socket_addrs() {
-        Ok(addrs) => {
-            let mut resolved = false;
-            for addr in addrs {
-                resolved = true;
-                if !is_global_ip(addr.ip()) {
-                    return false;
-                }
-            }
-            resolved
-        }
-        Err(_) => false,
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn is_global_ip(ip: std::net::IpAddr) -> bool {
-    use std::net::IpAddr;
-    match ip {
-        IpAddr::V4(v4) => {
-            let o = v4.octets();
-            !(v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                || o[0] == 0
-                || (o[0] == 100 && (o[1] & 0xc0) == 64))
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_global_ip(IpAddr::V4(v4));
-            }
-            let segments = v6.segments();
-            if let Some(v4) = embedded_ipv4(segments) {
-                return is_global_ip(IpAddr::V4(v4));
-            }
-            let first = segments[0];
-            !(v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_multicast()
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80)
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn embedded_ipv4(segments: [u16; 8]) -> Option<std::net::Ipv4Addr> {
-    let tail = || {
-        let [a, b] = segments[6].to_be_bytes();
-        let [c, d] = segments[7].to_be_bytes();
-        std::net::Ipv4Addr::new(a, b, c, d)
-    };
-
-    if segments[..6] == [0, 0, 0, 0, 0, 0]
-        || segments[..6] == [0, 0, 0, 0, 0xffff, 0]
-        || segments[..6] == [0x0064, 0xff9b, 0, 0, 0, 0]
-    {
-        return Some(tail());
-    }
-
-    if segments[0] == 0x2002 {
-        let [a, b] = segments[1].to_be_bytes();
-        let [c, d] = segments[2].to_be_bytes();
-        return Some(std::net::Ipv4Addr::new(a, b, c, d));
-    }
-
-    None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -458,26 +319,6 @@ mod tests {
 
     use super::*;
     use crate::render::markdown;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn ssrf_guard_blocks_local_and_private_hosts() {
-        // IP literals + localhost/.local resolve (or short-circuit) without network.
-        assert!(!is_public_host("http://localhost/x.png"));
-        assert!(!is_public_host("http://127.0.0.1/x.png"));
-        assert!(!is_public_host("http://169.254.169.254/latest/meta-data"));
-        assert!(!is_public_host("http://10.0.0.5/x"));
-        assert!(!is_public_host("http://192.168.1.1/x"));
-        assert!(!is_public_host("http://[::1]/x"));
-        assert!(!is_public_host("http://[::ffff:127.0.0.1]/x"));
-        assert!(!is_public_host("http://[::ffff:169.254.169.254]/x"));
-        assert!(!is_public_host("http://[::ffff:0:127.0.0.1]/x"));
-        assert!(!is_public_host("http://[::192.168.1.1]/x"));
-        assert!(!is_public_host("http://[64:ff9b::127.0.0.1]/x"));
-        assert!(!is_public_host("http://[2002:0a00:0001::]/x"));
-        assert!(!is_public_host("https://printer.local/x"));
-        assert!(!is_public_host("http:///no-host"));
-    }
 
     #[test]
     fn collects_html_image_sources_from_nested_markup() {

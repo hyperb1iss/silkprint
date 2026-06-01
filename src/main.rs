@@ -662,7 +662,53 @@ fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
             source: e,
         }
     })?;
+    let base_dir = silkprint::render::origin::local_base_dir(input_path);
+    handle_read_source(
+        cli,
+        ReadSource {
+            input,
+            base_dir,
+            watch_path: Some(input_path.to_path_buf()),
+            origin: Some(silkprint::render::origin::DocumentOrigin::local(
+                input_path.to_path_buf(),
+            )),
+        },
+    )
+}
 
+#[cfg(feature = "terminal")]
+fn handle_read_remote(
+    cli: &Cli,
+    raw: &str,
+    input: &silkprint::render::remote::RemoteInput,
+) -> miette::Result<()> {
+    let remote = silkprint::render::remote::fetch_remote_document(input).map_err(|message| {
+        silkprint::error::SilkprintError::RemoteFetch {
+            url: raw.to_string(),
+            message,
+        }
+    })?;
+    handle_read_source(
+        cli,
+        ReadSource {
+            input: remote.body,
+            base_dir: None,
+            watch_path: None,
+            origin: Some(remote.origin),
+        },
+    )
+}
+
+#[cfg(feature = "terminal")]
+struct ReadSource {
+    input: String,
+    base_dir: Option<PathBuf>,
+    watch_path: Option<PathBuf>,
+    origin: Option<silkprint::render::origin::DocumentOrigin>,
+}
+
+#[cfg(feature = "terminal")]
+fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
     // Reading is its own mode; PDF-only flags don't apply.
     if cli.check || cli.open || cli.dump_typst || cli.output.is_some() {
         return Err(silkprint::error::SilkprintError::ConflictingOptions {
@@ -704,24 +750,18 @@ fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
     // Interactive TTY → TUI; piped or --plain → one-shot. Both resolve the
     // effective theme the same way (front matter / path / builtin).
     if io::stdout().is_terminal() && !cli.plain {
-        let (theme, theme_name, _warnings) = silkprint::resolve_terminal_theme(&input, &options)?;
-        // Resolve relative image paths against the document's directory. Go
-        // through canonicalize first so a bare `README.md` (whose `.parent()`
-        // is the empty path) still yields the real containing directory.
-        let base_dir = input_path
-            .canonicalize()
-            .ok()
-            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
-            .or_else(|| input_path.parent().map(std::path::Path::to_path_buf));
+        let (theme, theme_name, _warnings) =
+            silkprint::resolve_terminal_theme(&source.input, &options)?;
         silkprint::run_terminal_tui(
-            &input,
+            &source.input,
             theme,
             &theme_name,
             silkprint::TerminalTuiOptions {
                 glyph_override: glyph_tier,
                 images: !cli.no_images,
-                base_dir,
-                watch_path: Some(input_path.to_path_buf()),
+                base_dir: source.base_dir,
+                origin: source.origin,
+                watch_path: source.watch_path,
                 font_dirs: options.font_dirs.clone(),
             },
         )
@@ -739,8 +779,12 @@ fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
         width: cli.width,
     };
 
-    let (output, warnings) =
-        silkprint::render_to_terminal(&input, Some(input_path), &options, &terminal_options)?;
+    let (output, warnings) = silkprint::render_to_terminal_with_origin(
+        &source.input,
+        source.origin.as_ref(),
+        &options,
+        &terminal_options,
+    )?;
 
     print!("{output}");
     io::stdout().flush().ok();
@@ -749,6 +793,21 @@ fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
         display_warnings(&warnings);
     }
     Ok(())
+}
+
+#[cfg(feature = "terminal")]
+fn parse_remote_read_input(
+    input: Option<&PathBuf>,
+) -> miette::Result<Option<(String, silkprint::render::remote::RemoteInput)>> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let raw = input.to_string_lossy().into_owned();
+    silkprint::render::remote::parse_remote_input(&raw)
+        .map(|remote| remote.map(|remote| (raw.clone(), remote)))
+        .map_err(|message| {
+            silkprint::error::SilkprintError::RemoteFetch { url: raw, message }.into()
+        })
 }
 
 /// Resolve the input file for a mode, erroring if absent or missing on disk.
@@ -808,7 +867,11 @@ fn main() -> miette::Result<()> {
         }
         #[cfg(feature = "terminal")]
         Some(silkprint::cli::Command::Read { .. }) => {
-            let input = require_input(cli.effective_input())?;
+            let effective_input = cli.effective_input();
+            if let Some((raw, remote)) = parse_remote_read_input(effective_input.as_ref())? {
+                return handle_read_remote(&cli, &raw, &remote);
+            }
+            let input = require_input(effective_input)?;
             return handle_read(&cli, &input);
         }
         None => {}
@@ -816,10 +879,14 @@ fn main() -> miette::Result<()> {
 
     // Bare form: read in the terminal by default; a PDF flag (-o / --check /
     // --dump-typst / --open) routes to PDF rendering instead.
-    let input = require_input(cli.input.clone())?;
     #[cfg(feature = "terminal")]
     if !cli.pdf_signaled() {
+        if let Some((raw, remote)) = parse_remote_read_input(cli.input.as_ref())? {
+            return handle_read_remote(&cli, &raw, &remote);
+        }
+        let input = require_input(cli.input.clone())?;
         return handle_read(&cli, &input);
     }
+    let input = require_input(cli.input.clone())?;
     run_pdf(&cli, &input)
 }

@@ -4510,6 +4510,7 @@ dependencies = [
  "typst-svg",
  "unicode-width 0.2.2",
  "ureq",
+ "url",
 ]
 
 [[package]]

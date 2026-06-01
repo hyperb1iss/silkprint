@@ -8,6 +8,8 @@
 //! theme-independent, so a live theme switch only re-resolves styles instead of
 //! re-walking the source.
 
+use crate::render::origin::DocumentOrigin;
+
 /// Index into [`RenderedDoc::links`].
 pub type LinkId = usize;
 
@@ -250,6 +252,7 @@ pub struct RenderedDoc {
     pub outline: Vec<OutlineItem>,
     pub links: Vec<LinkTarget>,
     pub title: Option<String>,
+    pub origin: Option<DocumentOrigin>,
 }
 
 impl RenderedDoc {

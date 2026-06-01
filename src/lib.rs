@@ -121,7 +121,18 @@ pub fn render_to_terminal(
 ) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
     // One-shot output stays text-only for images; the TUI resolves assets from
     // its base_dir and draws graphical bands.
-    let _ = input_path;
+    let origin = input_path.map(render::origin::DocumentOrigin::local);
+    render_to_terminal_with_origin(input, origin.as_ref(), options, terminal_options)
+}
+
+/// Render markdown to a styled terminal string with a document origin.
+#[cfg(feature = "terminal")]
+pub fn render_to_terminal_with_origin(
+    input: &str,
+    origin: Option<&render::origin::DocumentOrigin>,
+    options: &RenderOptions,
+    terminal_options: &render::terminal::TerminalRenderOptions,
+) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
     let mut warnings = WarningCollector::new();
 
     let (front_matter, body) = render::frontmatter::extract(input)?;
@@ -131,11 +142,12 @@ pub fn render_to_terminal(
     let effective_theme_source = resolve_effective_theme(options, front_matter.as_ref());
     let resolved_theme = theme::load_theme(&effective_theme_source, &mut warnings)?;
 
-    let output = render::terminal::render_to_string(
+    let output = render::terminal::render_to_string_with_origin(
         &body,
         &resolved_theme,
         terminal_options,
         &mut warnings,
+        origin,
     )?;
     Ok((output, warnings.into_warnings()))
 }

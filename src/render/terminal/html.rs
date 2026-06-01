@@ -13,18 +13,30 @@ use ego_tree::NodeRef;
 use scraper::Html;
 use scraper::node::{Element, Node};
 
+use crate::render::origin::DocumentOrigin;
+
 use super::model::{
     Align, Block, ItemMarker, LinkTarget, ListBlock, ListItem, Mods, Role, Span, TableBlock,
 };
 
 /// Convert an HTML fragment into blocks, registering link targets.
 pub fn to_blocks(html: &str, links: &mut Vec<LinkTarget>) -> Vec<Block> {
+    to_blocks_with_origin(html, links, None)
+}
+
+/// Convert an HTML fragment into blocks, resolving remote-relative references.
+pub fn to_blocks_with_origin(
+    html: &str,
+    links: &mut Vec<LinkTarget>,
+    origin: Option<&DocumentOrigin>,
+) -> Vec<Block> {
     let fragment = Html::parse_fragment(html);
     let mut builder = Builder {
         blocks: Vec::new(),
         inline: Vec::new(),
         links,
         inline_only: false,
+        origin,
     };
     for child in fragment.tree.root().children() {
         builder.walk(child, Mods::default(), Role::Body, None);
@@ -40,6 +52,7 @@ struct Builder<'a> {
     /// True inside contexts that can only hold inline content (table cells), so
     /// images stay text placeholders instead of being promoted to image blocks.
     inline_only: bool,
+    origin: Option<&'a DocumentOrigin>,
 }
 
 impl Builder<'_> {
@@ -54,8 +67,9 @@ impl Builder<'_> {
     }
 
     fn add_link(&mut self, url: &str) -> usize {
+        let url = self.resolve_reference(url);
         let target = url.strip_prefix('#').map_or_else(
-            || LinkTarget::Url(url.to_string()),
+            || LinkTarget::Url(url.clone()),
             |anchor| LinkTarget::Anchor(anchor.to_string()),
         );
         self.links.push(target);
@@ -66,6 +80,13 @@ impl Builder<'_> {
         for child in node.children() {
             self.walk(child, mods, role, link);
         }
+    }
+
+    fn resolve_reference(&self, target: &str) -> String {
+        self.origin.map_or_else(
+            || target.to_string(),
+            |origin| origin.resolve_reference(target),
+        )
     }
 
     fn walk(&mut self, node: NodeRef<'_, Node>, mods: Mods, role: Role, link: Option<usize>) {
@@ -114,15 +135,16 @@ impl Builder<'_> {
             }
             "img" => {
                 let src = el.attr("src").unwrap_or_default();
+                let resolved_src = self.resolve_reference(src);
                 let alt = el.attr("alt").unwrap_or_default();
                 // Promote real raster images (logos, screenshots) to block-level
                 // so they render as actual graphics. Decorative inline images —
                 // shields.io-style SVG badges with no raster extension — stay as
                 // text placeholders so a badge row doesn't explode into a stack.
-                if is_raster_src(src) && !self.inline_only {
+                if is_raster_src(&resolved_src) && !self.inline_only {
                     self.flush();
                     self.blocks.push(Block::Image {
-                        src: src.to_string(),
+                        src: resolved_src,
                         alt: alt.to_string(),
                     });
                 } else {
@@ -147,6 +169,7 @@ impl Builder<'_> {
                     inline: Vec::new(),
                     links: self.links,
                     inline_only: self.inline_only,
+                    origin: self.origin,
                 };
                 sub.children(node, mods, Role::Heading(level), link);
                 let spans = sub.inline;
@@ -181,6 +204,7 @@ impl Builder<'_> {
                     inline: Vec::new(),
                     links: self.links,
                     inline_only: self.inline_only,
+                    origin: self.origin,
                 };
                 sub.children(node, mods, Role::Quote, link);
                 sub.flush();
@@ -196,6 +220,7 @@ impl Builder<'_> {
                         inline: Vec::new(),
                         links: self.links,
                         inline_only: self.inline_only,
+                        origin: self.origin,
                     };
                     sub.children(node, mods, role, link);
                     sub.flush();
@@ -245,6 +270,7 @@ impl Builder<'_> {
                 inline: Vec::new(),
                 links: self.links,
                 inline_only: self.inline_only,
+                origin: self.origin,
             };
             sub.children(li, Mods::default(), Role::Body, None);
             sub.flush();
@@ -298,6 +324,7 @@ impl Builder<'_> {
                     inline: Vec::new(),
                     links: self.links,
                     inline_only: true,
+                    origin: self.origin,
                 };
                 sub.children(cell, Mods::default(), Role::Body, None);
                 cells.push(sub.inline);

@@ -15,6 +15,7 @@ use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
+use url::Url;
 
 use ansi_to_tui::IntoText;
 use notify::Watcher;
@@ -32,6 +33,7 @@ use ratatui_image::picker::Picker;
 use unicode_width::UnicodeWidthChar;
 
 use crate::ThemeSource;
+use crate::render::origin::{DocumentOrigin, is_markdown_url, same_remote_origin};
 use crate::theme::ResolvedTheme;
 use crate::warnings::WarningCollector;
 
@@ -79,11 +81,11 @@ struct LinkRegion {
     target: LinkTarget,
 }
 
-/// A visited document in the back/forward history: its path and the scroll
-/// offset at the time we left it, so returning restores the prior view.
+/// A visited document in the back/forward history and the scroll offset at the
+/// time we left it, so returning restores the prior view.
 #[derive(Clone)]
 struct NavEntry {
-    path: PathBuf,
+    origin: DocumentOrigin,
     scroll: u16,
 }
 
@@ -107,6 +109,7 @@ pub struct TerminalTuiOptions {
     pub images: bool,
     pub base_dir: Option<PathBuf>,
     pub watch_path: Option<PathBuf>,
+    pub origin: Option<DocumentOrigin>,
     pub font_dirs: Vec<PathBuf>,
 }
 
@@ -117,6 +120,7 @@ impl Default for TerminalTuiOptions {
             images: true,
             base_dir: None,
             watch_path: None,
+            origin: None,
             font_dirs: Vec::new(),
         }
     }
@@ -136,7 +140,7 @@ pub fn run(
         .images
         .then(Picker::from_query_stdio)
         .and_then(Result::ok);
-    let mut app = App::new(
+    let mut app = App::new_with_origin(
         body,
         theme,
         theme_name,
@@ -144,6 +148,7 @@ pub fn run(
         picker,
         options.base_dir,
         options.watch_path,
+        options.origin,
     );
     app.font_dirs = options.font_dirs;
     let mut terminal = ratatui::init();
@@ -230,6 +235,7 @@ struct App {
     font_dirs: Vec<PathBuf>,
     base_dir: Option<PathBuf>,
     path: Option<PathBuf>,
+    origin: Option<DocumentOrigin>,
     back: Vec<NavEntry>,
     forward: Vec<NavEntry>,
     /// Heading anchor to jump to once the next document's layout is computed.
@@ -240,6 +246,7 @@ struct App {
 }
 
 impl App {
+    #[cfg(test)]
     fn new(
         body: &str,
         theme: ResolvedTheme,
@@ -249,7 +256,7 @@ impl App {
         base_dir: Option<PathBuf>,
         watch_path: Option<PathBuf>,
     ) -> Self {
-        Self::new_with_config(
+        Self::new_with_origin(
             body,
             theme,
             theme_name,
@@ -257,10 +264,35 @@ impl App {
             picker,
             base_dir,
             watch_path,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_origin(
+        body: &str,
+        theme: ResolvedTheme,
+        theme_name: &str,
+        glyph_override: Option<GlyphTier>,
+        picker: Option<Picker>,
+        base_dir: Option<PathBuf>,
+        watch_path: Option<PathBuf>,
+        origin: Option<DocumentOrigin>,
+    ) -> Self {
+        Self::new_with_config_and_origin(
+            body,
+            theme,
+            theme_name,
+            glyph_override,
+            picker,
+            base_dir,
+            watch_path,
+            origin,
             super::config::load(),
         )
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn new_with_config(
         body: &str,
@@ -272,11 +304,37 @@ impl App {
         watch_path: Option<PathBuf>,
         saved: super::config::ReaderConfig,
     ) -> Self {
+        Self::new_with_config_and_origin(
+            body,
+            theme,
+            theme_name,
+            glyph_override,
+            picker,
+            base_dir,
+            watch_path,
+            None,
+            saved,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_config_and_origin(
+        body: &str,
+        theme: ResolvedTheme,
+        theme_name: &str,
+        glyph_override: Option<GlyphTier>,
+        picker: Option<Picker>,
+        base_dir: Option<PathBuf>,
+        watch_path: Option<PathBuf>,
+        origin: Option<DocumentOrigin>,
+        saved: super::config::ReaderConfig,
+    ) -> Self {
         let arena = comrak::Arena::new();
         let root = crate::render::markdown::parse(&arena, body);
         let mut warnings = WarningCollector::new();
         crate::render::markdown::check_content(root, &mut warnings);
-        let doc = super::walk::walk(root, &mut warnings);
+        let origin = origin.or_else(|| watch_path.clone().map(DocumentOrigin::local));
+        let doc = super::walk::walk_with_origin(root, &mut warnings, origin.as_ref());
 
         let theme_names: Vec<String> = crate::theme::builtin::list_themes()
             .into_iter()
@@ -343,6 +401,7 @@ impl App {
             font_dirs: Vec::new(),
             base_dir,
             path: watch_path,
+            origin,
             back: Vec::new(),
             forward: Vec::new(),
             pending_anchor: None,
@@ -432,7 +491,7 @@ impl App {
         let root = crate::render::markdown::parse(&arena, body);
         let mut warnings = WarningCollector::new();
         crate::render::markdown::check_content(root, &mut warnings);
-        self.doc = super::walk::walk(root, &mut warnings);
+        self.doc = super::walk::walk_with_origin(root, &mut warnings, self.origin.as_ref());
         self.title =
             super::layout::sanitize(self.doc.title.as_deref().unwrap_or("silkprint")).into_owned();
         self.images.clear_cache();
@@ -471,6 +530,7 @@ impl App {
             .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
             .or_else(|| path.parent().map(std::path::Path::to_path_buf));
         self.path = Some(path.to_path_buf());
+        self.origin = Some(DocumentOrigin::local(path.to_path_buf()));
         self.images.set_base_dir(base.clone());
         self.base_dir = base;
         self.scroll = 0;
@@ -483,15 +543,59 @@ impl App {
         true
     }
 
+    fn load_origin(&mut self, origin: &DocumentOrigin, anchor: Option<String>) -> bool {
+        match origin {
+            DocumentOrigin::Local(path) => self.load_path(path, anchor),
+            DocumentOrigin::Remote(url) => self.load_remote_doc(url, anchor),
+        }
+    }
+
+    fn load_remote_doc(&mut self, url: &Url, anchor: Option<String>) -> bool {
+        let input = crate::render::remote::RemoteInput::Url(url.clone());
+        let Ok(remote) = crate::render::remote::fetch_remote_document(&input) else {
+            self.status_message = Some(format!(
+                "can't fetch {}",
+                truncate_plain(super::layout::sanitize(url.as_str()).as_ref(), 48)
+            ));
+            return false;
+        };
+        self.path = None;
+        self.base_dir = None;
+        self.images.set_base_dir(None);
+        self.origin = Some(remote.origin);
+        self.scroll = 0;
+        self.search_query.clear();
+        self.matches.clear();
+        self.match_idx = 0;
+        self.rewalk(&remote.body);
+        self.pending_anchor = anchor;
+        true
+    }
+
     /// Follow a link to a local document, recording the current view so the
     /// reader can navigate back to it.
     fn open_local_doc(&mut self, path: &std::path::Path, anchor: Option<String>) {
-        let from = self.path.clone();
+        let from = self.origin.clone();
         let from_scroll = self.scroll;
         if self.load_path(path, anchor) {
-            if let Some(path) = from {
+            if let Some(origin) = from {
                 self.back.push(NavEntry {
-                    path,
+                    origin,
+                    scroll: from_scroll,
+                });
+            }
+            self.forward.clear();
+            self.status_message = Some(format!("opened {}", truncate_plain(&self.title, 40)));
+        }
+    }
+
+    fn open_remote_doc(&mut self, url: &Url, anchor: Option<String>) {
+        let from = self.origin.clone();
+        let from_scroll = self.scroll;
+        if self.load_remote_doc(url, anchor) {
+            if let Some(origin) = from {
+                self.back.push(NavEntry {
+                    origin,
                     scroll: from_scroll,
                 });
             }
@@ -506,12 +610,12 @@ impl App {
             self.status_message = Some("no page to go back to".to_string());
             return;
         };
-        let from = self.path.clone();
+        let from = self.origin.clone();
         let from_scroll = self.scroll;
-        if self.load_path(&entry.path, None) {
-            if let Some(path) = from {
+        if self.load_origin(&entry.origin, None) {
+            if let Some(origin) = from {
                 self.forward.push(NavEntry {
-                    path,
+                    origin,
                     scroll: from_scroll,
                 });
             }
@@ -525,12 +629,12 @@ impl App {
             self.status_message = Some("no page to go forward to".to_string());
             return;
         };
-        let from = self.path.clone();
+        let from = self.origin.clone();
         let from_scroll = self.scroll;
-        if self.load_path(&entry.path, None) {
-            if let Some(path) = from {
+        if self.load_origin(&entry.origin, None) {
+            if let Some(origin) = from {
                 self.back.push(NavEntry {
-                    path,
+                    origin,
                     scroll: from_scroll,
                 });
             }
@@ -561,6 +665,18 @@ impl App {
                 )
             });
         is_markdown.then_some((resolved, anchor))
+    }
+
+    fn remote_markdown_target(&self, url: &str) -> Option<(Url, Option<String>)> {
+        let base = self.origin.as_ref()?.remote_url()?;
+        let target = Url::parse(url).or_else(|_| base.join(url)).ok()?;
+        if !same_remote_origin(base, &target) || !is_markdown_url(&target) {
+            return None;
+        }
+        let mut doc_url = target;
+        let anchor = doc_url.fragment().map(str::to_string);
+        doc_url.set_fragment(None);
+        Some((doc_url, anchor))
     }
 
     fn save_config(&self) {
@@ -1040,6 +1156,8 @@ impl App {
             LinkTarget::Url(url) => {
                 if let Some((path, anchor)) = self.local_markdown_target(&url) {
                     self.open_local_doc(&path, anchor);
+                } else if let Some((url, anchor)) = self.remote_markdown_target(&url) {
+                    self.open_remote_doc(&url, anchor);
                 } else {
                     self.open_url(&url);
                 }
@@ -1983,6 +2101,43 @@ mod tests {
         assert_eq!(app.forward.len(), 1);
         app.go_forward();
         assert_eq!(app.title, "Beta");
+    }
+
+    #[test]
+    fn remote_markdown_links_follow_only_same_origin_markdown() {
+        let origin_url =
+            Url::parse("https://raw.githubusercontent.com/o/r/HEAD/README.md").expect("url");
+        let app = App::new_with_config_and_origin(
+            "# Remote\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            Some(DocumentOrigin::remote(origin_url)),
+            ReaderConfig::default(),
+        );
+
+        let (target, anchor) = app
+            .remote_markdown_target(
+                "https://raw.githubusercontent.com/o/r/HEAD/docs/guide.md#intro",
+            )
+            .expect("remote markdown target");
+
+        assert_eq!(
+            target.as_str(),
+            "https://raw.githubusercontent.com/o/r/HEAD/docs/guide.md"
+        );
+        assert_eq!(anchor.as_deref(), Some("intro"));
+        assert!(
+            app.remote_markdown_target("https://example.com/o/r/HEAD/docs/guide.md")
+                .is_none()
+        );
+        assert!(
+            app.remote_markdown_target("https://raw.githubusercontent.com/o/r/HEAD/logo.png")
+                .is_none()
+        );
     }
 
     #[cfg(unix)]

@@ -72,6 +72,10 @@ pub enum SilkprintError {
     #[diagnostic(code(silkprint::render), help("{hint}"))]
     RenderFailed { details: String, hint: String },
 
+    #[error("Failed to fetch remote document: {url}")]
+    #[diagnostic(code(silkprint::remote), help("{message}"))]
+    RemoteFetch { url: String, message: String },
+
     #[error("Failed to write output: {path}")]
     OutputWrite {
         path: String,
