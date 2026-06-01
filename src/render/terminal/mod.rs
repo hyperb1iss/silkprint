@@ -12,6 +12,7 @@ pub mod glyphs;
 pub mod highlight;
 pub mod html;
 pub mod layout;
+pub mod mathunicode;
 pub mod model;
 pub mod style;
 pub mod table;

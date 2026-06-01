@@ -50,6 +50,7 @@ terminal = [
     "dep:notify",
     "dep:ab_glyph",
     "dep:resvg",
+    "dep:typst-svg",
 ]
 
 [dependencies]
@@ -70,6 +71,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"], optional = true }
 typst = "0.14"
 typst-pdf = "0.14"
+typst-svg = { version = "0.14", optional = true }
 scraper = { version = "0.25.0", default-features = false }
 ego-tree = "0.10.0"
 

@@ -67,3 +67,19 @@ fn terminal_tables_wrap_cells_instead_of_ellipsizing() {
     assert!(output.contains("gamma"));
     assert!(output.contains("epsilon"));
 }
+
+#[test]
+fn terminal_inline_math_uses_unicode_with_source_fallback() {
+    let output = render_markdown("Symbols: $alpha^2 + beta_1$.\n\nFallback: $x^abc$.\n", 80);
+
+    assert!(output.contains("\u{03b1}\u{00b2} + \u{03b2}\u{2081}"));
+    assert!(output.contains("x^abc"));
+}
+
+#[test]
+fn terminal_math_fence_falls_back_as_display_math_source() {
+    let output = render_markdown("```math\nE = m c^2\n```\n", 80);
+
+    assert!(output.contains("E = m c^2"));
+    assert!(!output.contains("```"));
+}

@@ -8,8 +8,10 @@
 mod chrome;
 mod diagrams;
 mod images;
+mod math;
 
 use std::ffi::OsString;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -46,6 +48,7 @@ const OUTLINE_WIDTH: u16 = 30;
 /// normally sized to the image's natural height and scrolled through; this only
 /// guards against a pathologically tall input flooding the content flow.
 const MAX_BAND_ROWS: u16 = 400;
+const MAX_MATH_BAND_ROWS: u16 = 800;
 const IMAGE_PREFETCH_MIN_ROWS: u16 = 48;
 const MOUSE_SCROLL_ROWS: i32 = 3;
 
@@ -61,11 +64,11 @@ enum Mode {
     Search,
 }
 
-/// A content region that renders as an image: an inline image or a mermaid
-/// diagram.
+/// A content region that renders as an image: inline image, diagram, or math.
 enum BandSpec {
     Image(String),
     Mermaid { source: String, bg: Rgb },
+    Math { source: String, bg: Rgb },
 }
 
 #[derive(Clone)]
@@ -98,29 +101,51 @@ struct ThemeSnapshot {
     saved_theme_name: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TerminalTuiOptions {
+    pub glyph_override: Option<GlyphTier>,
+    pub images: bool,
+    pub base_dir: Option<PathBuf>,
+    pub watch_path: Option<PathBuf>,
+    pub font_dirs: Vec<PathBuf>,
+}
+
+impl Default for TerminalTuiOptions {
+    fn default() -> Self {
+        Self {
+            glyph_override: None,
+            images: true,
+            base_dir: None,
+            watch_path: None,
+            font_dirs: Vec::new(),
+        }
+    }
+}
+
 /// Launch the interactive reader. Sets up and tears down the terminal
 /// (panic-safe via ratatui's restore hook) and runs the event loop.
 pub fn run(
     body: &str,
     theme: ResolvedTheme,
     theme_name: &str,
-    glyph_override: Option<GlyphTier>,
-    images: bool,
-    base_dir: Option<PathBuf>,
-    watch_path: Option<PathBuf>,
+    options: TerminalTuiOptions,
 ) -> io::Result<()> {
     // Query the terminal's graphics protocol + font size before entering the
     // alternate screen. `None` (or `--no-images`) falls back to text-only.
-    let picker = images.then(Picker::from_query_stdio).and_then(Result::ok);
+    let picker = options
+        .images
+        .then(Picker::from_query_stdio)
+        .and_then(Result::ok);
     let mut app = App::new(
         body,
         theme,
         theme_name,
-        glyph_override,
+        options.glyph_override,
         picker,
-        base_dir,
-        watch_path,
+        options.base_dir,
+        options.watch_path,
     );
+    app.font_dirs = options.font_dirs;
     let mut terminal = ratatui::init();
     let mouse = match MouseCapture::enable() {
         Ok(mouse) => mouse,
@@ -202,6 +227,7 @@ struct App {
 
     images: ImageStore,
     image_placements: Vec<Placement>,
+    font_dirs: Vec<PathBuf>,
     base_dir: Option<PathBuf>,
     path: Option<PathBuf>,
     back: Vec<NavEntry>,
@@ -314,6 +340,7 @@ impl App {
             quit: false,
             images: ImageStore::new(picker, base_dir.clone()),
             image_placements: Vec::new(),
+            font_dirs: Vec::new(),
             base_dir,
             path: watch_path,
             back: Vec::new(),
@@ -614,61 +641,49 @@ impl App {
         self.clamp_scroll();
     }
 
-    /// Replace each graphical block — inline images and mermaid diagrams — with
+    /// Replace each graphical block — inline images, diagrams, and math — with
     /// a blank band sized to the image it will draw, record where to draw it,
     /// and keep outline jump offsets in sync with the shift. Replacing (rather
     /// than covering) the source means the mermaid text / image alt never peeks
     /// out below an image that is shorter than its source block.
     fn reserve_bands(&mut self, content_width: u16) {
-        let bands: Vec<(usize, BandSpec)> = {
-            let resolver = ContentStyleResolver::new(&self.theme);
-            let bg = resolver.page_background().unwrap_or(Rgb(0, 0, 0));
-            self.doc
-                .blocks
-                .iter()
-                .enumerate()
-                .filter_map(|(i, block)| match block {
-                    Block::Image { src, .. } => Some((i, BandSpec::Image(src.clone()))),
-                    Block::CodeBlock {
-                        lang: Some(lang),
-                        lines,
-                    } if lang == "mermaid" => {
-                        let source = lines
-                            .iter()
-                            .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        Some((i, BandSpec::Mermaid { source, bg }))
-                    }
-                    _ => None,
-                })
-                .collect()
-        };
-
+        let bands = self.band_specs();
         let theme = self.theme.clone();
+        let theme_key = theme_fingerprint(&theme);
+        let font_key = font_dirs_fingerprint(&self.font_dirs);
         let cell = self.images.cell();
         // Size bands to the image's natural height (bounded only against
         // pathological inputs). Tall diagrams get a tall band and are scrolled
         // through — the draw path crops to whatever slice is on screen.
-        let max_rows = MAX_BAND_ROWS;
         let mut delta: isize = 0;
         for (block_index, spec) in bands {
             let (orig_start, block_height) = self.block_spans[block_index];
             if block_height == 0 {
                 continue;
             }
-            let (key, dims) = match spec {
+            let (key, dims, max_rows) = match spec {
                 BandSpec::Image(src) => {
                     let dims = self.images.get(&src).map(|l| (l.width, l.height));
-                    (src, dims)
+                    (src, dims, MAX_BAND_ROWS)
                 }
                 BandSpec::Mermaid { source, bg } => {
-                    let key = format!("\u{0}mermaid:{source}");
+                    let key = generated_key("mermaid", &source, theme_key, bg, font_key);
                     let dims = self
                         .images
                         .ensure_generated(&key, || diagrams::mermaid_image(&source, &theme, bg))
                         .map(|l| (l.width, l.height));
-                    (key, dims)
+                    (key, dims, MAX_BAND_ROWS)
+                }
+                BandSpec::Math { source, bg } => {
+                    let key = generated_key("math", &source, theme_key, bg, font_key);
+                    let font_dirs = self.font_dirs.clone();
+                    let dims = self
+                        .images
+                        .ensure_generated(&key, || {
+                            math::math_image(&source, &theme, &font_dirs, bg)
+                        })
+                        .map(|l| (l.width, l.height));
+                    (key, dims, MAX_MATH_BAND_ROWS)
                 }
             };
             let Some((w, h)) = dims else {
@@ -705,6 +720,40 @@ impl App {
                 rows: img_rows,
             });
         }
+    }
+
+    fn band_specs(&self) -> Vec<(usize, BandSpec)> {
+        let resolver = ContentStyleResolver::new(&self.theme);
+        let bg = resolver.page_background().unwrap_or(Rgb(0, 0, 0));
+        self.doc
+            .blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, block)| match block {
+                Block::Image { src, .. } => Some((i, BandSpec::Image(src.clone()))),
+                Block::CodeBlock {
+                    lang: Some(lang),
+                    lines,
+                } if lang == "mermaid" => Some((
+                    i,
+                    BandSpec::Mermaid {
+                        source: code_lines_source(lines),
+                        bg,
+                    },
+                )),
+                Block::Math {
+                    source,
+                    display: true,
+                } => Some((
+                    i,
+                    BandSpec::Math {
+                        source: source.clone(),
+                        bg,
+                    },
+                )),
+                _ => None,
+            })
+            .collect()
     }
 
     fn content_len(&self) -> u16 {
@@ -1498,6 +1547,14 @@ fn contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
+fn code_lines_source(lines: &[Vec<super::model::Span>]) -> String {
+    lines
+        .iter()
+        .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn link_regions_from_osc(ansi: &str) -> Vec<LinkRegion> {
     let mut chars = ansi.chars().peekable();
     let mut regions = Vec::new();
@@ -1685,6 +1742,31 @@ fn uri_scheme(value: &str) -> Option<&str> {
 
 fn rgb_to_color(rgb: Rgb) -> Color {
     Color::Rgb(rgb.0, rgb.1, rgb.2)
+}
+
+fn generated_key(kind: &str, source: &str, theme: u64, bg: Rgb, fonts: u64) -> String {
+    let source = hash_value(source);
+    format!(
+        "\u{0}{kind}:{source:016x}:{theme:016x}:{fonts:016x}:{:02x}{:02x}{:02x}",
+        bg.0, bg.1, bg.2
+    )
+}
+
+fn theme_fingerprint(theme: &ResolvedTheme) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("{:?}", theme.tokens).hash(&mut hasher);
+    theme.tmtheme_xml.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn font_dirs_fingerprint(font_dirs: &[PathBuf]) -> u64 {
+    hash_value(font_dirs)
+}
+
+fn hash_value<T: Hash + ?Sized>(value: &T) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Style applied to search matches: electric yellow on black.
@@ -2348,6 +2430,30 @@ mod tests {
             }),
             "rows outside the new scroll horizon should be canceled"
         );
+    }
+
+    #[test]
+    fn display_math_reserves_generated_image_band() {
+        let mut app = App::new_with_config(
+            "# Title\n\n```math\nE = m c^2\n```\n\nAfter\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            Some(Picker::halfblocks()),
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(80, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        let placement = app
+            .image_placements
+            .iter()
+            .find(|placement| placement.src.starts_with("\u{0}math:"))
+            .expect("math placement");
+        assert!(placement.rows > 0);
     }
 
     fn content_span<'a>(app: &'a App, needle: &str) -> &'a Span<'static> {

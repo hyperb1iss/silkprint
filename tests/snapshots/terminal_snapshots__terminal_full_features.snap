@@ -1,5 +1,6 @@
 ---
 source: tests/terminal_snapshots.rs
+assertion_line: 49
 expression: "render_fixture(\"full-features.md\")"
 ---
   [1mHeading [0m[1mLevel [0m[1m1[0m
@@ -144,7 +145,7 @@ expression: "render_fixture(\"full-features.md\")"
   [1mMath [0m[1m(Typst-Native)[0m
   [2m------------------------------------------------[0m
 
-  Inline math: x^2 + y^2 = z^2 and sum_(i=1)^n i = (n(n+1))/2.
+  Inline math: x² + y² = z² and ∑ᵢ₌₁ⁿ i = (n(n+1))/2.
 
   Display math:
 

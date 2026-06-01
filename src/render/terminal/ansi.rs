@@ -143,7 +143,8 @@ impl Renderer<'_> {
 
     /// Wrap spans to `width` and render each visual line to a styled string.
     fn wrap_render(&self, spans: &[Span], width: usize) -> Vec<String> {
-        wrap_spans(spans, width)
+        let spans = unicode_math_spans(spans);
+        wrap_spans(&spans, width)
             .iter()
             .map(|line| self.inline_line(line))
             .collect()
@@ -417,10 +418,21 @@ impl Renderer<'_> {
     }
 
     fn math(&self, source: &str, display: bool, width: usize) -> Vec<String> {
-        let span = Span::new(source, Role::Math, Mods::default());
-        let mut lines = self.wrap_render(&[span], width);
+        let text = if display {
+            source.to_string()
+        } else {
+            super::mathunicode::render_inline(source)
+        };
+        let span = Span::new(text, Role::Math, Mods::default());
+        let mut lines = if display {
+            wrap_spans(&[span], width)
+                .iter()
+                .map(|line| self.inline_line(line))
+                .collect()
+        } else {
+            self.wrap_render(&[span], width)
+        };
         if display {
-            // Indent display math a touch to set it apart.
             lines = lines.into_iter().map(|l| format!("  {l}")).collect();
         }
         lines
@@ -531,6 +543,24 @@ impl Renderer<'_> {
     fn table(&self, table: &TableBlock, width: usize) -> Vec<String> {
         super::table::render(self, table, width)
     }
+}
+
+fn unicode_math_spans(spans: &[Span]) -> Vec<Span> {
+    spans
+        .iter()
+        .map(|span| {
+            if span.role == Role::Math {
+                Span {
+                    text: super::mathunicode::render_inline(&span.text),
+                    role: span.role,
+                    mods: span.mods,
+                    link: span.link,
+                }
+            } else {
+                span.clone()
+            }
+        })
+        .collect()
 }
 
 /// Plain (unstyled) display width of a string already containing SGR codes is

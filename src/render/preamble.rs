@@ -30,6 +30,9 @@ pub fn generate(
     // ─── Text ────────────────────────────────────────────────────
     emit_text_setup(&mut out, t, front_matter);
 
+    // ─── Math ────────────────────────────────────────────────────
+    emit_math_rule(&mut out, t);
+
     // ─── Paragraph ───────────────────────────────────────────────
     emit_paragraph_setup(&mut out, t);
 
@@ -86,6 +89,23 @@ pub fn generate(
         out.push_str("#pagebreak()\n\n");
     }
 
+    out
+}
+
+pub fn generate_math_snippet(theme: &ResolvedTheme, _options: &RenderOptions, bg: &str) -> String {
+    let mut out = String::with_capacity(1024);
+    let t = &theme.tokens;
+    emit_text_setup(&mut out, t, None);
+    emit_math_rule(&mut out, t);
+    out.push_str("#set page(\n");
+    out.push_str("  width: auto,\n");
+    out.push_str("  height: auto,\n");
+    out.push_str("  margin: 0pt,\n");
+    if !bg.is_empty() {
+        let _ = writeln!(out, "  fill: rgb(\"{bg}\"),");
+    }
+    out.push_str(")\n\n");
+    out.push_str("#set par(justify: false, leading: 0em, spacing: 0pt)\n\n");
     out
 }
 
@@ -190,6 +210,17 @@ fn emit_text_setup(
     out.push_str("  hyphenate: true,\n");
     out.push_str("  ligatures: true,\n");
     out.push_str(")\n\n");
+}
+
+fn emit_math_rule(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {
+    let math_color = default_if_empty(&t.math.color, &t.text.color);
+    if math_color.is_empty() {
+        return;
+    }
+    out.push_str("#show math.equation: it => {\n");
+    let _ = writeln!(out, "  set text(fill: rgb(\"{math_color}\"))");
+    out.push_str("  it\n");
+    out.push_str("}\n\n");
 }
 
 fn emit_paragraph_setup(out: &mut String, t: &crate::theme::tokens::ThemeTokens) {

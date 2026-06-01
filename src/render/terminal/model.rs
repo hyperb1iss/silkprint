@@ -12,7 +12,7 @@
 pub type LinkId = usize;
 
 /// 24-bit color. Resolved styles use this; the model itself does not.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 /// Inline text decorations, accumulated through nested inline nodes.

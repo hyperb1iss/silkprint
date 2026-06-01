@@ -90,9 +90,16 @@ impl<'a> Walker<'a, '_> {
 
             NodeValue::CodeBlock(cb) => {
                 let lang_token = cb.info.split([' ', ',', '\t']).next().unwrap_or("");
-                let lang = (!lang_token.is_empty()).then(|| lang_token.to_string());
-                let lines = highlight_block(&cb.literal, lang.as_deref());
-                out.push(Block::CodeBlock { lang, lines });
+                if lang_token == "math" {
+                    out.push(Block::Math {
+                        source: cb.literal.trim().to_string(),
+                        display: true,
+                    });
+                } else {
+                    let lang = (!lang_token.is_empty()).then(|| lang_token.to_string());
+                    let lines = highlight_block(&cb.literal, lang.as_deref());
+                    out.push(Block::CodeBlock { lang, lines });
+                }
             }
 
             NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) => {

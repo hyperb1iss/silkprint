@@ -28,7 +28,7 @@ const TMTHEME_VPATH: &str = "/__silkprint_theme.tmTheme";
 ///
 /// Provides the compiler with everything it needs: standard library, fonts,
 /// source files, and file resolution rooted at the input document's directory.
-struct SilkWorld {
+pub(crate) struct SilkWorld {
     library: LazyHash<Library>,
     book: LazyHash<FontBook>,
     fonts: Vec<Font>,
@@ -218,28 +218,16 @@ fn unix_to_ymd_hms(secs: i64) -> (i32, u8, u8, u8, u8, u8) {
 }
 
 #[allow(clippy::implicit_hasher)]
-/// Compile Typst source to PDF bytes.
-///
-/// This is the main entry point for Wave 3F. It:
-/// 1. Loads bundled fonts
-/// 2. Constructs a `SilkWorld` with all resources
-/// 3. Compiles the Typst source to a paged document
-/// 4. Exports the document to PDF bytes
-pub fn compile_to_pdf(
+#[cfg_attr(not(target_arch = "wasm32"), allow(clippy::unnecessary_wraps))]
+pub(crate) fn build_world(
     typst_source: &str,
     theme: &ResolvedTheme,
     root_dir: &Path,
     font_dirs: &[PathBuf],
     mermaid_svgs: &HashMap<String, Vec<u8>>,
     remote_images: &HashMap<String, Vec<u8>>,
-    _warnings: &mut WarningCollector,
-) -> Result<Vec<u8>, SilkprintError> {
-    // Load bundled fonts (text, code, emoji, and math coverage)
-    // `mut` needed on native to extend with user font directories.
-    #[allow(unused_mut)]
-    let mut font_data = crate::fonts::load_bundled_fonts();
-    tracing::debug!(font_files = font_data.len(), "loaded bundled font files");
-
+) -> Result<SilkWorld, SilkprintError> {
+    let font_data = load_font_data(font_dirs);
     #[cfg(target_arch = "wasm32")]
     if font_data.is_empty() {
         return Err(SilkprintError::RenderFailed {
@@ -247,8 +235,56 @@ pub fn compile_to_pdf(
             hint: "Call register_font(...) for the active theme fonts before rendering. Built-in themes expect Inter, Source Serif 4, and JetBrains Mono.".to_string(),
         });
     }
+    Ok(SilkWorld::new(
+        typst_source,
+        theme,
+        root_dir,
+        font_data,
+        mermaid_svgs.clone(),
+        remote_images.clone(),
+    ))
+}
 
-    // Load fonts from user-specified directories (not available on WASM)
+pub(crate) fn compile_paged(world: &SilkWorld) -> Result<PagedDocument, SilkprintError> {
+    let result = typst::compile::<PagedDocument>(world);
+    for diag in &result.warnings {
+        let msg = diag.message.to_string();
+        if msg.contains("unknown font family") {
+            tracing::debug!(message = %msg, "Typst font fallback miss (expected)");
+        } else {
+            tracing::warn!(message = %msg, severity = ?diag.severity, "Typst compilation warning");
+        }
+    }
+
+    result.output.map_err(|diagnostics| {
+        let messages: Vec<String> = diagnostics
+            .iter()
+            .map(|d| {
+                use std::fmt::Write;
+                let mut msg = d.message.to_string();
+                for hint in &d.hints {
+                    let _ = write!(msg, "\n  hint: {hint}");
+                }
+                msg
+            })
+            .collect();
+
+        tracing::error!(count = messages.len(), "Typst compilation failed");
+        for msg in &messages {
+            tracing::error!("{msg}");
+        }
+
+        SilkprintError::TypstCompilation {
+            diagnostics: messages,
+        }
+    })
+}
+
+fn load_font_data(font_dirs: &[PathBuf]) -> Vec<Vec<u8>> {
+    #[allow(unused_mut)]
+    let mut font_data = crate::fonts::load_bundled_fonts();
+    tracing::debug!(font_files = font_data.len(), "loaded bundled font files");
+
     #[cfg(not(target_arch = "wasm32"))]
     for dir in font_dirs {
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -271,53 +307,35 @@ pub fn compile_to_pdf(
     #[cfg(target_arch = "wasm32")]
     let _ = font_dirs;
 
-    // Build the world
-    let world = SilkWorld::new(
+    font_data
+}
+
+#[allow(clippy::implicit_hasher)]
+/// Compile Typst source to PDF bytes.
+///
+/// This is the main entry point for Wave 3F. It:
+/// 1. Loads bundled fonts
+/// 2. Constructs a `SilkWorld` with all resources
+/// 3. Compiles the Typst source to a paged document
+/// 4. Exports the document to PDF bytes
+pub fn compile_to_pdf(
+    typst_source: &str,
+    theme: &ResolvedTheme,
+    root_dir: &Path,
+    font_dirs: &[PathBuf],
+    mermaid_svgs: &HashMap<String, Vec<u8>>,
+    remote_images: &HashMap<String, Vec<u8>>,
+    _warnings: &mut WarningCollector,
+) -> Result<Vec<u8>, SilkprintError> {
+    let world = build_world(
         typst_source,
         theme,
         root_dir,
-        font_data,
-        mermaid_svgs.clone(),
-        remote_images.clone(),
-    );
-
-    // Compile to a paged document
-    let result = typst::compile::<PagedDocument>(&world);
-
-    // Collect compilation warnings — font fallback misses are expected (debug level),
-    // everything else gets warn level
-    for diag in &result.warnings {
-        let msg = diag.message.to_string();
-        if msg.contains("unknown font family") {
-            tracing::debug!(message = %msg, "Typst font fallback miss (expected)");
-        } else {
-            tracing::warn!(message = %msg, severity = ?diag.severity, "Typst compilation warning");
-        }
-    }
-
-    // Handle compilation errors
-    let document = result.output.map_err(|diagnostics| {
-        let messages: Vec<String> = diagnostics
-            .iter()
-            .map(|d| {
-                use std::fmt::Write;
-                let mut msg = d.message.to_string();
-                for hint in &d.hints {
-                    let _ = write!(msg, "\n  hint: {hint}");
-                }
-                msg
-            })
-            .collect();
-
-        tracing::error!(count = messages.len(), "Typst compilation failed");
-        for msg in &messages {
-            tracing::error!("{msg}");
-        }
-
-        SilkprintError::TypstCompilation {
-            diagnostics: messages,
-        }
-    })?;
+        font_dirs,
+        mermaid_svgs,
+        remote_images,
+    )?;
+    let document = compile_paged(&world)?;
 
     // Build PDF options — only set timestamp, everything else default.
     // Title/author come from #set document() in the Typst source, NOT PdfOptions.

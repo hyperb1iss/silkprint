@@ -23,6 +23,12 @@ The quadratic formula:
 
 $ x = (-b plus.minus sqrt(b^2 - 4a c)) / (2a) $
 
+A math fence:
+
+```math
+E = m c^2
+```
+
 An integral:
 
 $ integral_0^infinity e^(-x) dif x = 1 $
@@ -69,3 +75,37 @@ Sets: $in, in.not, subset, union, inter, emptyset$.
 
 $ f(x) &= x^2 + 2x + 1 \
        &= (x + 1)^2 $
+
+## Tall Stress
+
+A taller matrix should size to fit without clipping:
+
+```math
+mat(
+  1, 0, 0, 0, 0;
+  0, 1, 0, 0, 0;
+  0, 0, 1, 0, 0;
+  0, 0, 0, 1, 0;
+  0, 0, 0, 0, 1
+)
+```
+
+Nested fractions:
+
+```math
+((a/b) / (c/d)) / ((e/f) / (g/h))
+```
+
+A tall integral:
+
+```math
+integral_0^infinity (integral_0^infinity e^(-x^2 - y^2) dif x dif y)
+```
+
+A long aligned block:
+
+```math
+f(x) &= x^5 + 5 x^4 + 10 x^3 + 10 x^2 + 5 x + 1 \
+     &= (x + 1)^5 \
+     &= sum_(k=0)^5 binom(5, k) x^k
+```

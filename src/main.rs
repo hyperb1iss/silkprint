@@ -717,10 +717,13 @@ fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
             &input,
             theme,
             &theme_name,
-            glyph_tier,
-            !cli.no_images,
-            base_dir,
-            Some(input_path.to_path_buf()),
+            silkprint::TerminalTuiOptions {
+                glyph_override: glyph_tier,
+                images: !cli.no_images,
+                base_dir,
+                watch_path: Some(input_path.to_path_buf()),
+                font_dirs: options.font_dirs.clone(),
+            },
         )
         .map_err(|e| silkprint::error::SilkprintError::RenderFailed {
             details: e.to_string(),
@@ -736,12 +739,8 @@ fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
         width: cli.width,
     };
 
-    let (output, warnings) = silkprint::render_to_terminal(
-        &input,
-        Some(input_path),
-        &options,
-        &terminal_options,
-    )?;
+    let (output, warnings) =
+        silkprint::render_to_terminal(&input, Some(input_path), &options, &terminal_options)?;
 
     print!("{output}");
     io::stdout().flush().ok();

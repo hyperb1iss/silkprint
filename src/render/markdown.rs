@@ -608,7 +608,11 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
         ExtractedNode::CodeBlock { info, literal } => {
             let lang = info.split([' ', ',', '\t']).next().unwrap_or("");
 
-            if lang == "mermaid" {
+            if lang == "math" {
+                ctx.newline();
+                let content = literal.trim();
+                let _ = writeln!(ctx.out, "$ {content} $");
+            } else if lang == "mermaid" {
                 // Emit image reference — SVG will be rendered before compilation
                 let idx = ctx.mermaid_counter;
                 ctx.mermaid_counter += 1;
@@ -1436,6 +1440,8 @@ const KNOWN_LANGUAGES: &[&str] = &[
     "zsh",
     // Diagram languages (handled specially, not syntax-highlighted)
     "mermaid",
+    // Math fences lower to display equations, not highlighted code blocks.
+    "math",
 ];
 
 /// Warn if a code block specifies an unrecognized language identifier.
@@ -1541,6 +1547,16 @@ mod tests {
     fn check_content_accepts_known_language() {
         let arena = comrak::Arena::new();
         let root = parse(&arena, "```rust\nfn main() {}\n```");
+        let mut warnings = WarningCollector::new();
+        let clean = check_content(root, &mut warnings);
+        assert!(clean);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn check_content_accepts_math_language() {
+        let arena = comrak::Arena::new();
+        let root = parse(&arena, "```math\nE = m c^2\n```");
         let mut warnings = WarningCollector::new();
         let clean = check_content(root, &mut warnings);
         assert!(clean);
@@ -1661,6 +1677,13 @@ mod tests {
     fn emit_display_math() {
         let result = emit("$$\nE = mc^2\n$$");
         assert!(result.contains("$ E = mc^2 $"));
+    }
+
+    #[test]
+    fn emit_math_code_fence_as_display_math() {
+        let result = emit("```math\nE = m c^2\n```");
+        assert!(result.contains("$ E = m c^2 $"));
+        assert!(!result.contains("```math"));
     }
 
     #[test]

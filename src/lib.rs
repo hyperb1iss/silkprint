@@ -174,7 +174,7 @@ pub use render::terminal::TerminalRenderOptions;
 #[cfg(feature = "terminal")]
 pub use render::terminal::caps::{ColorChoice, GlyphTier};
 #[cfg(feature = "terminal")]
-pub use render::terminal::tui::run as run_terminal_tui;
+pub use render::terminal::tui::{TerminalTuiOptions, run as run_terminal_tui};
 
 /// Render markdown to Typst source (intermediate representation).
 pub fn render_to_typst(

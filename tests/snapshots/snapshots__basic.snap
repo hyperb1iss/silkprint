@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 22
 expression: typst
 ---
 #set document(
@@ -25,6 +26,11 @@ expression: typst
   hyphenate: true,
   ligatures: true,
 )
+
+#show math.equation: it => {
+  set text(fill: rgb("#1d1a2e"))
+  it
+}
 
 #set par(
   justify: false,
