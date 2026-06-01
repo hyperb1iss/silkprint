@@ -226,6 +226,7 @@ struct App {
     picker_area: Rect,
 
     pending_g: bool,
+    pending_bracket: Option<char>,
     drag_row: Option<u16>,
     status_message: Option<String>,
     quit: bool,
@@ -393,6 +394,7 @@ impl App {
             picker_saved: None,
             picker_area: Rect::default(),
             pending_g: false,
+            pending_bracket: None,
             drag_row: None,
             status_message: None,
             quit: false,
@@ -920,6 +922,7 @@ impl App {
         let half = self.viewport_h / 2;
         let page = self.viewport_h.saturating_sub(2).max(1);
         let was_g = self.pending_g;
+        let was_bracket = self.pending_bracket.take();
         self.pending_g = false;
 
         match code {
@@ -952,6 +955,20 @@ impl App {
                     self.set_scroll(0);
                 } else {
                     self.pending_g = true;
+                }
+            }
+            KeyCode::Char(']') => {
+                if was_bracket == Some(']') {
+                    self.jump_heading(true);
+                } else {
+                    self.pending_bracket = Some(']');
+                }
+            }
+            KeyCode::Char('[') => {
+                if was_bracket == Some('[') {
+                    self.jump_heading(false);
+                } else {
+                    self.pending_bracket = Some('[');
                 }
             }
             KeyCode::Char('G') | KeyCode::End => self.set_scroll(self.max_scroll()),
@@ -988,6 +1005,7 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => self.mouse_down(mouse),
             MouseEventKind::Drag(MouseButton::Left) => self.mouse_drag(mouse),
             MouseEventKind::Up(MouseButton::Left) => self.drag_row = None,
+            MouseEventKind::Moved => self.mouse_moved(mouse),
             _ => {}
         }
     }
@@ -1036,6 +1054,31 @@ impl App {
         if delta != 0 {
             self.scroll_by(-delta);
             self.drag_row = Some(mouse.row);
+            self.status_message = None;
+        }
+    }
+
+    fn mouse_moved(&mut self, mouse: MouseEvent) {
+        if !contains(self.content_area, mouse.column, mouse.row) {
+            self.clear_hover_message();
+            return;
+        }
+        let line = usize::from(self.scroll)
+            .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
+        let col = mouse.column.saturating_sub(self.content_area.x);
+        if let Some(target) = self.link_at(line, col) {
+            self.status_message = Some(link_preview(&target));
+        } else {
+            self.clear_hover_message();
+        }
+    }
+
+    fn clear_hover_message(&mut self) {
+        if self
+            .status_message
+            .as_deref()
+            .is_some_and(|message| message.starts_with("link: "))
+        {
             self.status_message = None;
         }
     }
@@ -1101,6 +1144,35 @@ impl App {
             (cur + len - 1) % len
         };
         self.outline_state.select(Some(next));
+    }
+
+    fn jump_heading(&mut self, forward: bool) {
+        if self.doc.outline.is_empty() {
+            return;
+        }
+        let scroll = usize::from(self.scroll);
+        let next = if forward {
+            self.doc
+                .outline
+                .iter()
+                .enumerate()
+                .find(|(_, item)| self.heading_line(item).is_some_and(|line| line > scroll))
+                .map_or(0, |(idx, _)| idx)
+        } else {
+            self.doc
+                .outline
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, item)| self.heading_line(item).is_some_and(|line| line < scroll))
+                .map_or(self.doc.outline.len() - 1, |(idx, _)| idx)
+        };
+        self.outline_state.select(Some(next));
+        self.jump_to_selected_heading();
+    }
+
+    fn heading_line(&self, item: &super::model::OutlineItem) -> Option<usize> {
+        self.block_jump.get(item.block_index).copied()
     }
 
     fn jump_to_selected_heading(&mut self) {
@@ -1618,10 +1690,11 @@ impl App {
             ("Ctrl-d / Ctrl-u", "half page"),
             ("Space / PageDn", "page down"),
             ("g g / G", "top / bottom"),
+            ("[[ / ]]", "prev / next heading"),
             ("o", "toggle outline"),
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
-            ("click link", "follow .md link / open url"),
+            ("hover / click link", "preview / follow"),
             ("b / f, Bksp", "history back / forward"),
             ("/ then n / N", "search / next / prev"),
             ("t", "theme picker"),
@@ -1663,6 +1736,14 @@ fn contains(area: Rect, column: u16, row: u16) -> bool {
         && column < area.x.saturating_add(area.width)
         && row >= area.y
         && row < area.y.saturating_add(area.height)
+}
+
+fn link_preview(target: &LinkTarget) -> String {
+    let label = match target {
+        LinkTarget::Url(url) => super::layout::sanitize(url).into_owned(),
+        LinkTarget::Anchor(anchor) => format!("#{anchor}"),
+    };
+    format!("link: {}", truncate_plain(&label, 72))
 }
 
 fn code_lines_source(lines: &[Vec<super::model::Span>]) -> String {
@@ -2488,6 +2569,78 @@ mod tests {
 
         assert!(app.jump_to_anchor("target"));
         assert!(app.scroll > 0);
+    }
+
+    #[test]
+    fn bracket_chords_jump_between_headings() {
+        let mut app = App::new_with_config(
+            "# Top\n\none\n\ntwo\n\n## Middle\n\nthree\n\n## End\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 8);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+
+        app.normal_key(KeyCode::Char(']'), KeyModifiers::NONE);
+        app.normal_key(KeyCode::Char(']'), KeyModifiers::NONE);
+        assert_eq!(app.outline_state.selected(), Some(1));
+
+        app.normal_key(KeyCode::Char('['), KeyModifiers::NONE);
+        app.normal_key(KeyCode::Char('['), KeyModifiers::NONE);
+        assert_eq!(app.outline_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn mouse_hover_previews_links_without_following() {
+        let mut app = App::new_with_config(
+            "# Title\n\nA [SilkPrint](https://example.com) link.\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        let backend = TestBackend::new(100, 20);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let region = app
+            .link_regions
+            .iter()
+            .find(|region| matches!(&region.target, LinkTarget::Url(url) if url == "https://example.com"))
+            .cloned()
+            .expect("link region");
+
+        app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: app.content_area.x.saturating_add(region.start),
+            row: app
+                .content_area
+                .y
+                .saturating_add(u16::try_from(region.line).unwrap_or(0)),
+            modifiers: KeyModifiers::NONE,
+        });
+
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("link: https://example.com")
+        );
+        assert_eq!(app.title, "Title");
+
+        app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: app.content_area.x,
+            row: app.content_area.y,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert!(app.status_message.is_none());
     }
 
     #[test]
