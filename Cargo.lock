@@ -4486,6 +4486,7 @@ dependencies = [
  "lopdf",
  "mermaid-rs-renderer",
  "miette",
+ "nix",
  "notify",
  "opaline",
  "open",

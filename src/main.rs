@@ -797,7 +797,13 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
         if let Some(theme) = env_string("SILKPRINT_THEME") {
             options.theme = resolve_theme_source(&theme);
             options.theme_explicit = true;
-        } else if let Some(theme) = reader_settings.theme() {
+        } else if let Some(theme) = reader_settings.user_theme() {
+            options.theme = resolve_theme_source(theme);
+        } else if io::stdout().is_terminal()
+            && let Some(tone) = silkprint::render::terminal::caps::detect_background_tone()
+        {
+            options.theme = silkprint::ThemeSource::BuiltIn(tone.silk_default_theme().to_string());
+        } else if let Some(theme) = reader_settings.reader_theme() {
             options.theme = resolve_theme_source(theme);
         }
     }

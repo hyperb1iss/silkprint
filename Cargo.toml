@@ -51,6 +51,7 @@ terminal = [
     "dep:ab_glyph",
     "dep:resvg",
     "dep:typst-svg",
+    "dep:nix",
 ]
 
 [dependencies]
@@ -92,6 +93,7 @@ ab_glyph = { version = "0.2", optional = true }
 resvg = { version = "0.45", optional = true }
 notify = { version = "8", optional = true }
 opaline = { version = "0.4", default-features = false, features = ["builtin-themes", "gradients", "widgets"], optional = true }
+nix = { version = "0.29", default-features = false, features = ["poll"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = "3.2.0"

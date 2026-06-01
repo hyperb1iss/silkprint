@@ -36,10 +36,20 @@ pub struct ReaderSettings {
 
 impl ReaderSettings {
     pub fn theme(&self) -> Option<&str> {
+        self.user_theme().or_else(|| self.reader_theme())
+    }
+
+    pub fn user_theme(&self) -> Option<&str> {
         self.user
             .default_theme
             .as_deref()
-            .or(self.reader.theme.as_deref())
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn reader_theme(&self) -> Option<&str> {
+        self.reader
+            .theme
+            .as_deref()
             .filter(|value| !value.trim().is_empty())
     }
 
