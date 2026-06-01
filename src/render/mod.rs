@@ -4,6 +4,7 @@ pub mod escape;
 pub mod frontmatter;
 pub mod html;
 pub mod image;
+pub mod linkcheck;
 pub mod markdown;
 pub mod mermaid;
 pub mod origin;
@@ -99,4 +100,26 @@ pub fn render_to_typst_source(
     let preamble = preamble::generate(theme, front_matter, options);
     let (content, _mermaid_sources) = markdown::emit_typst(root, theme, &prepared_images, warnings);
     Ok(format!("{preamble}\n\n{content}"))
+}
+
+pub fn render_to_html_source(
+    body: &str,
+    input_path: Option<&Path>,
+    validate_links: bool,
+    warnings: &mut WarningCollector,
+) -> Result<String, SilkprintError> {
+    let arena = comrak::Arena::new();
+    let root = markdown::parse(&arena, body);
+    markdown::check_content(root, warnings);
+    if validate_links {
+        linkcheck::validate_links(root, input_path, warnings);
+    }
+    let mut html = String::new();
+    comrak::format_html(root, &markdown::comrak_options(), &mut html).map_err(|err| {
+        SilkprintError::RenderFailed {
+            details: err.to_string(),
+            hint: "failed to export Markdown as HTML".to_string(),
+        }
+    })?;
+    Ok(html)
 }

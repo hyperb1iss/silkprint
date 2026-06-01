@@ -222,6 +222,21 @@ pub fn render_to_typst_with_path(
     Ok((typst_source, warnings.into_warnings()))
 }
 
+pub fn render_to_html_with_path(
+    input: &str,
+    input_path: Option<&Path>,
+    validate_links: bool,
+) -> Result<(String, Vec<warnings::SilkprintWarning>), SilkprintError> {
+    let mut warnings = WarningCollector::new();
+
+    let (front_matter, body) = render::frontmatter::extract(input)?;
+    if let Some(fm) = &front_matter {
+        render::frontmatter::warn_unknown_fields(fm, &mut warnings);
+    }
+    let html = render::render_to_html_source(&body, input_path, validate_links, &mut warnings)?;
+    Ok((html, warnings.into_warnings()))
+}
+
 /// Determine the effective theme source, respecting precedence:
 /// CLI > front matter > default.
 ///
@@ -244,4 +259,19 @@ fn resolve_effective_theme(
         return ThemeSource::BuiltIn(fm_theme.to_string());
     }
     options.theme.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_to_html_with_path;
+
+    #[test]
+    fn renders_markdown_to_html() {
+        let (html, warnings) =
+            render_to_html_with_path("# Title\n\nBody", None, false).expect("html");
+
+        assert!(warnings.is_empty());
+        assert!(html.contains("<h1>Title</h1>"));
+        assert!(html.contains("<p>Body</p>"));
+    }
 }

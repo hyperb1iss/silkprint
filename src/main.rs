@@ -1,7 +1,7 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use std::io::{self, IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -329,19 +329,21 @@ fn hex_to_rgb(hex: &str) -> (u8, u8, u8) {
 }
 
 /// Handle `--check`: parse + validate only, no render.
-fn handle_check(input_path: &std::path::Path, options: &RenderOptions) -> miette::Result<()> {
+fn handle_check(
+    cli: &Cli,
+    input_path: &std::path::Path,
+    options: &RenderOptions,
+) -> miette::Result<()> {
     let start = Instant::now();
 
-    let input = std::fs::read_to_string(input_path).map_err(|e| {
-        silkprint::error::SilkprintError::InputRead {
-            path: input_path.display().to_string(),
-            source: e,
-        }
-    })?;
+    let input = read_document_input(input_path)?.body;
 
     // Run the full render pipeline so asset resolution and Typst compilation
     // are validated as well.
-    let (_pdf_bytes, warnings) = silkprint::render(&input, Some(input_path), options)?;
+    let (_pdf_bytes, mut warnings) = silkprint::render(&input, Some(input_path), options)?;
+    if cli.validate_links {
+        append_link_warnings(&input, Some(input_path), &mut warnings);
+    }
     let elapsed = start.elapsed();
 
     display_warnings(&warnings);
@@ -363,12 +365,7 @@ fn handle_dump_typst(
     options: &RenderOptions,
     quiet: bool,
 ) -> miette::Result<()> {
-    let input = std::fs::read_to_string(input_path).map_err(|e| {
-        silkprint::error::SilkprintError::InputRead {
-            path: input_path.display().to_string(),
-            source: e,
-        }
-    })?;
+    let input = read_document_input(input_path)?.body;
 
     let (typst_source, warnings) =
         silkprint::render_to_typst_with_path(&input, Some(input_path), options)?;
@@ -407,6 +404,40 @@ fn handle_dump_typst(
     Ok(())
 }
 
+fn handle_dump_html(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
+    let input = read_document_input(input_path)?.body;
+    let (html, warnings) =
+        silkprint::render_to_html_with_path(&input, Some(input_path), cli.validate_links)?;
+
+    if !cli.quiet {
+        display_warnings(&warnings);
+    }
+
+    match cli.output.as_deref() {
+        Some(path) if path != "-" => {
+            std::fs::write(path, &html).map_err(|e| {
+                silkprint::error::SilkprintError::OutputWrite {
+                    path: path.to_string(),
+                    source: e,
+                }
+            })?;
+            if !cli.quiet {
+                eprintln!("  {} HTML written to {}", green("\u{2713}"), cyan(path));
+            }
+        }
+        _ => {
+            io::stdout().write_all(html.as_bytes()).map_err(|e| {
+                silkprint::error::SilkprintError::OutputWrite {
+                    path: "<stdout>".to_string(),
+                    source: e,
+                }
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Create a spinner with `SilkCircuit` styling.
 fn make_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
@@ -432,7 +463,7 @@ fn make_spinner(message: &str) -> ProgressBar {
 
 /// Handle normal render mode: Markdown -> PDF.
 #[allow(clippy::too_many_lines)]
-fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> miette::Result<()> {
+fn handle_render(cli: &Cli, input_path: &Path, options: &RenderOptions) -> miette::Result<()> {
     let start = Instant::now();
     let verbose = cli.verbose > 0;
     let use_spinner = !cli.quiet && !verbose && io::stderr().is_terminal();
@@ -462,15 +493,15 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
     };
 
     debug!("reading input: {}", input_path.display());
-    let input = std::fs::read_to_string(input_path).map_err(|e| {
-        if let Some(ref sp) = spinner {
-            sp.finish_and_clear();
+    let input = match read_document_input(input_path) {
+        Ok(document) => document.body,
+        Err(err) => {
+            if let Some(ref sp) = spinner {
+                sp.finish_and_clear();
+            }
+            return Err(err);
         }
-        silkprint::error::SilkprintError::InputRead {
-            path: input_path.display().to_string(),
-            source: e,
-        }
-    })?;
+    };
 
     if verbose {
         eprintln!(
@@ -481,14 +512,17 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
     }
 
     debug!("rendering with theme: {}", cli.theme);
-    let render_result = silkprint::render(&input, Some(input_path.as_path()), options);
+    let render_result = silkprint::render(&input, Some(input_path), options);
 
     // Clear spinner before any output
     if let Some(ref sp) = spinner {
         sp.finish_and_clear();
     }
 
-    let (pdf_bytes, warnings) = render_result?;
+    let (pdf_bytes, mut warnings) = render_result?;
+    if cli.validate_links {
+        append_link_warnings(&input, Some(input_path), &mut warnings);
+    }
     let output_path = cli.resolve_output_path(input_path);
     let page_count = estimate_page_count(&pdf_bytes);
 
@@ -573,6 +607,66 @@ fn handle_render(cli: &Cli, input_path: &PathBuf, options: &RenderOptions) -> mi
 }
 
 // ── Helpers ────────────────────────────────────────────────────
+
+struct InputDocument {
+    body: String,
+    watch_path: Option<PathBuf>,
+}
+
+fn read_document_input(input_path: &std::path::Path) -> miette::Result<InputDocument> {
+    if let Some(body) = direct_asset_markdown(input_path) {
+        return Ok(InputDocument {
+            body,
+            watch_path: None,
+        });
+    }
+
+    let body = std::fs::read_to_string(input_path).map_err(|e| {
+        silkprint::error::SilkprintError::InputRead {
+            path: input_path.display().to_string(),
+            source: e,
+        }
+    })?;
+    Ok(InputDocument {
+        body,
+        watch_path: Some(input_path.to_path_buf()),
+    })
+}
+
+fn direct_asset_markdown(input_path: &std::path::Path) -> Option<String> {
+    if !is_direct_asset_path(input_path) {
+        return None;
+    }
+    let file_name = input_path.file_name()?.to_string_lossy();
+    let alt = input_path
+        .file_stem()
+        .map_or_else(|| file_name.clone(), |stem| stem.to_string_lossy());
+    let alt = alt.replace(['[', ']'], "");
+    Some(format!("![{alt}](<{file_name}>)\n"))
+}
+
+fn is_direct_asset_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "avif" | "ico" | "svg"
+            )
+        })
+}
+
+fn append_link_warnings(
+    input: &str,
+    input_path: Option<&std::path::Path>,
+    warnings: &mut Vec<SilkprintWarning>,
+) {
+    let arena = comrak::Arena::new();
+    let root = silkprint::render::markdown::parse(&arena, input);
+    let mut collector = silkprint::warnings::WarningCollector::new();
+    silkprint::render::linkcheck::validate_links(root, input_path, &mut collector);
+    warnings.extend(collector.into_warnings());
+}
 
 /// Display warnings to stderr with `SilkCircuit` styling.
 ///
@@ -719,22 +813,17 @@ fn effective_reader_pager(
 /// with `--plain`, it emits one-shot styled ANSI.
 #[cfg(feature = "terminal")]
 fn handle_read(cli: &Cli, input_path: &std::path::Path) -> miette::Result<()> {
-    let input = std::fs::read_to_string(input_path).map_err(|e| {
-        silkprint::error::SilkprintError::InputRead {
-            path: input_path.display().to_string(),
-            source: e,
-        }
-    })?;
+    let document = read_document_input(input_path)?;
     let base_dir = silkprint::render::origin::local_base_dir(input_path);
     handle_read_source(
         cli,
         ReadSource {
-            input,
+            input: document.body,
             base_dir,
-            watch_path: Some(input_path.to_path_buf()),
-            origin: Some(silkprint::render::origin::DocumentOrigin::local(
-                input_path.to_path_buf(),
-            )),
+            watch_path: document.watch_path.clone(),
+            origin: document
+                .watch_path
+                .map(silkprint::render::origin::DocumentOrigin::local),
         },
     )
 }
@@ -773,10 +862,11 @@ struct ReadSource {
 #[cfg(feature = "terminal")]
 fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
     // Reading is its own mode; PDF-only flags don't apply.
-    if cli.check || cli.open || cli.dump_typst || cli.output.is_some() {
+    if cli.check || cli.open || cli.dump_typst || cli.dump_html || cli.output.is_some() {
         return Err(silkprint::error::SilkprintError::ConflictingOptions {
-            details: "--check, --open, --dump-typst, and --output do not apply when reading"
-                .to_string(),
+            details:
+                "--check, --open, --dump-typst, --dump-html, and --output do not apply when reading"
+                    .to_string(),
         }
         .into());
     }
@@ -950,13 +1040,16 @@ fn require_input(input: Option<PathBuf>) -> miette::Result<PathBuf> {
 
 /// Render the input to a PDF, dispatching the `--check` / `--dump-typst`
 /// sub-modes that share the PDF pipeline.
-fn run_pdf(cli: &Cli, input_path: &PathBuf) -> miette::Result<()> {
+fn run_pdf(cli: &Cli, input_path: &Path) -> miette::Result<()> {
     let options = build_render_options(cli)?;
     if cli.check {
-        return handle_check(input_path, &options);
+        return handle_check(cli, input_path, &options);
     }
     if cli.dump_typst {
         return handle_dump_typst(input_path, cli.output.as_deref(), &options, cli.quiet);
+    }
+    if cli.dump_html {
+        return handle_dump_html(cli, input_path);
     }
     handle_render(cli, input_path, &options)
 }
@@ -1016,7 +1109,9 @@ fn main() -> miette::Result<()> {
 
 #[cfg(all(test, feature = "terminal"))]
 mod tests {
-    use super::should_page_output;
+    use std::path::Path;
+
+    use super::{direct_asset_markdown, should_page_output};
 
     #[test]
     fn pages_only_tty_output_that_exceeds_height() {
@@ -1027,5 +1122,12 @@ mod tests {
         assert!(!should_page_output(output, false, false, Some(2)));
         assert!(!should_page_output(output, true, true, Some(2)));
         assert!(!should_page_output(output, true, false, None));
+    }
+
+    #[test]
+    fn direct_image_inputs_become_markdown_images() {
+        let markdown = direct_asset_markdown(Path::new("screen shot.svg")).expect("asset");
+
+        assert_eq!(markdown, "![screen shot](<screen shot.svg>)\n");
     }
 }

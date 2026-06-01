@@ -64,6 +64,14 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub dump_typst: bool,
 
+    /// Emit HTML instead of PDF. Implies export output.
+    #[arg(long, global = true)]
+    pub dump_html: bool,
+
+    /// Check local and remote links during validation.
+    #[arg(long, global = true)]
+    pub validate_links: bool,
+
     /// Open the PDF in system viewer after rendering. Implies PDF output.
     #[arg(long, global = true)]
     pub open: bool,
@@ -167,6 +175,16 @@ impl Cli {
                 details: "--open requires PDF output".to_string(),
             });
         }
+        if self.dump_html && self.open {
+            return Err(crate::error::SilkprintError::ConflictingOptions {
+                details: "--open requires PDF output".to_string(),
+            });
+        }
+        if self.dump_html && self.dump_typst {
+            return Err(crate::error::SilkprintError::ConflictingOptions {
+                details: "cannot combine --dump-html and --dump-typst".to_string(),
+            });
+        }
         if self.toc && self.no_toc {
             return Err(crate::error::SilkprintError::ConflictingOptions {
                 details: "cannot combine --toc and --no-toc".to_string(),
@@ -215,7 +233,7 @@ impl Cli {
     /// Whether a PDF-output signal is present. In the bare form (no subcommand)
     /// this forces PDF rendering instead of the terminal reader.
     pub fn pdf_signaled(&self) -> bool {
-        self.output.is_some() || self.check || self.dump_typst || self.open
+        self.output.is_some() || self.check || self.dump_typst || self.dump_html || self.open
     }
 
     /// Determine the output path for PDF mode.

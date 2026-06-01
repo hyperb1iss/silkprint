@@ -185,6 +185,30 @@ pub(crate) fn fetch_remote_bytes(url: &str) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub fn validate_remote_link(url: &str) -> Result<(), String> {
+    use std::time::Duration;
+
+    let parsed = Url::parse(url).map_err(|err| format!("invalid URL: {err}"))?;
+    validate_fetch_url(&parsed)?;
+
+    let config = hardened_fetch_config(Duration::from_secs(10));
+    let agent = ureq::Agent::with_parts(
+        config,
+        ureq::unversioned::transport::DefaultConnector::default(),
+        PublicResolver::default(),
+    );
+    agent
+        .head(parsed.as_str())
+        .header(
+            "User-Agent",
+            concat!("silkprint/", env!("CARGO_PKG_VERSION")),
+        )
+        .call()
+        .map(|_| ())
+        .map_err(fetch_error_message)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn hardened_fetch_config(timeout: std::time::Duration) -> ureq::config::Config {
     ureq::config::Config::builder()
         .timeout_global(Some(timeout))

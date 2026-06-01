@@ -15,8 +15,10 @@ use std::env;
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::io;
+use std::io::Write as _;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 use std::time::Duration;
 use url::Url;
 
@@ -83,6 +85,8 @@ enum Action {
     GlobalSearch,
     Bookmarks,
     ToggleDetails,
+    RevealRaw,
+    Edit,
     ToggleFocus,
     NextMatch,
     PrevMatch,
@@ -175,6 +179,7 @@ struct Bookmark {
 
 struct TabState {
     doc: RenderedDoc,
+    source: String,
     title: String,
     content: Text<'static>,
     content_bg: Color,
@@ -223,6 +228,7 @@ impl TabState {
         }
         Self {
             doc,
+            source: body.to_string(),
             title,
             content: Text::default(),
             content_bg: Color::Reset,
@@ -395,6 +401,8 @@ struct App {
     pending_g: bool,
     pending_bracket: Option<char>,
     drag_row: Option<u16>,
+    selection_anchor: Option<(usize, u16)>,
+    selection_cursor: Option<(usize, u16)>,
     status_message: Option<String>,
     quit: bool,
 
@@ -586,6 +594,8 @@ impl App {
             pending_g: false,
             pending_bracket: None,
             drag_row: None,
+            selection_anchor: None,
+            selection_cursor: None,
             status_message: None,
             quit: false,
             font_dirs: Vec::new(),
@@ -750,6 +760,7 @@ impl App {
         let mut warnings = WarningCollector::new();
         crate::render::markdown::check_content(root, &mut warnings);
         self.doc = super::walk::walk_with_origin(root, &mut warnings, self.origin.as_ref());
+        self.source = body.to_string();
         self.title =
             super::layout::sanitize(self.doc.title.as_deref().unwrap_or("silkprint")).into_owned();
         self.images.clear_cache();
@@ -1251,6 +1262,8 @@ impl App {
             KeyCode::Char('S') => self.start_global_search(),
             KeyCode::Char('B') => self.open_bookmarks(),
             KeyCode::Char('z') => self.toggle_details_at_cursor(),
+            KeyCode::Char('r') => self.reveal_raw_at_cursor(),
+            KeyCode::Char('E') => self.open_editor(),
             KeyCode::Tab => self.step_focus(),
             KeyCode::Char('n') => self.jump_match(true),
             KeyCode::Char('N') => self.jump_match(false),
@@ -1319,6 +1332,8 @@ impl App {
             Action::GlobalSearch => self.start_global_search(),
             Action::Bookmarks => self.open_bookmarks(),
             Action::ToggleDetails => self.toggle_details_at_cursor(),
+            Action::RevealRaw => self.reveal_raw_at_cursor(),
+            Action::Edit => self.open_editor(),
             Action::ToggleFocus => self.step_focus(),
             Action::NextMatch => self.jump_match(true),
             Action::PrevMatch => self.jump_match(false),
@@ -1360,7 +1375,7 @@ impl App {
             MouseEventKind::ScrollUp => self.mouse_scroll(mouse, false),
             MouseEventKind::Down(MouseButton::Left) => self.mouse_down(mouse),
             MouseEventKind::Drag(MouseButton::Left) => self.mouse_drag(mouse),
-            MouseEventKind::Up(MouseButton::Left) => self.drag_row = None,
+            MouseEventKind::Up(MouseButton::Left) => self.mouse_up(),
             MouseEventKind::Moved => self.mouse_moved(mouse),
             _ => {}
         }
@@ -1407,15 +1422,27 @@ impl App {
         }
         if contains(self.content_area, mouse.column, mouse.row) {
             self.focus = Focus::Content;
-            self.drag_row = Some(mouse.row);
             let line = usize::from(self.scroll)
                 .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
             let col = mouse.column.saturating_sub(self.content_area.x);
-            self.activate_link_at(line, col);
+            if self.activate_link_at(line, col) {
+                return;
+            }
+            self.drag_row = Some(mouse.row);
+            self.selection_anchor = Some((line, col));
+            self.selection_cursor = Some((line, col));
         }
     }
 
     fn mouse_drag(&mut self, mouse: MouseEvent) {
+        if self.selection_anchor.is_some() && contains(self.content_area, mouse.column, mouse.row) {
+            let line = usize::from(self.scroll)
+                .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
+            let col = mouse.column.saturating_sub(self.content_area.x);
+            self.selection_cursor = Some((line, col));
+            self.status_message = Some("selecting text".to_string());
+            return;
+        }
         let Some(prev) = self.drag_row else {
             return;
         };
@@ -1424,6 +1451,23 @@ impl App {
             self.scroll_by(-delta);
             self.drag_row = Some(mouse.row);
             self.status_message = None;
+        }
+    }
+
+    fn mouse_up(&mut self) {
+        let selection = self
+            .selection_anchor
+            .zip(self.selection_cursor)
+            .and_then(|(start, end)| selected_text(&self.content.lines, start, end));
+        self.selection_anchor = None;
+        self.selection_cursor = None;
+        self.drag_row = None;
+        if let Some(text) = selection {
+            if copy_osc52(&text).is_ok() {
+                self.status_message = Some(format!("copied {} chars", text.chars().count()));
+            } else {
+                self.status_message = Some("copy failed".to_string());
+            }
         }
     }
 
@@ -1746,6 +1790,43 @@ impl App {
         } else {
             "details folded".to_string()
         });
+    }
+
+    fn reveal_raw_at_cursor(&mut self) {
+        let raw_idx = usize::from(self.scroll);
+        let Some(line) = self.source.lines().nth(raw_idx) else {
+            self.status_message = Some("raw: <end of file>".to_string());
+            return;
+        };
+        self.status_message = Some(format!(
+            "raw: {}",
+            truncate_plain(super::layout::sanitize(line).as_ref(), 68)
+        ));
+    }
+
+    fn open_editor(&mut self) {
+        let Some(path) = self.path.clone() else {
+            self.status_message = Some("no local file for editor".to_string());
+            return;
+        };
+        let Some((program, args)) = editor_command() else {
+            self.status_message = Some("set EDITOR to edit this file".to_string());
+            return;
+        };
+        match ProcessCommand::new(&program).args(args).arg(&path).spawn() {
+            Ok(_) => {
+                self.status_message = Some(format!(
+                    "editor opened {}",
+                    truncate_plain(&path.display().to_string(), 42)
+                ));
+            }
+            Err(err) => {
+                self.status_message = Some(format!(
+                    "editor failed: {}",
+                    truncate_plain(&err.to_string(), 42)
+                ));
+            }
+        }
     }
 
     fn activate_link_at(&mut self, line: usize, col: u16) -> bool {
@@ -2379,7 +2460,7 @@ impl App {
                 self.matches.len()
             )
         } else {
-            "j/k scroll  /search S all  e files B marks  z fold  ?help  q quit".to_string()
+            "j/k scroll  /search S all  e files B marks  z fold r raw  ?help".to_string()
         };
 
         let accent = Style::default().fg(self.chrome.accent);
@@ -2500,6 +2581,9 @@ impl App {
             ("S", "workspace search"),
             ("B", "bookmarks"),
             ("z", "fold details"),
+            ("r", "reveal raw"),
+            ("E", "open $EDITOR"),
+            ("drag", "copy selection"),
             ("o", "toggle outline"),
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
@@ -2562,6 +2646,98 @@ fn details_view(doc: &RenderedDoc, states: &BTreeMap<usize, bool>) -> RenderedDo
         }
     }
     doc
+}
+
+fn editor_command() -> Option<(String, Vec<String>)> {
+    let raw = env::var("VISUAL")
+        .ok()
+        .or_else(|| env::var("EDITOR").ok())?;
+    let mut parts = raw.split_whitespace();
+    let program = parts.next()?.to_string();
+    let args = parts.map(str::to_string).collect();
+    Some((program, args))
+}
+
+fn selected_text(
+    lines: &[Line<'static>],
+    start: (usize, u16),
+    end: (usize, u16),
+) -> Option<String> {
+    let ((start_line, start_col), (end_line, end_col)) = if start <= end {
+        (start, end)
+    } else {
+        (end, start)
+    };
+    if start_line == end_line && start_col == end_col {
+        return None;
+    }
+    let mut out = String::new();
+    for line_idx in start_line..=end_line {
+        let raw = plain_line(lines.get(line_idx)?);
+        let part = if start_line == end_line {
+            slice_chars(&raw, usize::from(start_col), usize::from(end_col))
+        } else if line_idx == start_line {
+            slice_chars(&raw, usize::from(start_col), raw.chars().count())
+        } else if line_idx == end_line {
+            slice_chars(&raw, 0, usize::from(end_col))
+        } else {
+            raw
+        };
+        if line_idx > start_line {
+            out.push('\n');
+        }
+        out.push_str(&part);
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn plain_line(line: &Line<'static>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn slice_chars(value: &str, start: usize, end: usize) -> String {
+    value
+        .chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
+}
+
+fn copy_osc52(text: &str) -> io::Result<()> {
+    let encoded = base64_encode(text.as_bytes());
+    let mut stdout = io::stdout();
+    write!(stdout, "\x1b]52;c;{encoded}\x07")?;
+    stdout.flush()
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(char::from(TABLE[usize::from(b0 >> 2)]));
+        out.push(char::from(
+            TABLE[usize::from(((b0 & 0b0000_0011) << 4) | (b1 >> 4))],
+        ));
+        if chunk.len() > 1 {
+            out.push(char::from(
+                TABLE[usize::from(((b1 & 0b0000_1111) << 2) | (b2 >> 6))],
+            ));
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(char::from(TABLE[usize::from(b2 & 0b0011_1111)]));
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }
 
 fn bookmarks_from_config(config: &BTreeMap<String, String>) -> Vec<Bookmark> {
@@ -2737,6 +2913,8 @@ fn parse_action(action: &str) -> Option<Action> {
         "global_search" | "workspace_search" | "search_all" => Some(Action::GlobalSearch),
         "bookmarks" | "bookmark_picker" => Some(Action::Bookmarks),
         "details" | "toggle_details" | "fold_details" => Some(Action::ToggleDetails),
+        "raw" | "reveal_raw" => Some(Action::RevealRaw),
+        "edit" | "editor" | "open_editor" => Some(Action::Edit),
         "focus" | "toggle_focus" => Some(Action::ToggleFocus),
         "next_match" => Some(Action::NextMatch),
         "prev_match" | "previous_match" => Some(Action::PrevMatch),
@@ -4251,6 +4429,43 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
         assert!(expanded.contains("Hidden body"));
+    }
+
+    #[test]
+    fn reveal_raw_shows_source_line() {
+        let mut app = App::new_with_config(
+            "# Title\n\nraw body\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            None,
+            None,
+            ReaderConfig::default(),
+        );
+        app.scroll = 2;
+
+        app.reveal_raw_at_cursor();
+
+        assert_eq!(app.status_message.as_deref(), Some("raw: raw body"));
+    }
+
+    #[test]
+    fn selected_text_extracts_multiline_plain_content() {
+        let lines = vec![
+            Line::from("alpha beta"),
+            Line::from("gamma delta"),
+            Line::from("omega"),
+        ];
+
+        let selected = selected_text(&lines, (0, 6), (1, 5)).expect("selection");
+
+        assert_eq!(selected, "beta\ngamma");
+    }
+
+    #[test]
+    fn osc52_base64_encoding_matches_spec() {
+        assert_eq!(base64_encode(b"silk"), "c2lsaw==");
     }
 
     fn content_span<'a>(app: &'a App, needle: &str) -> &'a Span<'static> {

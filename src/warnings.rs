@@ -41,6 +41,10 @@ pub enum SilkprintWarning {
     FootnoteNotFound {
         name: String,
     },
+    LinkValidationFailed {
+        target: String,
+        message: String,
+    },
 }
 
 impl fmt::Display for SilkprintWarning {
@@ -91,6 +95,9 @@ impl fmt::Display for SilkprintWarning {
             }
             Self::FootnoteNotFound { name } => {
                 write!(f, "footnote '{name}' referenced but not defined")
+            }
+            Self::LinkValidationFailed { target, message } => {
+                write!(f, "link validation failed for '{target}': {message}")
             }
         }
     }

@@ -19,6 +19,10 @@ use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::{Resize, ResizeEncodeRender};
 
+use crate::render::terminal::model::Rgb;
+
+use super::diagrams::{MERMAID_RASTER_LIMITS, raster_svg_to_image};
+
 /// A decoded image plus its source pixel dimensions. The pixels are retained so
 /// a tall band can be cropped to whatever vertical slice is currently visible.
 pub struct Loaded {
@@ -353,6 +357,14 @@ impl ImageStore {
             let path = resolve(src, self.base_dir.as_deref())?;
             std::fs::read(path).ok()?
         };
+        if is_svg_src(src) {
+            let image = raster_svg_to_image(&bytes, Rgb(255, 255, 255), MERMAID_RASTER_LIMITS)?;
+            return Some(Loaded {
+                width: image.width(),
+                height: image.height(),
+                image: Arc::new(image),
+            });
+        }
         let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
             .with_guessed_format()
             .ok()?;
@@ -605,7 +617,6 @@ const MAX_SLICE_WORKERS: usize = 4;
 const GENERATED_KEY_PREFIX: &str = "\u{0}";
 
 /// Fetch a remote image's bytes, reusing the PDF pipeline's downloader.
-/// (SVG bytes won't decode as a raster — those stay placeholders for now.)
 #[cfg(not(target_arch = "wasm32"))]
 fn fetch_remote(url: &str) -> Option<Vec<u8>> {
     crate::render::image::fetch_remote_image(url)
@@ -616,6 +627,13 @@ fn fetch_remote(url: &str) -> Option<Vec<u8>> {
 #[cfg(target_arch = "wasm32")]
 fn fetch_remote(_url: &str) -> Option<Vec<u8>> {
     None
+}
+
+fn is_svg_src(src: &str) -> bool {
+    src.split(['?', '#'])
+        .next()
+        .and_then(|path| path.rsplit('.').next())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
 }
 
 /// Resolve a local image path, jailed to the document's directory.
