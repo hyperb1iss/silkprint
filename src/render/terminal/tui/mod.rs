@@ -90,6 +90,9 @@ enum Action {
     Up,
     HeadingNext,
     HeadingPrev,
+    TabNext,
+    TabPrev,
+    TabClose,
 }
 
 #[derive(Clone, Copy)]
@@ -166,6 +169,55 @@ struct TabState {
     back: Vec<NavEntry>,
     forward: Vec<NavEntry>,
     pending_anchor: Option<String>,
+}
+
+impl TabState {
+    fn from_body(
+        body: &str,
+        picker: Option<Picker>,
+        base_dir: Option<PathBuf>,
+        watch_path: Option<PathBuf>,
+        origin: Option<DocumentOrigin>,
+    ) -> Self {
+        let arena = comrak::Arena::new();
+        let root = crate::render::markdown::parse(&arena, body);
+        let mut warnings = WarningCollector::new();
+        crate::render::markdown::check_content(root, &mut warnings);
+        let origin = origin.or_else(|| watch_path.clone().map(DocumentOrigin::local));
+        let doc = super::walk::walk_with_origin(root, &mut warnings, origin.as_ref());
+        let title =
+            super::layout::sanitize(doc.title.as_deref().unwrap_or("silkprint")).into_owned();
+        let mut outline_state = ListState::default();
+        if !doc.outline.is_empty() {
+            outline_state.select(Some(0));
+        }
+        Self {
+            doc,
+            title,
+            content: Text::default(),
+            content_bg: Color::Reset,
+            content_fg: Color::Reset,
+            link_regions: Vec::new(),
+            block_spans: Vec::new(),
+            block_jump: Vec::new(),
+            rendered_width: 0,
+            theme_dirty: true,
+            scroll: 0,
+            viewport_h: 1,
+            outline_state,
+            search_query: String::new(),
+            matches: Vec::new(),
+            match_idx: 0,
+            images: ImageStore::new(picker, base_dir.clone()),
+            image_placements: Vec::new(),
+            base_dir,
+            path: watch_path,
+            origin,
+            back: Vec::new(),
+            forward: Vec::new(),
+            pending_anchor: None,
+        }
+    }
 }
 
 enum Osc8Target {
@@ -438,13 +490,6 @@ impl App {
         origin: Option<DocumentOrigin>,
         settings: super::config::ReaderSettings,
     ) -> Self {
-        let arena = comrak::Arena::new();
-        let root = crate::render::markdown::parse(&arena, body);
-        let mut warnings = WarningCollector::new();
-        crate::render::markdown::check_content(root, &mut warnings);
-        let origin = origin.or_else(|| watch_path.clone().map(DocumentOrigin::local));
-        let doc = super::walk::walk_with_origin(root, &mut warnings, origin.as_ref());
-
         let theme_names: Vec<String> = crate::theme::builtin::list_themes()
             .into_iter()
             .map(|t| t.name.to_string())
@@ -458,44 +503,12 @@ impl App {
             .filter(|name| name.as_str() == theme_name)
             .cloned();
 
-        let title =
-            super::layout::sanitize(doc.title.as_deref().unwrap_or("silkprint")).into_owned();
         let glyphs = Glyphs::new(glyph_override.unwrap_or(GlyphTier::NerdFont));
-
-        let mut outline_state = ListState::default();
-        if !doc.outline.is_empty() {
-            outline_state.select(Some(0));
-        }
+        let tab = TabState::from_body(body, picker, base_dir, watch_path, origin);
         let keybindings = KeyBindings::from_config(&settings.user.keybindings);
         let saved = settings.reader;
-        let outline_visible = saved.outline.unwrap_or(doc.outline.len() > 1);
+        let outline_visible = saved.outline.unwrap_or(tab.doc.outline.len() > 1);
         let saved_theme_name = saved.theme;
-        let tab = TabState {
-            doc,
-            title,
-            content: Text::default(),
-            content_bg: Color::Reset,
-            content_fg: Color::Reset,
-            link_regions: Vec::new(),
-            block_spans: Vec::new(),
-            block_jump: Vec::new(),
-            rendered_width: 0,
-            theme_dirty: true,
-            scroll: 0,
-            viewport_h: 1,
-            outline_state,
-            search_query: String::new(),
-            matches: Vec::new(),
-            match_idx: 0,
-            images: ImageStore::new(picker, base_dir.clone()),
-            image_placements: Vec::new(),
-            base_dir,
-            path: watch_path,
-            origin,
-            back: Vec::new(),
-            forward: Vec::new(),
-            pending_anchor: None,
-        };
 
         Self {
             tabs: vec![tab],
@@ -757,6 +770,37 @@ impl App {
             }
             self.scroll = entry.scroll;
         }
+    }
+
+    fn next_tab(&mut self) {
+        let len = self.tabs.len();
+        if len <= 1 {
+            self.status_message = Some("only one tab".to_string());
+            return;
+        }
+        self.active_tab = (self.active_tab + 1) % len;
+        self.status_message = Some(format!("tab {}/{}", self.active_tab + 1, len));
+    }
+
+    fn prev_tab(&mut self) {
+        let len = self.tabs.len();
+        if len <= 1 {
+            self.status_message = Some("only one tab".to_string());
+            return;
+        }
+        self.active_tab = (self.active_tab + len - 1) % len;
+        self.status_message = Some(format!("tab {}/{}", self.active_tab + 1, len));
+    }
+
+    fn close_tab(&mut self) {
+        if self.tabs.len() <= 1 {
+            self.status_message = Some("can't close last tab".to_string());
+            return;
+        }
+        let title = self.tabs[self.active_tab].title.clone();
+        self.tabs.remove(self.active_tab);
+        self.active_tab = self.active_tab.min(self.tabs.len() - 1);
+        self.status_message = Some(format!("closed {}", truncate_plain(&title, 36)));
     }
 
     /// Resolve a link URL to a local Markdown file (and optional `#anchor`),
@@ -1072,6 +1116,9 @@ impl App {
             KeyCode::Char('N') => self.jump_match(false),
             KeyCode::Char('b') | KeyCode::Backspace => self.go_back(),
             KeyCode::Char('f') => self.go_forward(),
+            KeyCode::Char('L') => self.next_tab(),
+            KeyCode::Char('H') => self.prev_tab(),
+            KeyCode::Char('x') => self.close_tab(),
             KeyCode::Char('g') => {
                 if was_g {
                     self.set_scroll(0);
@@ -1148,6 +1195,9 @@ impl App {
             Action::Up => self.move_up(),
             Action::HeadingNext => self.jump_heading(true),
             Action::HeadingPrev => self.jump_heading(false),
+            Action::TabNext => self.next_tab(),
+            Action::TabPrev => self.prev_tab(),
+            Action::TabClose => self.close_tab(),
         }
     }
 
@@ -1792,11 +1842,13 @@ impl App {
 
         let accent = Style::default().fg(self.chrome.accent);
         let muted = Style::default().fg(self.chrome.muted);
+        let tab_label = format!(" [{}/{}] ", self.active_tab + 1, self.tabs.len());
         let left = Line::from(vec![
             Span::styled(
                 format!(" {} ", self.glyphs.diamond()),
                 accent.add_modifier(Modifier::BOLD),
             ),
+            Span::styled(tab_label, muted),
             Span::styled(
                 truncate_plain(&self.title, 28),
                 Style::default()
@@ -1863,6 +1915,7 @@ impl App {
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
             ("hover / click link", "preview / follow"),
+            ("H / L, x", "prev / next / close tab"),
             ("b / f, Bksp", "history back / forward"),
             ("/ then n / N", "search / next / prev"),
             ("t", "theme picker"),
@@ -1938,6 +1991,9 @@ fn parse_action(action: &str) -> Option<Action> {
         "heading_prev" | "heading_previous" | "prev_heading" | "previous_heading" => {
             Some(Action::HeadingPrev)
         }
+        "tab_next" | "next_tab" => Some(Action::TabNext),
+        "tab_prev" | "tab_previous" | "prev_tab" | "previous_tab" => Some(Action::TabPrev),
+        "tab_close" | "close_tab" => Some(Action::TabClose),
         _ => None,
     }
 }
@@ -2732,6 +2788,31 @@ mod tests {
 
         app.normal_key(KeyCode::Char('x'), KeyModifiers::CONTROL);
         assert!(app.quit);
+    }
+
+    #[test]
+    fn tabs_switch_and_close_active_document_state() {
+        let mut app = sample();
+        app.tabs.push(TabState::from_body(
+            "# Second\n\nBody\n",
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        app.next_tab();
+        assert_eq!(app.active_tab, 1);
+        assert_eq!(app.title, "Second");
+
+        app.prev_tab();
+        assert_eq!(app.active_tab, 0);
+
+        app.next_tab();
+        app.close_tab();
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.active_tab, 0);
+        assert_ne!(app.title, "Second");
     }
 
     #[test]
