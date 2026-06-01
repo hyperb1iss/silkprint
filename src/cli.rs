@@ -89,6 +89,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub plain: bool,
 
+    /// Disable auto-paging for long one-shot reader output.
+    #[cfg(feature = "terminal")]
+    #[arg(long, global = true)]
+    pub no_pager: bool,
+
     /// Glyph set: nerdfont (default), unicode, ascii.
     #[cfg(feature = "terminal")]
     #[arg(long, global = true, value_name = "MODE")]

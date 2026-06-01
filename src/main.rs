@@ -786,12 +786,74 @@ fn handle_read_source(cli: &Cli, source: ReadSource) -> miette::Result<()> {
         &terminal_options,
     )?;
 
-    print!("{output}");
-    io::stdout().flush().ok();
+    emit_one_shot_output(cli, &output);
 
     if !cli.quiet {
         display_warnings(&warnings);
     }
+    Ok(())
+}
+
+#[cfg(feature = "terminal")]
+fn emit_one_shot_output(cli: &Cli, output: &str) {
+    if should_page_output(
+        output,
+        io::stdout().is_terminal(),
+        cli.no_pager,
+        terminal_height(),
+    ) && page_output(output).is_ok()
+    {
+        return;
+    }
+
+    print!("{output}");
+    io::stdout().flush().ok();
+}
+
+#[cfg(feature = "terminal")]
+fn should_page_output(
+    output: &str,
+    stdout_is_tty: bool,
+    no_pager: bool,
+    terminal_height: Option<u16>,
+) -> bool {
+    if !stdout_is_tty || no_pager {
+        return false;
+    }
+    let Some(height) = terminal_height else {
+        return false;
+    };
+    output.lines().count() > usize::from(height.max(1))
+}
+
+#[cfg(feature = "terminal")]
+fn terminal_height() -> Option<u16> {
+    ratatui::crossterm::terminal::size()
+        .ok()
+        .map(|(_width, height)| height)
+}
+
+#[cfg(feature = "terminal")]
+fn page_output(output: &str) -> io::Result<()> {
+    use std::ffi::OsString;
+    use std::process::{Command, Stdio};
+
+    let spec = std::env::var_os("PAGER")
+        .filter(|spec| !spec.is_empty())
+        .unwrap_or_else(|| OsString::from("less -R"));
+    let spec = spec.to_string_lossy();
+    let mut parts = spec.split_whitespace();
+    let Some(program) = parts.next() else {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty pager"));
+    };
+    let mut child = Command::new(program)
+        .args(parts)
+        .stdin(Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(output.as_bytes());
+    }
+    let _ = child.wait();
     Ok(())
 }
 
@@ -889,4 +951,20 @@ fn main() -> miette::Result<()> {
     }
     let input = require_input(cli.input.clone())?;
     run_pdf(&cli, &input)
+}
+
+#[cfg(all(test, feature = "terminal"))]
+mod tests {
+    use super::should_page_output;
+
+    #[test]
+    fn pages_only_tty_output_that_exceeds_height() {
+        let output = "one\ntwo\nthree\n";
+
+        assert!(should_page_output(output, true, false, Some(2)));
+        assert!(!should_page_output(output, true, false, Some(3)));
+        assert!(!should_page_output(output, false, false, Some(2)));
+        assert!(!should_page_output(output, true, true, Some(2)));
+        assert!(!should_page_output(output, true, false, None));
+    }
 }
