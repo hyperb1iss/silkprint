@@ -47,6 +47,7 @@ use super::model::{Block, LinkTarget, RenderedDoc, Rgb};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
+const BROWSER_WIDTH: u16 = 34;
 
 /// Upper bound on the rows a single image/diagram band may reserve. Bands are
 /// normally sized to the image's natural height and scrolled through; this only
@@ -58,6 +59,7 @@ const MOUSE_SCROLL_ROWS: i32 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
+    Browser,
     Content,
     Outline,
 }
@@ -74,6 +76,7 @@ enum Action {
     Help,
     Theme,
     ToggleOutline,
+    ToggleBrowser,
     Search,
     ToggleFocus,
     NextMatch,
@@ -142,6 +145,20 @@ struct LinkRegion {
 struct NavEntry {
     origin: DocumentOrigin,
     scroll: u16,
+}
+
+#[derive(Clone)]
+struct BrowserEntry {
+    path: PathBuf,
+    label: String,
+    kind: BrowserEntryKind,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BrowserEntryKind {
+    Parent,
+    Directory,
+    Markdown,
 }
 
 struct TabState {
@@ -342,6 +359,10 @@ struct App {
     saved_theme_name: Option<String>,
     chrome: Chrome,
     outline_visible: bool,
+    browser_visible: bool,
+    browser_root: Option<PathBuf>,
+    browser_entries: Vec<BrowserEntry>,
+    browser_state: ListState,
     focus: Focus,
 
     mode: Mode,
@@ -360,6 +381,7 @@ struct App {
 
     font_dirs: Vec<PathBuf>,
     content_area: Rect,
+    browser_area: Option<Rect>,
     outline_area: Option<Rect>,
     status_area: Rect,
 }
@@ -525,6 +547,10 @@ impl App {
             current_theme_name,
             saved_theme_name,
             outline_visible,
+            browser_visible: false,
+            browser_root: None,
+            browser_entries: Vec::new(),
+            browser_state: ListState::default(),
             focus: Focus::Content,
             mode: Mode::Normal,
             show_help: false,
@@ -539,6 +565,7 @@ impl App {
             quit: false,
             font_dirs: Vec::new(),
             content_area: Rect::default(),
+            browser_area: None,
             outline_area: None,
             status_area: Rect::default(),
         }
@@ -1171,9 +1198,10 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('t') => self.open_picker(),
+            KeyCode::Char('e') => self.toggle_browser(),
             KeyCode::Char('o') => {
                 self.outline_visible = !self.outline_visible;
-                if !self.outline_visible {
+                if !self.outline_visible && self.focus == Focus::Outline {
                     self.focus = Focus::Content; // don't strand focus on a hidden pane
                 }
             }
@@ -1181,13 +1209,7 @@ impl App {
                 self.mode = Mode::Search;
                 self.search_query.clear();
             }
-            KeyCode::Tab => {
-                self.focus = if self.focus == Focus::Content && self.outline_visible {
-                    Focus::Outline
-                } else {
-                    Focus::Content
-                };
-            }
+            KeyCode::Tab => self.step_focus(),
             KeyCode::Char('n') => self.jump_match(true),
             KeyCode::Char('N') => self.jump_match(false),
             KeyCode::Char('b') | KeyCode::Backspace => self.go_back(),
@@ -1225,6 +1247,7 @@ impl App {
             }
             KeyCode::Char(' ') | KeyCode::PageDown => self.scroll_by(i32::from(page)),
             KeyCode::PageUp => self.scroll_by(-i32::from(page)),
+            KeyCode::Enter if self.focus == Focus::Browser => self.open_browser_selection(),
             KeyCode::Enter if self.focus == Focus::Outline => self.jump_to_selected_heading(),
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.move_up(),
@@ -1240,9 +1263,10 @@ impl App {
             Action::Quit => self.quit = true,
             Action::Help => self.show_help = true,
             Action::Theme => self.open_picker(),
+            Action::ToggleBrowser => self.toggle_browser(),
             Action::ToggleOutline => {
                 self.outline_visible = !self.outline_visible;
-                if !self.outline_visible {
+                if !self.outline_visible && self.focus == Focus::Outline {
                     self.focus = Focus::Content;
                 }
             }
@@ -1250,13 +1274,7 @@ impl App {
                 self.mode = Mode::Search;
                 self.search_query.clear();
             }
-            Action::ToggleFocus => {
-                self.focus = if self.focus == Focus::Content && self.outline_visible {
-                    Focus::Outline
-                } else {
-                    Focus::Content
-                };
-            }
+            Action::ToggleFocus => self.step_focus(),
             Action::NextMatch => self.jump_match(true),
             Action::PrevMatch => self.jump_match(false),
             Action::Back => self.go_back(),
@@ -1302,6 +1320,16 @@ impl App {
     fn mouse_scroll(&mut self, mouse: MouseEvent, down: bool) {
         self.status_message = None;
         if self
+            .browser_area
+            .is_some_and(|area| contains(area, mouse.column, mouse.row))
+        {
+            for _ in 0..MOUSE_SCROLL_ROWS {
+                self.browser_step(down);
+            }
+            self.focus = Focus::Browser;
+            return;
+        }
+        if self
             .outline_area
             .is_some_and(|area| contains(area, mouse.column, mouse.row))
         {
@@ -1322,6 +1350,9 @@ impl App {
 
     fn mouse_down(&mut self, mouse: MouseEvent) {
         self.status_message = None;
+        if self.select_browser_at(mouse.column, mouse.row) {
+            return;
+        }
         if self.select_outline_at(mouse.column, mouse.row) {
             return;
         }
@@ -1372,6 +1403,27 @@ impl App {
         }
     }
 
+    fn select_browser_at(&mut self, column: u16, row: u16) -> bool {
+        let Some(area) = self.browser_area else {
+            return false;
+        };
+        if !contains(area, column, row)
+            || row <= area.y
+            || row >= area.y.saturating_add(area.height).saturating_sub(1)
+        {
+            return false;
+        }
+        let visible_idx = usize::from(row.saturating_sub(area.y).saturating_sub(1));
+        let idx = self.browser_state.offset().saturating_add(visible_idx);
+        if idx >= self.browser_entries.len() {
+            return false;
+        }
+        self.browser_state.select(Some(idx));
+        self.focus = Focus::Browser;
+        self.open_browser_selection();
+        true
+    }
+
     fn select_outline_at(&mut self, column: u16, row: u16) -> bool {
         let Some(area) = self.outline_area else {
             return false;
@@ -1392,19 +1444,116 @@ impl App {
         true
     }
 
-    fn move_down(&mut self) {
-        if self.focus == Focus::Outline {
-            self.outline_step(true);
+    fn step_focus(&mut self) {
+        self.focus = match self.focus {
+            Focus::Content if self.browser_visible => Focus::Browser,
+            Focus::Content | Focus::Browser
+                if self.outline_visible && !self.doc.outline.is_empty() =>
+            {
+                Focus::Outline
+            }
+            _ => Focus::Content,
+        };
+    }
+
+    fn toggle_browser(&mut self) {
+        self.browser_visible = !self.browser_visible;
+        if self.browser_visible {
+            self.refresh_browser();
+            self.focus = Focus::Browser;
+        } else if self.focus == Focus::Browser {
+            self.focus = Focus::Content;
+        }
+    }
+
+    fn refresh_browser(&mut self) {
+        let root = self
+            .browser_root
+            .clone()
+            .or_else(|| self.base_dir.clone())
+            .or_else(|| {
+                self.path
+                    .as_deref()
+                    .and_then(Path::parent)
+                    .map(Path::to_path_buf)
+            })
+            .unwrap_or_else(|| PathBuf::from("."));
+        self.browser_root = Some(root.clone());
+        self.browser_entries = browser_entries(&root);
+        self.browser_state
+            .select((!self.browser_entries.is_empty()).then_some(0));
+    }
+
+    fn browser_step(&mut self, forward: bool) {
+        if self.browser_entries.is_empty() {
+            return;
+        }
+        let len = self.browser_entries.len();
+        let cur = self.browser_state.selected().unwrap_or(0);
+        let next = if forward {
+            (cur + 1) % len
         } else {
-            self.scroll_by(1);
+            (cur + len - 1) % len
+        };
+        self.browser_state.select(Some(next));
+    }
+
+    fn open_browser_selection(&mut self) {
+        let Some(idx) = self.browser_state.selected() else {
+            return;
+        };
+        let Some(entry) = self.browser_entries.get(idx).cloned() else {
+            return;
+        };
+        match entry.kind {
+            BrowserEntryKind::Parent | BrowserEntryKind::Directory => {
+                self.browser_root = Some(entry.path);
+                self.refresh_browser();
+            }
+            BrowserEntryKind::Markdown => self.open_path_in_tab(&entry.path),
+        }
+    }
+
+    fn open_path_in_tab(&mut self, path: &Path) {
+        let Ok(body) = std::fs::read_to_string(path) else {
+            self.status_message = Some(format!(
+                "can't open {}",
+                truncate_plain(&path.display().to_string(), 48)
+            ));
+            return;
+        };
+        let base = path
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.parent().map(Path::to_path_buf))
+            .or_else(|| path.parent().map(Path::to_path_buf));
+        let tab = TabState::from_body(
+            &body,
+            None,
+            base,
+            Some(path.to_path_buf()),
+            Some(DocumentOrigin::local(path.to_path_buf())),
+        );
+        let title = tab.title.clone();
+        self.tabs.push(tab);
+        self.active_tab = self.tabs.len() - 1;
+        self.focus = Focus::Content;
+        self.status_message = Some(format!("opened {}", truncate_plain(&title, 40)));
+    }
+
+    fn move_down(&mut self) {
+        match self.focus {
+            Focus::Browser => self.browser_step(true),
+            Focus::Outline => self.outline_step(true),
+            Focus::Content => self.scroll_by(1),
         }
     }
 
     fn move_up(&mut self) {
-        if self.focus == Focus::Outline {
-            self.outline_step(false);
-        } else {
-            self.scroll_by(-1);
+        match self.focus {
+            Focus::Browser => self.browser_step(false),
+            Focus::Outline => self.outline_step(false),
+            Focus::Content => self.scroll_by(-1),
         }
     }
 
@@ -1701,6 +1850,18 @@ impl App {
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
         self.status_area = status;
 
+        let body = if self.browser_visible {
+            let [browser, rest] =
+                Layout::horizontal([Constraint::Length(BROWSER_WIDTH), Constraint::Min(10)])
+                    .areas(body);
+            self.browser_area = Some(browser);
+            self.draw_browser(frame, browser);
+            rest
+        } else {
+            self.browser_area = None;
+            body
+        };
+
         let content_area = if self.outline_visible && !self.doc.outline.is_empty() {
             let [outline, content] =
                 Layout::horizontal([Constraint::Length(OUTLINE_WIDTH), Constraint::Min(10)])
@@ -1826,6 +1987,62 @@ impl App {
         self.images.finish_frame();
     }
 
+    fn draw_browser(&mut self, frame: &mut Frame, area: Rect) {
+        let items: Vec<ListItem> = self
+            .browser_entries
+            .iter()
+            .map(|entry| {
+                let icon = match entry.kind {
+                    BrowserEntryKind::Parent => "..",
+                    BrowserEntryKind::Directory => "d",
+                    BrowserEntryKind::Markdown => "m",
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("{icon} "), Style::default().fg(self.chrome.accent)),
+                    Span::styled(
+                        super::layout::sanitize(&entry.label).into_owned(),
+                        Style::default().fg(self.chrome.text),
+                    ),
+                ]))
+            })
+            .collect();
+
+        let border = if self.focus == Focus::Browser {
+            self.chrome.border_focused
+        } else {
+            self.chrome.border
+        };
+        let title = self
+            .browser_root
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Files");
+        let list = List::new(items)
+            .block(
+                WBlock::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(border))
+                    .title(Span::styled(
+                        format!(" {} ", truncate_plain(title, 22)),
+                        Style::default()
+                            .fg(self.chrome.accent2)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+            )
+            .style(
+                Style::default()
+                    .bg(self.chrome.panel_bg)
+                    .fg(self.chrome.text),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(self.chrome.selection_bg)
+                    .add_modifier(Modifier::BOLD),
+            );
+        frame.render_stateful_widget(list, area, &mut self.browser_state);
+    }
+
     fn draw_outline(&mut self, frame: &mut Frame, area: Rect) {
         let items: Vec<ListItem> = self
             .doc
@@ -1913,7 +2130,7 @@ impl App {
                 self.matches.len()
             )
         } else {
-            "j/k scroll  /search  b/f back  t theme  o outline  ?help  q quit".to_string()
+            "j/k scroll  /search  e files  b/f back  t theme  o outline  ?help  q quit".to_string()
         };
 
         let accent = Style::default().fg(self.chrome.accent);
@@ -1987,6 +2204,7 @@ impl App {
             ("Space / PageDn", "page down"),
             ("g g / G", "top / bottom"),
             ("[[ / ]]", "prev / next heading"),
+            ("e", "file browser"),
             ("o", "toggle outline"),
             ("Tab", "switch focus"),
             ("Enter (outline)", "jump to heading"),
@@ -2039,6 +2257,70 @@ fn session_path_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+fn browser_entries(root: &Path) -> Vec<BrowserEntry> {
+    let mut entries = Vec::new();
+    if let Some(parent) = root.parent().filter(|parent| *parent != root) {
+        entries.push(BrowserEntry {
+            path: parent.to_path_buf(),
+            label: "..".to_string(),
+            kind: BrowserEntryKind::Parent,
+        });
+    }
+    let Ok(read_dir) = std::fs::read_dir(root) else {
+        return entries;
+    };
+    let mut children: Vec<BrowserEntry> = read_dir
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?.to_string();
+            if name.starts_with('.') {
+                return None;
+            }
+            let file_type = entry.file_type().ok()?;
+            if file_type.is_dir() {
+                return Some(BrowserEntry {
+                    path,
+                    label: format!("{name}/"),
+                    kind: BrowserEntryKind::Directory,
+                });
+            }
+            is_markdown_path(&path).then_some(BrowserEntry {
+                path,
+                label: name.clone(),
+                kind: BrowserEntryKind::Markdown,
+            })
+        })
+        .collect();
+    children.sort_by(|a, b| {
+        let ak = match a.kind {
+            BrowserEntryKind::Parent => 0,
+            BrowserEntryKind::Directory => 1,
+            BrowserEntryKind::Markdown => 2,
+        };
+        let bk = match b.kind {
+            BrowserEntryKind::Parent => 0,
+            BrowserEntryKind::Directory => 1,
+            BrowserEntryKind::Markdown => 2,
+        };
+        ak.cmp(&bk)
+            .then_with(|| a.label.to_lowercase().cmp(&b.label.to_lowercase()))
+    });
+    entries.extend(children);
+    entries
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "md" | "markdown" | "mdown" | "mkd" | "mdwn" | "mkdn"
+            )
+        })
+}
+
 fn link_preview(target: &LinkTarget) -> String {
     let label = match target {
         LinkTarget::Url(url) => super::layout::sanitize(url).into_owned(),
@@ -2052,6 +2334,7 @@ fn parse_action(action: &str) -> Option<Action> {
         "quit" => Some(Action::Quit),
         "help" => Some(Action::Help),
         "theme" | "theme_picker" => Some(Action::Theme),
+        "browser" | "file_browser" | "toggle_browser" => Some(Action::ToggleBrowser),
         "outline" | "toggle_outline" => Some(Action::ToggleOutline),
         "search" => Some(Action::Search),
         "focus" | "toggle_focus" => Some(Action::ToggleFocus),
@@ -3002,6 +3285,93 @@ mod tests {
         assert_eq!(app.active_tab, 0);
         assert_eq!(app.title, "Current");
         assert_eq!(app.tabs[1].title, "Saved");
+    }
+
+    #[test]
+    fn browser_entries_list_directories_then_markdown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("docs")).expect("docs");
+        std::fs::write(dir.path().join("b.md"), "# B\n").expect("b");
+        std::fs::write(dir.path().join("a.txt"), "ignored").expect("txt");
+
+        let entries = browser_entries(dir.path());
+
+        let labels: Vec<&str> = entries.iter().map(|entry| entry.label.as_str()).collect();
+        assert!(labels.contains(&"docs/"));
+        assert!(labels.contains(&"b.md"));
+        assert!(!labels.contains(&"a.txt"));
+        let dir_pos = labels
+            .iter()
+            .position(|label| *label == "docs/")
+            .expect("docs");
+        let file_pos = labels.iter().position(|label| *label == "b.md").expect("b");
+        assert!(dir_pos < file_pos);
+    }
+
+    #[test]
+    fn browser_opens_markdown_files_in_new_tabs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let other = dir.path().join("other.md");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(&other, "# Other\n").expect("other");
+        let mut app = App::new(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current),
+        );
+
+        app.toggle_browser();
+        let idx = app
+            .browser_entries
+            .iter()
+            .position(|entry| entry.path == other)
+            .expect("other entry");
+        app.browser_state.select(Some(idx));
+        app.open_browser_selection();
+
+        assert_eq!(app.tabs.len(), 2);
+        assert_eq!(app.active_tab, 1);
+        assert_eq!(app.title, "Other");
+    }
+
+    #[test]
+    fn browser_enters_directories() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let current = dir.path().join("current.md");
+        let subdir = dir.path().join("docs");
+        std::fs::create_dir(&subdir).expect("docs");
+        std::fs::write(&current, "# Current\n").expect("current");
+        std::fs::write(subdir.join("guide.md"), "# Guide\n").expect("guide");
+        let mut app = App::new(
+            "# Current\n",
+            load_theme_or_default("silk-light"),
+            "silk-light",
+            Some(GlyphTier::Unicode),
+            None,
+            Some(dir.path().to_path_buf()),
+            Some(current),
+        );
+
+        app.toggle_browser();
+        let idx = app
+            .browser_entries
+            .iter()
+            .position(|entry| entry.path == subdir)
+            .expect("docs entry");
+        app.browser_state.select(Some(idx));
+        app.open_browser_selection();
+
+        assert_eq!(app.browser_root.as_deref(), Some(subdir.as_path()));
+        assert!(
+            app.browser_entries
+                .iter()
+                .any(|entry| entry.label == "guide.md")
+        );
     }
 
     #[test]
