@@ -13,6 +13,7 @@ mod diagrams;
 mod images;
 mod links;
 mod math;
+mod state;
 mod text;
 
 use std::collections::BTreeMap;
@@ -55,11 +56,11 @@ use self::browser::{
     global_search_entries, is_markdown_path,
 };
 use self::chrome::Chrome;
-use self::images::{ImageStore, Placement};
+use self::images::Placement;
 use self::links::{
-    LinkRegion, link_preview, link_regions_from_osc, open_target, resolve_jailed, shift_line,
-    uri_scheme,
+    link_preview, link_regions_from_osc, open_target, resolve_jailed, shift_line, uri_scheme,
 };
+use self::state::{NavEntry, TabState};
 #[cfg(test)]
 use self::text::base64_encode;
 use self::text::{
@@ -94,94 +95,6 @@ enum Mode {
     Normal,
     Search,
     GlobalSearch,
-}
-
-/// A visited document in the back/forward history and the scroll offset at the
-/// time we left it, so returning restores the prior view.
-#[derive(Clone)]
-struct NavEntry {
-    origin: DocumentOrigin,
-    scroll: u16,
-}
-
-struct TabState {
-    doc: RenderedDoc,
-    source: String,
-    title: String,
-    content: Text<'static>,
-    content_bg: Color,
-    content_fg: Color,
-    link_regions: Vec<LinkRegion>,
-    block_spans: Vec<(usize, usize)>,
-    block_jump: Vec<usize>,
-    rendered_width: u16,
-    theme_dirty: bool,
-    scroll: u16,
-    viewport_h: u16,
-    outline_state: ListState,
-    search_query: String,
-    matches: Vec<usize>,
-    match_idx: usize,
-    images: ImageStore,
-    image_placements: Vec<Placement>,
-    details_open: BTreeMap<usize, bool>,
-    base_dir: Option<PathBuf>,
-    path: Option<PathBuf>,
-    origin: Option<DocumentOrigin>,
-    back: Vec<NavEntry>,
-    forward: Vec<NavEntry>,
-    pending_anchor: Option<String>,
-}
-
-impl TabState {
-    fn from_body(
-        body: &str,
-        picker: Option<Picker>,
-        base_dir: Option<PathBuf>,
-        watch_path: Option<PathBuf>,
-        origin: Option<DocumentOrigin>,
-    ) -> Self {
-        let arena = comrak::Arena::new();
-        let root = crate::render::markdown::parse(&arena, body);
-        let mut warnings = WarningCollector::new();
-        crate::render::markdown::check_content(root, &mut warnings);
-        let origin = origin.or_else(|| watch_path.clone().map(DocumentOrigin::local));
-        let doc = super::walk::walk_with_origin(root, &mut warnings, origin.as_ref());
-        let title =
-            super::layout::sanitize(doc.title.as_deref().unwrap_or("silkprint")).into_owned();
-        let mut outline_state = ListState::default();
-        if !doc.outline.is_empty() {
-            outline_state.select(Some(0));
-        }
-        Self {
-            doc,
-            source: body.to_string(),
-            title,
-            content: Text::default(),
-            content_bg: Color::Reset,
-            content_fg: Color::Reset,
-            link_regions: Vec::new(),
-            block_spans: Vec::new(),
-            block_jump: Vec::new(),
-            rendered_width: 0,
-            theme_dirty: true,
-            scroll: 0,
-            viewport_h: 1,
-            outline_state,
-            search_query: String::new(),
-            matches: Vec::new(),
-            match_idx: 0,
-            images: ImageStore::new(picker, base_dir.clone()),
-            image_placements: Vec::new(),
-            details_open: BTreeMap::new(),
-            base_dir,
-            path: watch_path,
-            origin,
-            back: Vec::new(),
-            forward: Vec::new(),
-            pending_anchor: None,
-        }
-    }
 }
 
 #[derive(Clone)]
