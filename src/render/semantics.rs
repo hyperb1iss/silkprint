@@ -1,10 +1,10 @@
 use std::path::Path;
 
-pub fn code_fence_language(info: &str) -> &str {
+pub(crate) fn code_fence_language(info: &str) -> &str {
     info.split([' ', ',', '\t']).next().unwrap_or("")
 }
 
-pub fn is_known_code_fence_language(lang: &str) -> bool {
+pub(crate) fn is_known_code_fence_language(lang: &str) -> bool {
     let lower = lang.to_lowercase();
     KNOWN_LANGUAGES.contains(&lower.as_str())
 }
@@ -15,7 +15,7 @@ pub(crate) fn is_http_url(value: &str) -> bool {
     })
 }
 
-pub fn wikilink_target(target: &str) -> String {
+pub(crate) fn wikilink_target(target: &str) -> String {
     let (path, anchor) = target
         .split_once('#')
         .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
@@ -130,5 +130,15 @@ mod tests {
             wikilink_target("https://example.com/Guide"),
             "https://example.com/Guide"
         );
+    }
+
+    #[test]
+    fn is_http_url_uses_case_insensitive_http_scheme() {
+        assert!(is_http_url("https://example.com/image.png"));
+        assert!(is_http_url("HTTPS://example.com/image.png"));
+        assert!(is_http_url("http:nopath"));
+        assert!(!is_http_url("ftp://example.com/image.png"));
+        assert!(!is_http_url("httpx://example.com/image.png"));
+        assert!(!is_http_url("./local.png"));
     }
 }
