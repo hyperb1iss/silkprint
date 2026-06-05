@@ -15,8 +15,14 @@ use scraper::node::{Element, Node};
 
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
-use super::escape::{escape_typst_content, escape_typst_string};
-use super::image::{PreparedImage, PreparedImages};
+use super::escape::escape_typst_content;
+use super::image::PreparedImages;
+
+mod images;
+mod links;
+mod tables;
+
+pub(crate) use images::collect_sources as collect_image_sources;
 
 // ─── Public API ──────────────────────────────────────────────────────
 
@@ -132,14 +138,14 @@ fn emit_element(
             if ctx != Context::Block {
                 return;
             }
-            emit_table(node, out, images, warnings);
+            tables::emit(node, out, images, warnings);
         }
 
         // ─── Images ──────────────────────────────────────────────
-        "img" => emit_image(el, out, images, warnings, ctx),
+        "img" => images::emit(el, out, images, warnings, ctx),
 
         // ─── Links ───────────────────────────────────────────────
-        "a" => emit_link(node, el, out, images, warnings, ctx),
+        "a" => links::emit(node, el, out, images, warnings),
 
         // ─── Inline formatting ───────────────────────────────────
         "strong" | "b" => {
@@ -272,119 +278,6 @@ fn emit_aligned_block(
     }
 }
 
-/// Emit an `<a>` link as `#link("url")[text]`.
-///
-/// Links are inline elements — children are always emitted in inline context
-/// so that images inside links render as inline badges, not block figures.
-fn emit_link(
-    node: NodeRef<'_, Node>,
-    el: &Element,
-    out: &mut String,
-    images: &PreparedImages,
-    warnings: &mut WarningCollector,
-    _ctx: Context,
-) {
-    let href = el.attr("href").unwrap_or("");
-    let _ = write!(out, "#link(\"{}\")", escape_typst_string(href));
-
-    let mut content = String::new();
-    emit_children(node, &mut content, images, warnings, Context::Inline);
-
-    if !content.is_empty() {
-        let _ = write!(out, "[{content}]");
-    }
-}
-
-/// Emit an `<img>` as a `#figure(image(...))` or alt-text placeholder.
-///
-/// In `TableCell` context, emits bare `image()` without `#figure()` wrapper
-/// to avoid caption spacing overhead inside table cells.
-fn emit_image(
-    el: &Element,
-    out: &mut String,
-    images: &PreparedImages,
-    warnings: &mut WarningCollector,
-    ctx: Context,
-) {
-    let src = el.attr("src").unwrap_or("");
-    let alt = el.attr("alt").unwrap_or("");
-    let title = el.attr("title").unwrap_or("");
-    let label = if !title.is_empty() {
-        title
-    } else if !alt.is_empty() {
-        alt
-    } else {
-        src
-    };
-
-    let typst_path = match images.resolve(src) {
-        Some(PreparedImage::Available { typst_path }) => Some(typst_path.as_str()),
-        None if !super::image::is_remote_image(src) => Some(src),
-        _ => None,
-    };
-
-    if let Some(typst_path) = typst_path {
-        let width_arg = parse_image_width(el)
-            .map(|w| format!(", width: {w}"))
-            .unwrap_or_default();
-        let escaped_src = escape_typst_string(typst_path);
-        let escaped_label = escape_typst_content(label);
-
-        if matches!(ctx, Context::Inline | Context::TableCell) {
-            let _ = write!(out, "#box(image(\"{escaped_src}\"{width_arg}))");
-        } else if escaped_label.is_empty() {
-            let _ = write!(out, "#figure(image(\"{escaped_src}\"{width_arg}))");
-        } else {
-            let _ = write!(
-                out,
-                "#figure(image(\"{escaped_src}\"{width_arg}), caption: [{escaped_label}])"
-            );
-        }
-    } else {
-        emit_image_placeholder(out, label, ctx);
-
-        if images.resolve(src).is_none() && super::image::is_remote_image(src) {
-            warnings.push(SilkprintWarning::RemoteImageSkipped {
-                url: src.to_string(),
-            });
-        }
-    }
-}
-
-/// Two-pass table emitter: count columns, then emit `#table(columns: N, ...)`.
-fn emit_table(
-    node: NodeRef<'_, Node>,
-    out: &mut String,
-    images: &PreparedImages,
-    warnings: &mut WarningCollector,
-) {
-    let rows = collect_table_rows(node);
-    if rows.is_empty() {
-        return;
-    }
-
-    // First pass: max column count
-    let num_cols = rows
-        .iter()
-        .map(|row| count_row_cells(*row))
-        .max()
-        .unwrap_or(0);
-
-    if num_cols == 0 {
-        return;
-    }
-
-    let _ = writeln!(out, "#table(");
-    let _ = writeln!(out, "  columns: {num_cols},");
-
-    // Second pass: emit cells
-    for row in &rows {
-        emit_table_row(*row, out, images, warnings);
-    }
-
-    out.push_str(")\n");
-}
-
 /// Emit list items with `- ` (unordered) or `+ ` (ordered) markers.
 fn emit_list(
     node: NodeRef<'_, Node>,
@@ -408,85 +301,6 @@ fn emit_list(
     }
 }
 
-// ─── Table Helpers ───────────────────────────────────────────────────
-
-/// Collect all `<tr>` elements from a table, looking through `<thead>`/`<tbody>`.
-fn collect_table_rows(table_node: NodeRef<'_, Node>) -> Vec<NodeRef<'_, Node>> {
-    let mut rows = Vec::new();
-
-    for child in table_node.children() {
-        if let Node::Element(ref el) = *child.value() {
-            match el.name() {
-                "tr" => rows.push(child),
-                "thead" | "tbody" | "tfoot" => {
-                    for grandchild in child.children() {
-                        if let Node::Element(ref gc_el) = *grandchild.value()
-                            && gc_el.name() == "tr"
-                        {
-                            rows.push(grandchild);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    rows
-}
-
-/// Count the number of `<td>`/`<th>` cells in a `<tr>`.
-fn count_row_cells(row: NodeRef<'_, Node>) -> usize {
-    row.children()
-        .filter(|child: &NodeRef<'_, Node>| {
-            if let Node::Element(ref el) = *child.value() {
-                matches!(el.name(), "td" | "th")
-            } else {
-                false
-            }
-        })
-        .count()
-}
-
-/// Emit all cells in a `<tr>` as `[content],` entries.
-fn emit_table_row(
-    row: NodeRef<'_, Node>,
-    out: &mut String,
-    images: &PreparedImages,
-    warnings: &mut WarningCollector,
-) {
-    for child in row.children() {
-        if let Node::Element(ref el) = *child.value() {
-            let tag = el.name();
-            if matches!(tag, "td" | "th") {
-                let mut cell_content = String::new();
-                emit_children(
-                    child,
-                    &mut cell_content,
-                    images,
-                    warnings,
-                    Context::TableCell,
-                );
-
-                let align = parse_alignment(el);
-
-                // <th> wraps content in bold
-                let formatted = if tag == "th" {
-                    format!("*{}*", cell_content.trim())
-                } else {
-                    cell_content.trim().to_string()
-                };
-
-                if let Some(a) = align {
-                    let _ = writeln!(out, "  [#align({a})[{formatted}]],");
-                } else {
-                    let _ = writeln!(out, "  [{formatted}],");
-                }
-            }
-        }
-    }
-}
-
 // ─── Shared Helpers ──────────────────────────────────────────────────
 
 /// Emit all children of a node into the output buffer.
@@ -499,19 +313,6 @@ fn emit_children(
 ) {
     for child in node.children() {
         emit_dom_node(child, out, images, warnings, ctx);
-    }
-}
-
-fn emit_image_placeholder(out: &mut String, label: &str, ctx: Context) {
-    let escaped = escape_typst_content(label);
-
-    if ctx == Context::Block {
-        let _ = write!(
-            out,
-            "#block(width: 80%, inset: 12pt, stroke: 0.5pt + luma(180), radius: 4pt)[#align(center)[#text(size: 0.85em, fill: luma(120))[\\[image: {escaped}\\]]]]"
-        );
-    } else {
-        out.push_str(&escaped);
     }
 }
 
@@ -556,42 +357,6 @@ fn heading_level(tag: &str) -> usize {
     tag.strip_prefix('h')
         .and_then(|n| n.parse::<usize>().ok())
         .unwrap_or(1)
-}
-
-/// Max sensible pixel width before capping to 100%.
-///
-/// A4 text area with 25mm margins is ~160mm = ~454pt. Values above this
-/// would overflow the page, so we clamp them to `100%` instead.
-const MAX_IMAGE_PT: f64 = 454.0;
-
-/// Parse the `width` attribute of an `<img>` into a Typst width expression.
-///
-/// - `"50%"` -> `Some("50%")`
-/// - `"200"` or `"200px"` -> `Some("200pt")` (capped at page width)
-/// - absent -> `None` (image uses its natural size, capped by available width)
-fn parse_image_width(el: &Element) -> Option<String> {
-    let raw = el.attr("width")?;
-    let trimmed = raw.trim();
-
-    if trimmed.ends_with('%') {
-        return Some(trimmed.to_string());
-    }
-
-    // Strip trailing "px" if present, then treat as pt
-    let numeric = trimmed.strip_suffix("px").unwrap_or(trimmed);
-
-    if numeric.chars().all(|c| c.is_ascii_digit() || c == '.') {
-        // Cap large pixel values to 80% of text width — prevents images
-        // from consuming entire pages in PDF output.
-        if let Ok(val) = numeric.parse::<f64>()
-            && val > MAX_IMAGE_PT
-        {
-            return Some("80%".to_string());
-        }
-        Some(format!("{numeric}pt"))
-    } else {
-        None
-    }
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────

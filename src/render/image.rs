@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use comrak::nodes::{AstNode, NodeValue};
-use scraper::{Html, Selector};
 
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
@@ -83,7 +82,7 @@ impl PreparedImages {
         warnings: &mut WarningCollector,
         next_remote_index: &mut usize,
     ) {
-        for src in collect_html_image_sources(html) {
+        for src in super::html::collect_image_sources(html) {
             self.prepare_source(&src, mode, root_dir, warnings, next_remote_index);
         }
     }
@@ -215,17 +214,6 @@ pub fn is_remote_image(src: &str) -> bool {
     is_http_url(src)
 }
 
-fn collect_html_image_sources(html: &str) -> Vec<String> {
-    let document = Html::parse_fragment(html);
-    let selector = Selector::parse("img").expect("valid img selector");
-
-    document
-        .select(&selector)
-        .filter_map(|element| element.value().attr("src"))
-        .map(str::to_string)
-        .collect()
-}
-
 fn image_typst_path(original_src: &str, resolved_path: &Path) -> String {
     if Path::new(original_src).is_absolute() {
         resolved_path.to_string_lossy().into_owned()
@@ -321,13 +309,6 @@ mod tests {
 
     use super::*;
     use crate::render::markdown;
-
-    #[test]
-    fn collects_html_image_sources_from_nested_markup() {
-        let html = r#"<div><img src="one.png"><p><img src="two.svg"></p></div>"#;
-        let sources = collect_html_image_sources(html);
-        assert_eq!(sources, vec!["one.png", "two.svg"]);
-    }
 
     #[test]
     fn resolves_relative_image_path_against_input_directory() {
