@@ -353,3 +353,256 @@ pub struct SyntaxStyleTokens {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
 }
+
+trait ColorResolvable {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>);
+}
+
+impl ThemeTokens {
+    pub(crate) fn resolve_color_refs(&mut self) {
+        let colors = self.colors.clone();
+
+        self.page.resolve_colors(&colors);
+        self.text.resolve_colors(&colors);
+        self.headings.resolve_colors(&colors);
+        self.code_block.resolve_colors(&colors);
+        self.code_inline.resolve_colors(&colors);
+        self.blockquote.resolve_colors(&colors);
+        self.table.resolve_colors(&colors);
+        self.horizontal_rule.resolve_colors(&colors);
+        self.links.resolve_colors(&colors);
+        self.images.resolve_colors(&colors);
+        self.list.resolve_colors(&colors);
+        self.footnotes.resolve_colors(&colors);
+        self.alerts.resolve_colors(&colors);
+        self.toc.resolve_colors(&colors);
+        self.page_numbers.resolve_colors(&colors);
+        self.title_page.resolve_colors(&colors);
+        self.emphasis.resolve_colors(&colors);
+        self.math.resolve_colors(&colors);
+        self.highlight.resolve_colors(&colors);
+        self.description_list.resolve_colors(&colors);
+        self.syntax.resolve_colors(&colors);
+    }
+}
+
+fn resolve_color(field: &mut String, colors: &HashMap<String, String>) {
+    if !field.is_empty()
+        && !field.starts_with('#')
+        && let Some(hex) = colors.get(field.as_str())
+    {
+        *field = hex.clone();
+    }
+}
+
+impl ColorResolvable for PageTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.background, colors);
+    }
+}
+
+impl ColorResolvable for TextTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+impl ColorResolvable for HeadingTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+        self.h1.resolve_colors(colors);
+        self.h2.resolve_colors(colors);
+        self.h3.resolve_colors(colors);
+        self.h4.resolve_colors(colors);
+        self.h5.resolve_colors(colors);
+        self.h6.resolve_colors(colors);
+    }
+}
+
+impl ColorResolvable for HeadingLevelTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+impl ColorResolvable for CodeBlockTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.background, colors);
+        resolve_color(&mut self.border_color, colors);
+        resolve_color(&mut self.left_accent_color, colors);
+        resolve_color(&mut self.language_label_color, colors);
+    }
+}
+
+impl ColorResolvable for CodeInlineTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.background, colors);
+        resolve_color(&mut self.border_color, colors);
+    }
+}
+
+impl ColorResolvable for BlockquoteTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.border_color, colors);
+        resolve_color(&mut self.background, colors);
+        resolve_color(&mut self.text_color, colors);
+    }
+}
+
+impl ColorResolvable for TableTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.header_background, colors);
+        resolve_color(&mut self.header_text_color, colors);
+        resolve_color(&mut self.header_border_color, colors);
+        resolve_color(&mut self.row_border_color, colors);
+        resolve_color(&mut self.stripe_background, colors);
+    }
+}
+
+impl ColorResolvable for HorizontalRuleTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+impl ColorResolvable for LinkTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+impl ColorResolvable for ImageTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.caption_color, colors);
+    }
+}
+
+impl ColorResolvable for ListTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.bullet_color, colors);
+        resolve_color(&mut self.task_checked_color, colors);
+        resolve_color(&mut self.task_unchecked_color, colors);
+    }
+}
+
+impl ColorResolvable for FootnoteTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.separator_color, colors);
+        resolve_color(&mut self.number_color, colors);
+        resolve_color(&mut self.backref_color, colors);
+    }
+}
+
+impl ColorResolvable for AlertTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.note_color, colors);
+        resolve_color(&mut self.tip_color, colors);
+        resolve_color(&mut self.important_color, colors);
+        resolve_color(&mut self.warning_color, colors);
+        resolve_color(&mut self.caution_color, colors);
+    }
+}
+
+impl ColorResolvable for TocTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.entry_color, colors);
+        resolve_color(&mut self.page_number_color, colors);
+    }
+}
+
+impl ColorResolvable for PageNumberTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+impl ColorResolvable for TitlePageTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.title_color, colors);
+        resolve_color(&mut self.subtitle_color, colors);
+        resolve_color(&mut self.author_color, colors);
+        resolve_color(&mut self.date_color, colors);
+        resolve_color(&mut self.separator_color, colors);
+    }
+}
+
+impl ColorResolvable for EmphasisTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.strikethrough_color, colors);
+    }
+}
+
+impl ColorResolvable for MathTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+impl ColorResolvable for HighlightTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.fill, colors);
+        resolve_color(&mut self.text_color, colors);
+    }
+}
+
+impl ColorResolvable for DescriptionListTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.term_color, colors);
+    }
+}
+
+impl ColorResolvable for SyntaxTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.background, colors);
+        self.text.resolve_colors(colors);
+        self.keyword.resolve_colors(colors);
+        self.string.resolve_colors(colors);
+        self.number.resolve_colors(colors);
+        self.function.resolve_colors(colors);
+        self.type_.resolve_colors(colors);
+        self.comment.resolve_colors(colors);
+        self.constant.resolve_colors(colors);
+        self.boolean.resolve_colors(colors);
+        self.operator.resolve_colors(colors);
+        self.property.resolve_colors(colors);
+        self.tag.resolve_colors(colors);
+        self.attribute.resolve_colors(colors);
+        self.variable.resolve_colors(colors);
+        self.builtin.resolve_colors(colors);
+        self.punctuation.resolve_colors(colors);
+        self.escape.resolve_colors(colors);
+    }
+}
+
+impl ColorResolvable for SyntaxStyleTokens {
+    fn resolve_colors(&mut self, colors: &HashMap<String, String>) {
+        resolve_color(&mut self.color, colors);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ThemeTokens;
+
+    #[test]
+    fn resolves_color_references_across_token_sections() {
+        let mut tokens = ThemeTokens::default();
+        tokens
+            .colors
+            .insert("paper".to_string(), "#ffffff".to_string());
+        tokens
+            .colors
+            .insert("accent".to_string(), "#e135ff".to_string());
+        tokens.page.background = "paper".to_string();
+        tokens.headings.h1.color = "accent".to_string();
+        tokens.code_block.left_accent_color = "accent".to_string();
+        tokens.syntax.keyword.color = "accent".to_string();
+
+        tokens.resolve_color_refs();
+
+        assert_eq!(tokens.page.background, "#ffffff");
+        assert_eq!(tokens.headings.h1.color, "#e135ff");
+        assert_eq!(tokens.code_block.left_accent_color, "#e135ff");
+        assert_eq!(tokens.syntax.keyword.color, "#e135ff");
+    }
+}

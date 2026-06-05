@@ -245,7 +245,7 @@ fn resolve_all_colors(mut tokens: ThemeTokens) -> ThemeTokens {
     tokens.colors = resolved_colors;
 
     // Pass 2: Resolve all color fields throughout the token tree
-    resolve_token_colors(&mut tokens);
+    tokens.resolve_color_refs();
 
     tokens
 }
@@ -286,135 +286,6 @@ fn resolve_color_ref(value: &str, colors: &HashMap<String, String>) -> String {
         .get(value)
         .cloned()
         .unwrap_or_else(|| value.to_string())
-}
-
-/// Resolve all color reference fields in the token tree.
-///
-/// This walks every string field that might hold a color reference
-/// and replaces it with the resolved hex value from the `[colors]` table.
-#[allow(clippy::too_many_lines)]
-fn resolve_token_colors(tokens: &mut ThemeTokens) {
-    let colors = tokens.colors.clone();
-
-    // Helper closure to resolve a single field
-    let r = |field: &mut String| {
-        if !field.is_empty()
-            && !field.starts_with('#')
-            && let Some(hex) = colors.get(field.as_str())
-        {
-            *field = hex.clone();
-        }
-    };
-
-    // Page
-    r(&mut tokens.page.background);
-
-    // Text
-    r(&mut tokens.text.color);
-
-    // Headings
-    r(&mut tokens.headings.color);
-    r(&mut tokens.headings.h1.color);
-    r(&mut tokens.headings.h2.color);
-    r(&mut tokens.headings.h3.color);
-    r(&mut tokens.headings.h4.color);
-    r(&mut tokens.headings.h5.color);
-    r(&mut tokens.headings.h6.color);
-
-    // Code block
-    r(&mut tokens.code_block.background);
-    r(&mut tokens.code_block.border_color);
-    r(&mut tokens.code_block.left_accent_color);
-    r(&mut tokens.code_block.language_label_color);
-
-    // Code inline
-    r(&mut tokens.code_inline.background);
-    r(&mut tokens.code_inline.border_color);
-
-    // Blockquote
-    r(&mut tokens.blockquote.border_color);
-    r(&mut tokens.blockquote.background);
-    r(&mut tokens.blockquote.text_color);
-
-    // Table
-    r(&mut tokens.table.header_background);
-    r(&mut tokens.table.header_text_color);
-    r(&mut tokens.table.header_border_color);
-    r(&mut tokens.table.row_border_color);
-    r(&mut tokens.table.stripe_background);
-
-    // Horizontal rule
-    r(&mut tokens.horizontal_rule.color);
-
-    // Links
-    r(&mut tokens.links.color);
-
-    // Images
-    r(&mut tokens.images.caption_color);
-
-    // List
-    r(&mut tokens.list.bullet_color);
-    r(&mut tokens.list.task_checked_color);
-    r(&mut tokens.list.task_unchecked_color);
-
-    // Footnotes
-    r(&mut tokens.footnotes.separator_color);
-    r(&mut tokens.footnotes.number_color);
-    r(&mut tokens.footnotes.backref_color);
-
-    // Alerts
-    r(&mut tokens.alerts.note_color);
-    r(&mut tokens.alerts.tip_color);
-    r(&mut tokens.alerts.important_color);
-    r(&mut tokens.alerts.warning_color);
-    r(&mut tokens.alerts.caution_color);
-
-    // ToC
-    r(&mut tokens.toc.entry_color);
-    r(&mut tokens.toc.page_number_color);
-
-    // Page numbers
-    r(&mut tokens.page_numbers.color);
-
-    // Title page
-    r(&mut tokens.title_page.title_color);
-    r(&mut tokens.title_page.subtitle_color);
-    r(&mut tokens.title_page.author_color);
-    r(&mut tokens.title_page.date_color);
-    r(&mut tokens.title_page.separator_color);
-
-    // Emphasis
-    r(&mut tokens.emphasis.strikethrough_color);
-
-    // Math
-    r(&mut tokens.math.color);
-
-    // Highlight
-    r(&mut tokens.highlight.fill);
-    r(&mut tokens.highlight.text_color);
-
-    // Description list
-    r(&mut tokens.description_list.term_color);
-
-    // Syntax tokens
-    r(&mut tokens.syntax.background);
-    r(&mut tokens.syntax.text.color);
-    r(&mut tokens.syntax.keyword.color);
-    r(&mut tokens.syntax.string.color);
-    r(&mut tokens.syntax.number.color);
-    r(&mut tokens.syntax.function.color);
-    r(&mut tokens.syntax.type_.color);
-    r(&mut tokens.syntax.comment.color);
-    r(&mut tokens.syntax.constant.color);
-    r(&mut tokens.syntax.boolean.color);
-    r(&mut tokens.syntax.operator.color);
-    r(&mut tokens.syntax.property.color);
-    r(&mut tokens.syntax.tag.color);
-    r(&mut tokens.syntax.attribute.color);
-    r(&mut tokens.syntax.variable.color);
-    r(&mut tokens.syntax.builtin.color);
-    r(&mut tokens.syntax.punctuation.color);
-    r(&mut tokens.syntax.escape.color);
 }
 
 /// Apply base syntax fallback if no syntax tokens were defined in the chain.
