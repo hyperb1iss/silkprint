@@ -19,7 +19,6 @@ mod text;
 use std::collections::BTreeMap;
 use std::env;
 use std::io;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitStatus};
 use std::time::Duration;
@@ -164,7 +163,7 @@ pub fn run(
         settings,
     );
     app.font_dirs = font_dirs;
-    let current_path = app.path.clone();
+    let current_path = app.active().path.clone();
     let session = super::config::load_session();
     app.restore_session_tabs(&session, current_path.as_deref());
     let mut terminal = ratatui::init();
@@ -249,23 +248,17 @@ struct App {
     status_area: Rect,
 }
 
-impl Deref for App {
-    type Target = TabState;
-
-    fn deref(&self) -> &Self::Target {
+impl App {
+    fn active(&self) -> &TabState {
         let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
         &self.tabs[idx]
     }
-}
 
-impl DerefMut for App {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    fn active_mut(&mut self) -> &mut TabState {
         let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
         &mut self.tabs[idx]
     }
-}
 
-impl App {
     #[cfg(test)]
     fn new(
         body: &str,
@@ -447,7 +440,7 @@ impl App {
         // Watch the input file's directory for changes (robust to editors that
         // save via atomic rename). `_watcher` must stay alive for the loop.
         let (tx, rx) = std::sync::mpsc::channel();
-        let _watcher = self.path.clone().and_then(|path| {
+        let _watcher = self.active_mut().path.clone().and_then(|path| {
             let mut watcher =
                 notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                     if res.is_ok() {
@@ -469,14 +462,14 @@ impl App {
         // so an idle reader doesn't repaint the whole document on every tick.
         let mut needs_redraw = true;
         while !self.quit {
-            if self.images.poll_ready() {
+            if self.active_mut().images.poll_ready() {
                 needs_redraw = true;
             }
             if needs_redraw {
                 terminal.draw(|frame| self.draw(frame))?;
                 needs_redraw = false;
             }
-            let poll_timeout = if self.images.has_pending() {
+            let poll_timeout = if self.active_mut().images.has_pending() {
                 Duration::from_millis(16)
             } else {
                 Duration::from_millis(200)
@@ -580,7 +573,7 @@ impl App {
 
     /// Re-read and re-walk the watched file (live reload).
     fn reload(&mut self) {
-        let Some(path) = self.path.clone() else {
+        let Some(path) = self.active_mut().path.clone() else {
             return;
         };
         let Ok(body) = std::fs::read_to_string(&path) else {
@@ -598,26 +591,30 @@ impl App {
         let root = crate::render::markdown::parse(&arena, body);
         let mut warnings = WarningCollector::new();
         crate::render::markdown::check_content(root, &mut warnings);
-        self.doc = super::walk::walk_with_origin(root, &mut warnings, self.origin.as_ref());
-        self.source = body.to_string();
-        self.title =
-            super::layout::sanitize(self.doc.title.as_deref().unwrap_or("silkprint")).into_owned();
-        self.images.clear_cache();
-        self.image_placements.clear();
-        let has_outline = !self.doc.outline.is_empty();
-        match self.outline_state.selected() {
-            Some(sel) if sel >= self.doc.outline.len() => {
-                self.outline_state.select(has_outline.then_some(0));
+        self.active_mut().doc =
+            super::walk::walk_with_origin(root, &mut warnings, self.active_mut().origin.as_ref());
+        self.active_mut().source = body.to_string();
+        self.active_mut().title =
+            super::layout::sanitize(self.active().doc.title.as_deref().unwrap_or("silkprint"))
+                .into_owned();
+        self.active_mut().images.clear_cache();
+        self.active_mut().image_placements.clear();
+        let has_outline = !self.active().doc.outline.is_empty();
+        match self.active_mut().outline_state.selected() {
+            Some(sel) if sel >= self.active().doc.outline.len() => {
+                self.active_mut()
+                    .outline_state
+                    .select(has_outline.then_some(0));
             }
-            None if has_outline => self.outline_state.select(Some(0)),
+            None if has_outline => self.active_mut().outline_state.select(Some(0)),
             _ => {}
         }
         if !has_outline {
             self.focus = Focus::Content; // outline may have vanished
         }
-        let len = self.doc.blocks.len();
-        self.details_open.retain(|idx, _| *idx < len);
-        self.theme_dirty = true; // force ensure_content to re-render
+        let len = self.active().doc.blocks.len();
+        self.active_mut().details_open.retain(|idx, _| *idx < len);
+        self.active_mut().theme_dirty = true; // force ensure_content to re-render
     }
 
     // ─── Cross-document navigation ───────────────────────────────
@@ -640,17 +637,17 @@ impl App {
             .ok()
             .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
             .or_else(|| path.parent().map(std::path::Path::to_path_buf));
-        self.path = Some(path.to_path_buf());
-        self.origin = Some(DocumentOrigin::local(path.to_path_buf()));
-        self.images.set_base_dir(base.clone());
-        self.base_dir = base;
-        self.scroll = 0;
+        self.active_mut().path = Some(path.to_path_buf());
+        self.active_mut().origin = Some(DocumentOrigin::local(path.to_path_buf()));
+        self.active_mut().images.set_base_dir(base.clone());
+        self.active_mut().base_dir = base;
+        self.active_mut().scroll = 0;
         // A new document invalidates the prior search.
-        self.search_query.clear();
-        self.matches.clear();
-        self.match_idx = 0;
+        self.active_mut().search_query.clear();
+        self.active_mut().matches.clear();
+        self.active_mut().match_idx = 0;
         self.rewalk(&body);
-        self.pending_anchor = anchor;
+        self.active_mut().pending_anchor = anchor;
         true
     }
 
@@ -670,86 +667,92 @@ impl App {
             ));
             return false;
         };
-        self.path = None;
-        self.base_dir = None;
-        self.images.set_base_dir(None);
-        self.origin = Some(remote.origin);
-        self.scroll = 0;
-        self.search_query.clear();
-        self.matches.clear();
-        self.match_idx = 0;
+        self.active_mut().path = None;
+        self.active_mut().base_dir = None;
+        self.active_mut().images.set_base_dir(None);
+        self.active_mut().origin = Some(remote.origin);
+        self.active_mut().scroll = 0;
+        self.active_mut().search_query.clear();
+        self.active_mut().matches.clear();
+        self.active_mut().match_idx = 0;
         self.rewalk(&remote.body);
-        self.pending_anchor = anchor;
+        self.active_mut().pending_anchor = anchor;
         true
     }
 
     /// Follow a link to a local document, recording the current view so the
     /// reader can navigate back to it.
     fn open_local_doc(&mut self, path: &std::path::Path, anchor: Option<String>) {
-        let from = self.origin.clone();
-        let from_scroll = self.scroll;
+        let from = self.active_mut().origin.clone();
+        let from_scroll = self.active().scroll;
         if self.load_path(path, anchor) {
             if let Some(origin) = from {
-                self.back.push(NavEntry {
+                self.active_mut().back.push(NavEntry {
                     origin,
                     scroll: from_scroll,
                 });
             }
-            self.forward.clear();
-            self.status_message = Some(format!("opened {}", truncate_plain(&self.title, 40)));
+            self.active_mut().forward.clear();
+            self.status_message = Some(format!(
+                "opened {}",
+                truncate_plain(&self.active().title, 40)
+            ));
         }
     }
 
     fn open_remote_doc(&mut self, url: &Url, anchor: Option<String>) {
-        let from = self.origin.clone();
-        let from_scroll = self.scroll;
+        let from = self.active_mut().origin.clone();
+        let from_scroll = self.active().scroll;
         if self.load_remote_doc(url, anchor) {
             if let Some(origin) = from {
-                self.back.push(NavEntry {
+                self.active_mut().back.push(NavEntry {
                     origin,
                     scroll: from_scroll,
                 });
             }
-            self.forward.clear();
-            self.status_message = Some(format!("opened {}", truncate_plain(&self.title, 40)));
+            self.active_mut().forward.clear();
+            self.status_message = Some(format!(
+                "opened {}",
+                truncate_plain(&self.active().title, 40)
+            ));
         }
     }
 
     /// Return to the previously viewed document, restoring its scroll offset.
     fn go_back(&mut self) {
-        let Some(entry) = self.back.pop() else {
+        let Some(entry) = self.active_mut().back.pop() else {
             self.status_message = Some("no page to go back to".to_string());
             return;
         };
-        let from = self.origin.clone();
-        let from_scroll = self.scroll;
+        let from = self.active_mut().origin.clone();
+        let from_scroll = self.active().scroll;
         if self.load_origin(&entry.origin, None) {
             if let Some(origin) = from {
-                self.forward.push(NavEntry {
+                self.active_mut().forward.push(NavEntry {
                     origin,
                     scroll: from_scroll,
                 });
             }
-            self.scroll = entry.scroll; // draw() clamps once the layout is known
+            self.active_mut().scroll = entry.scroll; // draw() clamps once the layout is known
         }
     }
 
     /// Re-open the document a `go_back` left, restoring its scroll offset.
     fn go_forward(&mut self) {
-        let Some(entry) = self.forward.pop() else {
+        let Some(entry) = self.active_mut().forward.pop() else {
             self.status_message = Some("no page to go forward to".to_string());
             return;
         };
-        let from = self.origin.clone();
-        let from_scroll = self.scroll;
+        let from = self.active_mut().origin.clone();
+        let from_scroll = self.active().scroll;
         if self.load_origin(&entry.origin, None) {
             if let Some(origin) = from {
-                self.back.push(NavEntry {
+                self.active_mut().back.push(NavEntry {
                     origin,
                     scroll: from_scroll,
                 });
             }
-            self.scroll = entry.scroll;
+            self.active_mut().scroll = entry.scroll;
         }
     }
 
@@ -796,7 +799,7 @@ impl App {
         if uri_scheme(path_part).is_some() {
             return None;
         }
-        let resolved = resolve_jailed(path_part, self.base_dir.as_deref())?;
+        let resolved = resolve_jailed(path_part, self.active().base_dir.as_deref())?;
         let is_markdown = resolved
             .extension()
             .and_then(|e| e.to_str())
@@ -810,7 +813,7 @@ impl App {
     }
 
     fn remote_markdown_target(&self, url: &str) -> Option<(Url, Option<String>)> {
-        let base = self.origin.as_ref()?.remote_url()?;
+        let base = self.active().origin.as_ref()?.remote_url()?;
         let target = Url::parse(url).or_else(|_| base.join(url)).ok()?;
         if !same_remote_origin(base, &target) || !is_markdown_url(&target) {
             return None;
@@ -844,7 +847,7 @@ impl App {
     // ─── Content rendering ───────────────────────────────────────
 
     fn ensure_content(&mut self, width: u16) {
-        if !self.theme_dirty && width == self.rendered_width {
+        if !self.active().theme_dirty && width == self.active().rendered_width {
             return;
         }
         let caps = Capabilities {
@@ -856,10 +859,10 @@ impl App {
             is_tty: false, // suppress OSC 8 — ratatui owns the screen
             in_tmux: false,
         };
-        let doc = details_view(&self.doc, &self.details_open);
+        let doc = details_view(&self.active().doc, &self.active().details_open);
         let (ansi, offsets) =
             super::ansi::render_with_offsets(&doc, &self.theme, &caps, self.glyphs);
-        let link_regions = if self.doc.links.is_empty() {
+        let link_regions = if self.active().doc.links.is_empty() {
             Vec::new()
         } else {
             let mut link_caps = caps;
@@ -868,20 +871,20 @@ impl App {
                 super::ansi::render_with_offsets(&doc, &self.theme, &link_caps, self.glyphs);
             link_regions_from_osc(&linked_ansi)
         };
-        self.content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
+        self.active_mut().content = ansi.into_text().unwrap_or_else(|_| Text::raw(ansi.clone()));
 
         let resolver = ContentStyleResolver::new(&self.theme);
         let page_bg = resolver
             .page_background()
             .map_or(Color::Reset, rgb_to_color);
         let body_fg = resolver.body_color().map_or(Color::Reset, rgb_to_color);
-        self.content_bg = page_bg;
-        self.content_fg = body_fg;
+        self.active_mut().content_bg = page_bg;
+        self.active_mut().content_fg = body_fg;
         // ansi-to-tui leaves text spans with a Reset background, which paints as
         // the terminal's own default — black on a dark profile even for a light
         // document theme. Pin every unset span background to the page color so
         // content sits on its theme's surface, not the terminal's.
-        for line in &mut self.content.lines {
+        for line in &mut self.active_mut().content.lines {
             for span in &mut line.spans {
                 if span.style.bg.is_none() || span.style.bg == Some(Color::Reset) {
                     span.style.bg = Some(page_bg);
@@ -889,16 +892,21 @@ impl App {
             }
         }
 
-        self.block_spans = offsets;
-        self.block_jump = self.block_spans.iter().map(|(start, _)| *start).collect();
-        self.link_regions = link_regions;
-        self.image_placements.clear();
-        if self.images.enabled() {
+        self.active_mut().block_spans = offsets;
+        self.active_mut().block_jump = self
+            .active_mut()
+            .block_spans
+            .iter()
+            .map(|(start, _)| *start)
+            .collect();
+        self.active_mut().link_regions = link_regions;
+        self.active_mut().image_placements.clear();
+        if self.active_mut().images.enabled() {
             let image_width = width.saturating_sub(2);
             self.reserve_bands(image_width);
         }
-        self.rendered_width = width;
-        self.theme_dirty = false;
+        self.active_mut().rendered_width = width;
+        self.active_mut().theme_dirty = false;
         self.clamp_scroll();
     }
 
@@ -908,28 +916,33 @@ impl App {
     /// than covering) the source means the mermaid text / image alt never peeks
     /// out below an image that is shorter than its source block.
     fn reserve_bands(&mut self, content_width: u16) {
-        let bands = band_specs(&self.doc, &self.theme);
+        let bands = band_specs(&self.active().doc, &self.theme);
         let theme = self.theme.clone();
         let theme_key = theme_fingerprint(&theme);
         let font_key = font_dirs_fingerprint(&self.font_dirs);
-        let cell = self.images.cell();
+        let cell = self.active_mut().images.cell();
         // Size bands to the image's natural height (bounded only against
         // pathological inputs). Tall diagrams get a tall band and are scrolled
         // through — the draw path crops to whatever slice is on screen.
         let mut delta: isize = 0;
         for (block_index, spec) in bands {
-            let (orig_start, block_height) = self.block_spans[block_index];
+            let (orig_start, block_height) = self.active().block_spans[block_index];
             if block_height == 0 {
                 continue;
             }
             let (key, dims, max_rows) = match spec {
                 BandSpec::Image(src) => {
-                    let dims = self.images.get(&src).map(|l| (l.width, l.height));
+                    let dims = self
+                        .active_mut()
+                        .images
+                        .get(&src)
+                        .map(|l| (l.width, l.height));
                     (src, dims, MAX_BAND_ROWS)
                 }
                 BandSpec::Mermaid { source, bg } => {
                     let key = generated_key("mermaid", &source, theme_key, bg, font_key);
                     let dims = self
+                        .active_mut()
                         .images
                         .ensure_generated(&key, || diagrams::mermaid_image(&source, &theme, bg))
                         .map(|l| (l.width, l.height));
@@ -939,6 +952,7 @@ impl App {
                     let key = generated_key("math", &source, theme_key, bg, font_key);
                     let font_dirs = self.font_dirs.clone();
                     let dims = self
+                        .active_mut()
                         .images
                         .ensure_generated(&key, || {
                             math::math_image(&source, &theme, &font_dirs, bg)
@@ -956,26 +970,33 @@ impl App {
             let base = isize::try_from(orig_start).unwrap_or(0) + delta;
             let start = usize::try_from(base)
                 .unwrap_or(0)
-                .min(self.content.lines.len());
-            let end = (start + block_height).min(self.content.lines.len());
+                .min(self.active().content.lines.len());
+            let end = (start + block_height).min(self.active().content.lines.len());
             let band = usize::from(img_rows);
-            self.content
+            self.active_mut()
+                .content
                 .lines
                 .splice(start..end, std::iter::repeat_with(Line::default).take(band));
             let shift =
                 isize::try_from(band).unwrap_or(0) - isize::try_from(end - start).unwrap_or(0);
             delta += shift;
-            self.link_regions
+            self.active_mut()
+                .link_regions
                 .retain(|region| region.line < start || region.line >= end);
-            for region in &mut self.link_regions {
+            for region in &mut self.active_mut().link_regions {
                 if region.line >= end {
                     region.line = shift_line(region.line, shift);
                 }
             }
-            for jump in self.block_jump.iter_mut().skip(block_index + 1) {
+            for jump in self
+                .active_mut()
+                .block_jump
+                .iter_mut()
+                .skip(block_index + 1)
+            {
                 *jump = usize::try_from(isize::try_from(*jump).unwrap_or(0) + shift).unwrap_or(0);
             }
-            self.image_placements.push(Placement {
+            self.active_mut().image_placements.push(Placement {
                 src: key,
                 line: u16::try_from(start).unwrap_or(u16::MAX),
                 rows: img_rows,
@@ -984,15 +1005,15 @@ impl App {
     }
 
     fn content_len(&self) -> u16 {
-        u16::try_from(self.content.lines.len()).unwrap_or(u16::MAX)
+        u16::try_from(self.active().content.lines.len()).unwrap_or(u16::MAX)
     }
 
     fn max_scroll(&self) -> u16 {
-        self.content_len().saturating_sub(self.viewport_h)
+        self.content_len().saturating_sub(self.active().viewport_h)
     }
 
     fn clamp_scroll(&mut self) {
-        self.set_scroll(self.scroll);
+        self.set_scroll(self.active().scroll);
     }
 
     fn apply_theme(&mut self, idx: usize) {
@@ -1002,9 +1023,9 @@ impl App {
             self.theme_idx = idx;
             self.current_theme_name = Some(name.clone());
             self.saved_theme_name = Some(name);
-            self.theme_dirty = true;
+            self.active_mut().theme_dirty = true;
             // Generated rasters bake in the old theme's colors and must be rebuilt.
-            self.images.clear_generated();
+            self.active_mut().images.clear_generated();
         }
     }
 
@@ -1039,8 +1060,8 @@ impl App {
     }
 
     fn normal_key(&mut self, code: KeyCode, mods: KeyModifiers) {
-        let half = self.viewport_h / 2;
-        let page = self.viewport_h.saturating_sub(2).max(1);
+        let half = self.active().viewport_h / 2;
+        let page = self.active_mut().viewport_h.saturating_sub(2).max(1);
         let was_g = self.pending_g;
         let was_bracket = self.pending_bracket.take();
         self.pending_g = false;
@@ -1063,7 +1084,7 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.mode = Mode::Search;
-                self.search_query.clear();
+                self.active_mut().search_query.clear();
             }
             KeyCode::Char('S') => self.start_global_search(),
             KeyCode::Char('B') => self.open_bookmarks(),
@@ -1118,8 +1139,8 @@ impl App {
     }
 
     fn run_action(&mut self, action: Action) {
-        let half = self.viewport_h / 2;
-        let page = self.viewport_h.saturating_sub(2).max(1);
+        let half = self.active().viewport_h / 2;
+        let page = self.active_mut().viewport_h.saturating_sub(2).max(1);
         match action {
             Action::Quit => self.quit = true,
             Action::Help => self.show_help = true,
@@ -1133,7 +1154,7 @@ impl App {
             }
             Action::Search => {
                 self.mode = Mode::Search;
-                self.search_query.clear();
+                self.active_mut().search_query.clear();
             }
             Action::GlobalSearch => self.start_global_search(),
             Action::Bookmarks => self.open_bookmarks(),
@@ -1228,7 +1249,7 @@ impl App {
         }
         if contains(self.content_area, mouse.column, mouse.row) {
             self.focus = Focus::Content;
-            let line = usize::from(self.scroll)
+            let line = usize::from(self.active().scroll)
                 .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
             let col = mouse.column.saturating_sub(self.content_area.x);
             if self.activate_link_at(line, col) {
@@ -1242,7 +1263,7 @@ impl App {
 
     fn mouse_drag(&mut self, mouse: MouseEvent) {
         if self.selection_anchor.is_some() && contains(self.content_area, mouse.column, mouse.row) {
-            let line = usize::from(self.scroll)
+            let line = usize::from(self.active().scroll)
                 .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
             let col = mouse.column.saturating_sub(self.content_area.x);
             self.selection_cursor = Some((line, col));
@@ -1264,7 +1285,7 @@ impl App {
         let selection = self
             .selection_anchor
             .zip(self.selection_cursor)
-            .and_then(|(start, end)| selected_text(&self.content.lines, start, end));
+            .and_then(|(start, end)| selected_text(&self.active().content.lines, start, end));
         self.selection_anchor = None;
         self.selection_cursor = None;
         self.drag_row = None;
@@ -1282,7 +1303,7 @@ impl App {
             self.clear_hover_message();
             return;
         }
-        let line = usize::from(self.scroll)
+        let line = usize::from(self.active().scroll)
             .saturating_add(usize::from(mouse.row.saturating_sub(self.content_area.y)));
         let col = mouse.column.saturating_sub(self.content_area.x);
         if let Some(target) = self.link_at(line, col) {
@@ -1334,11 +1355,15 @@ impl App {
             return false;
         }
         let visible_idx = usize::from(row.saturating_sub(area.y).saturating_sub(1));
-        let idx = self.outline_state.offset().saturating_add(visible_idx);
-        if idx >= self.doc.outline.len() {
+        let idx = self
+            .active_mut()
+            .outline_state
+            .offset()
+            .saturating_add(visible_idx);
+        if idx >= self.active().doc.outline.len() {
             return false;
         }
-        self.outline_state.select(Some(idx));
+        self.active_mut().outline_state.select(Some(idx));
         self.jump_to_selected_heading();
         true
     }
@@ -1347,7 +1372,7 @@ impl App {
         self.focus = match self.focus {
             Focus::Content if self.browser_visible => Focus::Browser,
             Focus::Content | Focus::Browser
-                if self.outline_visible && !self.doc.outline.is_empty() =>
+                if self.outline_visible && !self.active().doc.outline.is_empty() =>
             {
                 Focus::Outline
             }
@@ -1368,9 +1393,10 @@ impl App {
     fn browser_root_or_default(&self) -> PathBuf {
         self.browser_root
             .clone()
-            .or_else(|| self.base_dir.clone())
+            .or_else(|| self.active().base_dir.clone())
             .or_else(|| {
-                self.path
+                self.active()
+                    .path
                     .as_deref()
                     .and_then(Path::parent)
                     .map(Path::to_path_buf)
@@ -1453,7 +1479,7 @@ impl App {
             return;
         }
         if !query.is_empty() {
-            self.search_query = query;
+            self.active_mut().search_query = query;
             let width = self.content_area.width.max(80);
             self.ensure_content(width);
             self.run_search();
@@ -1466,20 +1492,21 @@ impl App {
     }
 
     fn scroll_to_search_result_line(&mut self, line: usize) {
-        if self.matches.is_empty() {
+        if self.active_mut().matches.is_empty() {
             return;
         }
-        let needle = self.search_query.to_lowercase();
+        let needle = self.active_mut().search_query.to_lowercase();
         let occurrence = self
+            .active()
             .source
             .lines()
             .take(line)
             .filter(|source_line| source_line.to_lowercase().contains(&needle))
             .count()
             .saturating_sub(1);
-        let idx = occurrence.min(self.matches.len().saturating_sub(1));
-        if let Some(&matched_line) = self.matches.get(idx) {
-            self.match_idx = idx;
+        let idx = occurrence.min(self.active_mut().matches.len().saturating_sub(1));
+        if let Some(&matched_line) = self.active_mut().matches.get(idx) {
+            self.active_mut().match_idx = idx;
             self.set_scroll(u16::try_from(matched_line).unwrap_or(u16::MAX));
         }
     }
@@ -1501,70 +1528,78 @@ impl App {
     }
 
     fn scroll_by(&mut self, delta: i32) {
-        let next = i32::from(self.scroll) + delta;
+        let next = i32::from(self.active().scroll) + delta;
         let clamped = next.clamp(0, i32::from(self.max_scroll()));
         self.set_scroll(u16::try_from(clamped).unwrap_or(0));
     }
 
     fn set_scroll(&mut self, scroll: u16) {
         let scroll = scroll.min(self.max_scroll());
-        if self.scroll != scroll {
-            self.scroll = scroll;
+        if self.active().scroll != scroll {
+            self.active_mut().scroll = scroll;
         }
     }
 
     fn outline_step(&mut self, forward: bool) {
-        if self.doc.outline.is_empty() {
+        if self.active().doc.outline.is_empty() {
             return;
         }
-        let len = self.doc.outline.len();
-        let cur = self.outline_state.selected().unwrap_or(0);
+        let len = self.active().doc.outline.len();
+        let cur = self.active_mut().outline_state.selected().unwrap_or(0);
         let next = if forward {
             (cur + 1) % len
         } else {
             (cur + len - 1) % len
         };
-        self.outline_state.select(Some(next));
+        self.active_mut().outline_state.select(Some(next));
     }
 
     fn jump_heading(&mut self, forward: bool) {
-        if self.doc.outline.is_empty() {
+        if self.active().doc.outline.is_empty() {
             return;
         }
-        let scroll = usize::from(self.scroll);
+        let scroll = usize::from(self.active().scroll);
         let next = if forward {
-            self.doc
+            self.active()
+                .doc
                 .outline
                 .iter()
                 .enumerate()
                 .find(|(_, item)| self.heading_line(item).is_some_and(|line| line > scroll))
                 .map_or(0, |(idx, _)| idx)
         } else {
-            self.doc
+            self.active()
+                .doc
                 .outline
                 .iter()
                 .enumerate()
                 .rev()
                 .find(|(_, item)| self.heading_line(item).is_some_and(|line| line < scroll))
-                .map_or(self.doc.outline.len() - 1, |(idx, _)| idx)
+                .map_or(self.active().doc.outline.len() - 1, |(idx, _)| idx)
         };
-        self.outline_state.select(Some(next));
+        self.active_mut().outline_state.select(Some(next));
         self.jump_to_selected_heading();
     }
 
     fn heading_line(&self, item: &super::model::OutlineItem) -> Option<usize> {
-        self.block_jump.get(item.block_index).copied()
+        self.active().block_jump.get(item.block_index).copied()
     }
 
     fn jump_to_selected_heading(&mut self) {
-        let Some(sel) = self.outline_state.selected() else {
+        let Some(sel) = self.active_mut().outline_state.selected() else {
             return;
         };
-        let Some(item) = self.doc.outline.get(sel) else {
+        let Some(block_index) = self
+            .active()
+            .doc
+            .outline
+            .get(sel)
+            .map(|item| item.block_index)
+        else {
             return;
         };
-        if let Some(offset) = self.block_jump.get(item.block_index) {
-            self.set_scroll(u16::try_from(*offset).unwrap_or(u16::MAX));
+        if let Some(offset) = self.active().block_jump.get(block_index).copied() {
+            self.set_scroll(u16::try_from(offset).unwrap_or(u16::MAX));
         }
         self.focus = Focus::Content;
     }
@@ -1572,6 +1607,7 @@ impl App {
     fn jump_to_anchor(&mut self, anchor: &str) -> bool {
         let anchor = anchor.trim_start_matches('#');
         let Some(idx) = self
+            .active()
             .doc
             .outline
             .iter()
@@ -1580,37 +1616,45 @@ impl App {
             self.status_message = Some(format!("missing #{anchor}"));
             return false;
         };
-        self.outline_state.select(Some(idx));
+        self.active_mut().outline_state.select(Some(idx));
         self.jump_to_selected_heading();
         self.status_message = Some(format!("jumped to #{anchor}"));
         true
     }
 
     fn toggle_details_at_cursor(&mut self) {
-        let line = usize::from(self.scroll);
-        let Some((idx, block)) =
-            self.block_spans
+        let line = usize::from(self.active().scroll);
+        let Some(idx) =
+            self.active()
+                .block_spans
                 .iter()
                 .enumerate()
                 .find_map(|(idx, (start, height))| {
                     let end = start.saturating_add(*height).max(start.saturating_add(1));
-                    if line >= *start && line < end {
-                        self.doc.blocks.get(idx).map(|block| (idx, block))
-                    } else {
-                        None
-                    }
+                    (line >= *start && line < end).then_some(idx)
                 })
         else {
             self.status_message = Some("no details block here".to_string());
             return;
         };
-        let Block::Details { open, .. } = block else {
+        let Some(open) = self.active().doc.blocks.get(idx).and_then(|block| {
+            if let Block::Details { open, .. } = block {
+                Some(*open)
+            } else {
+                None
+            }
+        }) else {
             self.status_message = Some("no details block here".to_string());
             return;
         };
-        let next = !self.details_open.get(&idx).copied().unwrap_or(*open);
-        self.details_open.insert(idx, next);
-        self.theme_dirty = true;
+        let next = !self
+            .active()
+            .details_open
+            .get(&idx)
+            .copied()
+            .unwrap_or(open);
+        self.active_mut().details_open.insert(idx, next);
+        self.active_mut().theme_dirty = true;
         self.status_message = Some(if next {
             "details expanded".to_string()
         } else {
@@ -1621,8 +1665,8 @@ impl App {
     fn reveal_raw_at_cursor(&mut self) {
         let raw_idx = self
             .raw_line_at_rendered_cursor()
-            .unwrap_or(usize::from(self.scroll));
-        let Some(line) = self.source.lines().nth(raw_idx) else {
+            .unwrap_or(usize::from(self.active().scroll));
+        let Some(line) = self.active_mut().source.lines().nth(raw_idx) else {
             self.status_message = Some("raw: <end of file>".to_string());
             return;
         };
@@ -1633,9 +1677,10 @@ impl App {
     }
 
     fn raw_line_at_rendered_cursor(&self) -> Option<usize> {
-        let line = usize::from(self.scroll);
+        let line = usize::from(self.active().scroll);
         let (target_idx, _) =
-            self.block_spans
+            self.active()
+                .block_spans
                 .iter()
                 .enumerate()
                 .find(|(_, (start, height))| {
@@ -1643,8 +1688,15 @@ impl App {
                     line >= *start && line < end
                 })?;
         let mut start_line = 0;
-        for (idx, block) in self.doc.blocks.iter().enumerate().take(target_idx + 1) {
-            let found = source_line_for_block(block, &self.source, start_line)?;
+        for (idx, block) in self
+            .active()
+            .doc
+            .blocks
+            .iter()
+            .enumerate()
+            .take(target_idx + 1)
+        {
+            let found = source_line_for_block(block, &self.active().source, start_line)?;
             if idx == target_idx {
                 return Some(found);
             }
@@ -1654,7 +1706,7 @@ impl App {
     }
 
     fn open_editor(&mut self) {
-        let Some(path) = self.path.clone() else {
+        let Some(path) = self.active_mut().path.clone() else {
             self.status_message = Some("no local file for editor".to_string());
             return;
         };
@@ -1689,7 +1741,8 @@ impl App {
     }
 
     fn link_at(&self, line: usize, col: u16) -> Option<LinkTarget> {
-        self.link_regions
+        self.active()
+            .link_regions
             .iter()
             .find(|region| region.line == line && col >= region.start && col < region.end)
             .map(|region| region.target.clone())
@@ -1714,7 +1767,7 @@ impl App {
 
     fn open_url(&mut self, url: &str) {
         let label = truncate_plain(super::layout::sanitize(url).as_ref(), 54);
-        match open_target(url, self.base_dir.as_deref()) {
+        match open_target(url, self.active_mut().base_dir.as_deref()) {
             Ok(target) => match open::that_detached(&target) {
                 Ok(()) => self.status_message = Some(format!("opened {label}")),
                 Err(err) => {
@@ -1779,28 +1832,29 @@ impl App {
         match code {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
-                self.search_query.clear();
+                self.active_mut().search_query.clear();
             }
             KeyCode::Enter => {
                 self.run_search();
                 self.mode = Mode::Normal;
             }
             KeyCode::Backspace => {
-                self.search_query.pop();
+                self.active_mut().search_query.pop();
             }
-            KeyCode::Char(c) => self.search_query.push(c),
+            KeyCode::Char(c) => self.active_mut().search_query.push(c),
             _ => {}
         }
     }
 
     fn run_search(&mut self) {
-        self.match_idx = 0;
-        if self.search_query.is_empty() {
-            self.matches.clear();
+        self.active_mut().match_idx = 0;
+        if self.active_mut().search_query.is_empty() {
+            self.active_mut().matches.clear();
             return;
         }
-        let needle = self.search_query.to_lowercase();
-        self.matches = self
+        let needle = self.active_mut().search_query.to_lowercase();
+        self.active_mut().matches = self
+            .active()
             .content
             .lines
             .iter()
@@ -1810,22 +1864,22 @@ impl App {
                 text.to_lowercase().contains(&needle).then_some(idx)
             })
             .collect();
-        if !self.matches.is_empty() {
-            self.set_scroll(u16::try_from(self.matches[0]).unwrap_or(0));
+        if !self.active_mut().matches.is_empty() {
+            self.set_scroll(u16::try_from(self.active().matches[0]).unwrap_or(0));
         }
     }
 
     fn jump_match(&mut self, forward: bool) {
-        if self.matches.is_empty() {
+        if self.active_mut().matches.is_empty() {
             return;
         }
-        let len = self.matches.len();
-        self.match_idx = if forward {
-            (self.match_idx + 1) % len
+        let len = self.active_mut().matches.len();
+        self.active_mut().match_idx = if forward {
+            (self.active().match_idx + 1) % len
         } else {
-            (self.match_idx + len - 1) % len
+            (self.active().match_idx + len - 1) % len
         };
-        let line = self.matches[self.match_idx];
+        let line = self.active().matches[self.active().match_idx];
         self.set_scroll(u16::try_from(line).unwrap_or(0));
     }
 
@@ -1887,8 +1941,8 @@ impl App {
         self.theme_idx = snapshot.theme_idx;
         self.current_theme_name = snapshot.current_theme_name;
         self.saved_theme_name = snapshot.saved_theme_name;
-        self.theme_dirty = true;
-        self.images.clear_generated();
+        self.active_mut().theme_dirty = true;
+        self.active_mut().images.clear_generated();
     }
 
     fn picker_mouse(&mut self, mouse: MouseEvent) {
@@ -2028,7 +2082,7 @@ impl App {
             body
         };
 
-        let content_area = if self.outline_visible && !self.doc.outline.is_empty() {
+        let content_area = if self.outline_visible && !self.active().doc.outline.is_empty() {
             let [outline, content] =
                 Layout::horizontal([Constraint::Length(OUTLINE_WIDTH), Constraint::Min(10)])
                     .areas(body);
@@ -2041,11 +2095,11 @@ impl App {
         };
         self.content_area = content_area;
 
-        self.viewport_h = content_area.height;
+        self.active_mut().viewport_h = content_area.height;
         self.ensure_content(content_area.width);
         // A linked-document jump needs the freshly computed block offsets, so it
         // waits until the new layout exists rather than firing at navigation.
-        if let Some(anchor) = self.pending_anchor.take() {
+        if let Some(anchor) = self.active_mut().pending_anchor.take() {
             self.jump_to_anchor(&anchor);
         }
         self.clamp_scroll(); // height-only resizes change max_scroll
@@ -2066,27 +2120,35 @@ impl App {
     fn draw_content(&mut self, frame: &mut Frame, area: Rect) {
         // Render only the visible slice (and highlight only those lines), so the
         // draw path is O(viewport) rather than O(document) per frame.
-        let top = usize::from(self.scroll);
-        let total = self.content.lines.len();
+        let top = usize::from(self.active().scroll);
+        let total = self.active().content.lines.len();
         let end = top.saturating_add(usize::from(area.height)).min(total);
         let mut visible: Vec<Line<'static>> = if top < total {
-            self.content.lines[top..end].to_vec()
+            self.active().content.lines[top..end].to_vec()
         } else {
             Vec::new()
         };
-        if !self.search_query.is_empty() {
-            let needle: Vec<char> = self.search_query.to_lowercase().chars().collect();
+        if !self.active_mut().search_query.is_empty() {
+            let needle: Vec<char> = self
+                .active_mut()
+                .search_query
+                .to_lowercase()
+                .chars()
+                .collect();
             let hl = search_highlight_style();
             for line in &mut visible {
                 *line = highlight_line(line, &needle, hl);
             }
         }
-        let para = Paragraph::new(Text::from(visible))
-            .style(Style::default().fg(self.content_fg).bg(self.content_bg));
+        let para = Paragraph::new(Text::from(visible)).style(
+            Style::default()
+                .fg(self.active().content_fg)
+                .bg(self.active().content_bg),
+        );
         frame.render_widget(para, area);
 
-        let current_scroll = self.scroll;
-        self.images.begin_frame(images::ImageView {
+        let current_scroll = self.active().scroll;
+        self.active_mut().images.begin_frame(images::ImageView {
             scroll: current_scroll,
             height: area.height,
             width: area.width.saturating_sub(2),
@@ -2101,7 +2163,7 @@ impl App {
             .max(u32::from(IMAGE_PREFETCH_MIN_ROWS));
         let prefetch_top = scroll.saturating_sub(prefetch);
         let prefetch_bottom = scroll.saturating_add(viewport).saturating_add(prefetch);
-        let placements = std::mem::take(&mut self.image_placements);
+        let placements = std::mem::take(&mut self.active_mut().image_placements);
         for placement in &placements {
             let tile_width = area.width.saturating_sub(2);
             if tile_width == 0 {
@@ -2120,7 +2182,7 @@ impl App {
                         width: tile_width,
                         height: 1,
                     };
-                    if let Some(proto) = self.images.row_protocol(
+                    if let Some(proto) = self.active_mut().images.row_protocol(
                         &placement.src,
                         placement.line,
                         start_row.saturating_add(offset),
@@ -2143,7 +2205,7 @@ impl App {
                     continue;
                 }
                 let row = u16::try_from(row_abs - band_top).unwrap_or(0);
-                self.images.prefetch_row(
+                self.active_mut().images.prefetch_row(
                     &placement.src,
                     placement.line,
                     row,
@@ -2152,8 +2214,8 @@ impl App {
                 );
             }
         }
-        self.image_placements = placements;
-        self.images.finish_frame();
+        self.active_mut().image_placements = placements;
+        self.active_mut().images.finish_frame();
     }
 
     fn draw_browser(&mut self, frame: &mut Frame, area: Rect) {
@@ -2224,6 +2286,7 @@ impl App {
 
     fn draw_outline(&mut self, frame: &mut Frame, area: Rect) {
         let items: Vec<ListItem> = self
+            .active()
             .doc
             .outline
             .iter()
@@ -2271,7 +2334,7 @@ impl App {
                     .bg(self.chrome.selection_bg)
                     .add_modifier(Modifier::BOLD),
             );
-        frame.render_stateful_widget(list, area, &mut self.outline_state);
+        frame.render_stateful_widget(list, area, &mut self.active_mut().outline_state);
     }
 
     fn draw_status(&mut self, frame: &mut Frame, area: Rect) {
@@ -2283,7 +2346,7 @@ impl App {
         let pct: u16 = if max == 0 {
             100
         } else {
-            u16::try_from(u32::from(self.scroll) * 100 / u32::from(max)).unwrap_or(100)
+            u16::try_from(u32::from(self.active().scroll) * 100 / u32::from(max)).unwrap_or(100)
         };
         let filled = (usize::from(pct) * BAR_W / 100).min(BAR_W);
         let bar_filled = Span::styled(" ".repeat(filled), Style::default().bg(self.chrome.accent));
@@ -2301,14 +2364,14 @@ impl App {
         let hint = if let Some(message) = &self.status_message {
             super::layout::sanitize(message).into_owned()
         } else if self.mode == Mode::Search {
-            format!("/{}", super::layout::sanitize(&self.search_query))
+            format!("/{}", super::layout::sanitize(&self.active().search_query))
         } else if self.mode == Mode::GlobalSearch {
             format!("S {}", super::layout::sanitize(&self.global_query))
-        } else if !self.matches.is_empty() {
+        } else if !self.active_mut().matches.is_empty() {
             format!(
                 "match {}/{}  /search ?help t theme o outline q quit",
-                self.match_idx + 1,
-                self.matches.len()
+                self.active().match_idx + 1,
+                self.active_mut().matches.len()
             )
         } else {
             "j/k scroll  /search S all  e files B marks  z fold r raw  ?help".to_string()
@@ -2324,7 +2387,7 @@ impl App {
             ),
             Span::styled(tab_label, muted),
             Span::styled(
-                truncate_plain(&self.title, 28),
+                truncate_plain(&self.active().title, 28),
                 Style::default()
                     .fg(self.chrome.text)
                     .add_modifier(Modifier::BOLD),
@@ -2606,11 +2669,11 @@ mod tests {
             None,
             Some(path.clone()),
         );
-        assert_eq!(app.doc.outline.len(), 1);
+        assert_eq!(app.active().doc.outline.len(), 1);
         std::fs::write(&path, "# One\n\n## Two\n").expect("rewrite");
         app.reload();
         assert_eq!(
-            app.doc.outline.len(),
+            app.active().doc.outline.len(),
             2,
             "reload should pick up the new heading"
         );
@@ -2634,8 +2697,8 @@ mod tests {
         std::fs::write(&path, "name,count\nbeta,2\n").expect("rewrite");
         app.reload();
 
-        let Some(Block::Table(table)) = app.doc.blocks.first() else {
-            panic!("expected csv table: {:?}", app.doc.blocks);
+        let Some(Block::Table(table)) = app.active().doc.blocks.first() else {
+            panic!("expected csv table: {:?}", app.active().doc.blocks);
         };
         assert_eq!(table.rows[0][0][0].text, "beta");
     }
@@ -2676,16 +2739,16 @@ mod tests {
 
         // Following the link swaps documents and records back history.
         app.open_local_doc(&target, None);
-        assert_eq!(app.title, "Beta");
-        assert_eq!(app.back.len(), 1);
-        assert!(app.forward.is_empty());
+        assert_eq!(app.active().title, "Beta");
+        assert_eq!(app.active().back.len(), 1);
+        assert!(app.active().forward.is_empty());
 
         // Back returns to the first document; forward replays the jump.
         app.go_back();
-        assert_eq!(app.title, "Alpha");
-        assert_eq!(app.forward.len(), 1);
+        assert_eq!(app.active().title, "Alpha");
+        assert_eq!(app.active().forward.len(), 1);
         app.go_forward();
-        assert_eq!(app.title, "Beta");
+        assert_eq!(app.active().title, "Beta");
     }
 
     #[test]
@@ -2767,8 +2830,11 @@ mod tests {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        assert_eq!(app.doc.outline.len(), 2, "two headings expected");
-        assert_eq!(app.block_spans.len(), app.doc.blocks.len());
+        assert_eq!(app.active().doc.outline.len(), 2, "two headings expected");
+        assert_eq!(
+            app.active().block_spans.len(),
+            app.active().doc.blocks.len()
+        );
     }
 
     #[test]
@@ -2778,7 +2844,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
         app.scroll_by(10_000);
-        assert!(app.scroll <= app.max_scroll());
+        assert!(app.active().scroll <= app.max_scroll());
     }
 
     #[test]
@@ -2787,9 +2853,12 @@ mod tests {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        app.search_query = "section".to_string();
+        app.active_mut().search_query = "section".to_string();
         app.run_search();
-        assert!(!app.matches.is_empty(), "should find 'section' heading");
+        assert!(
+            !app.active().matches.is_empty(),
+            "should find 'section' heading"
+        );
     }
 
     #[test]
@@ -2801,11 +2870,12 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
         assert_ne!(
-            app.content_bg,
+            app.active().content_bg,
             Color::Reset,
             "light theme resolves a page bg"
         );
         let leaked = app
+            .active()
             .content
             .lines
             .iter()
@@ -2884,9 +2954,9 @@ mod tests {
         terminal.draw(|f| app.draw(f)).expect("draw");
         let before = app.theme_idx;
         app.apply_theme((before + 1) % app.theme_names.len());
-        assert!(app.theme_dirty);
+        assert!(app.active().theme_dirty);
         terminal.draw(|f| app.draw(f)).expect("redraw");
-        assert!(!app.theme_dirty, "redraw should re-render content");
+        assert!(!app.active().theme_dirty, "redraw should re-render content");
     }
 
     #[test]
@@ -2978,7 +3048,7 @@ mod tests {
         terminal.draw(|f| app.draw(f)).expect("draw");
 
         app.normal_key(KeyCode::Char('J'), KeyModifiers::NONE);
-        assert_eq!(app.outline_state.selected(), Some(1));
+        assert_eq!(app.active().outline_state.selected(), Some(1));
 
         app.normal_key(KeyCode::Char('x'), KeyModifiers::CONTROL);
         assert!(app.quit);
@@ -2997,7 +3067,7 @@ mod tests {
 
         app.next_tab();
         assert_eq!(app.active_tab, 1);
-        assert_eq!(app.title, "Second");
+        assert_eq!(app.active().title, "Second");
 
         app.prev_tab();
         assert_eq!(app.active_tab, 0);
@@ -3006,7 +3076,7 @@ mod tests {
         app.close_tab();
         assert_eq!(app.tabs.len(), 1);
         assert_eq!(app.active_tab, 0);
-        assert_ne!(app.title, "Second");
+        assert_ne!(app.active().title, "Second");
     }
 
     #[test]
@@ -3080,9 +3150,9 @@ mod tests {
 
         assert_eq!(app.tabs.len(), 2);
         assert_eq!(app.active_tab, 1);
-        assert_eq!(app.title, "B");
-        assert_eq!(app.scroll, 9);
-        assert!(app.images.enabled());
+        assert_eq!(app.active().title, "B");
+        assert_eq!(app.active().scroll, 9);
+        assert!(app.active().images.enabled());
     }
 
     #[test]
@@ -3113,7 +3183,7 @@ mod tests {
 
         assert_eq!(app.tabs.len(), 2);
         assert_eq!(app.active_tab, 0);
-        assert_eq!(app.title, "Current");
+        assert_eq!(app.active().title, "Current");
         assert_eq!(app.tabs[1].title, "Saved");
     }
 
@@ -3166,8 +3236,8 @@ mod tests {
 
         assert_eq!(app.tabs.len(), 2);
         assert_eq!(app.active_tab, 1);
-        assert_eq!(app.title, "Other");
-        assert!(app.images.enabled());
+        assert_eq!(app.active().title, "Other");
+        assert!(app.active().images.enabled());
     }
 
     #[test]
@@ -3255,9 +3325,9 @@ mod tests {
         app.open_browser_selection();
 
         assert_eq!(app.tabs.len(), 2);
-        assert_eq!(app.title, "Other");
-        assert_eq!(app.search_query, "needle");
-        assert!(!app.matches.is_empty());
+        assert_eq!(app.active().title, "Other");
+        assert_eq!(app.active().search_query, "needle");
+        assert!(!app.active().matches.is_empty());
     }
 
     #[test]
@@ -3295,9 +3365,9 @@ mod tests {
         app.browser_state.select(Some(idx));
         app.open_browser_selection();
 
-        assert_eq!(app.title, "Other");
-        assert_eq!(app.match_idx, 1);
-        assert_eq!(usize::from(app.scroll), app.matches[1]);
+        assert_eq!(app.active().title, "Other");
+        assert_eq!(app.active().match_idx, 1);
+        assert_eq!(usize::from(app.active().scroll), app.active().matches[1]);
     }
 
     #[test]
@@ -3365,7 +3435,7 @@ mod tests {
         app.open_bookmark_selection();
 
         assert_eq!(app.tabs.len(), 2);
-        assert_eq!(app.title, "Saved");
+        assert_eq!(app.active().title, "Saved");
     }
 
     #[test]
@@ -3437,7 +3507,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
 
-        let region = app
+        let region = app.active()
             .link_regions
             .iter()
             .find(|region| matches!(&region.target, LinkTarget::Url(url) if url == "https://example.com"))
@@ -3462,7 +3532,7 @@ mod tests {
         let backend = TestBackend::new(100, 20);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        let region = app
+        let region = app.active()
             .link_regions
             .iter()
             .find(|region| matches!(&region.target, LinkTarget::Url(url) if url == "https://example.com"))
@@ -3490,7 +3560,7 @@ mod tests {
         terminal.draw(|f| app.draw(f)).expect("draw");
 
         assert!(app.jump_to_anchor("target"));
-        assert!(app.scroll > 0);
+        assert!(app.active().scroll > 0);
     }
 
     #[test]
@@ -3511,11 +3581,11 @@ mod tests {
 
         app.normal_key(KeyCode::Char(']'), KeyModifiers::NONE);
         app.normal_key(KeyCode::Char(']'), KeyModifiers::NONE);
-        assert_eq!(app.outline_state.selected(), Some(1));
+        assert_eq!(app.active().outline_state.selected(), Some(1));
 
         app.normal_key(KeyCode::Char('['), KeyModifiers::NONE);
         app.normal_key(KeyCode::Char('['), KeyModifiers::NONE);
-        assert_eq!(app.outline_state.selected(), Some(0));
+        assert_eq!(app.active().outline_state.selected(), Some(0));
     }
 
     #[test]
@@ -3533,7 +3603,7 @@ mod tests {
         let backend = TestBackend::new(100, 20);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        let region = app
+        let region = app.active()
             .link_regions
             .iter()
             .find(|region| matches!(&region.target, LinkTarget::Url(url) if url == "https://example.com"))
@@ -3554,7 +3624,7 @@ mod tests {
             app.status_message.as_deref(),
             Some("link: https://example.com")
         );
-        assert_eq!(app.title, "Title");
+        assert_eq!(app.active().title, "Title");
 
         app.on_mouse(MouseEvent {
             kind: MouseEventKind::Moved,
@@ -3587,7 +3657,7 @@ mod tests {
         let backend = TestBackend::new(100, 8);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        let before = app.scroll;
+        let before = app.active().scroll;
 
         app.on_mouse(MouseEvent {
             kind: MouseEventKind::ScrollDown,
@@ -3596,7 +3666,7 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         });
 
-        assert!(app.scroll > before);
+        assert!(app.active().scroll > before);
     }
 
     #[test]
@@ -3624,13 +3694,18 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
         let placement = app
+            .active()
             .image_placements
             .iter()
             .find(|placement| placement.src == "big.png")
             .cloned()
             .expect("image placement");
-        let first_rows = app.images.pending_rows_for(&placement.src, placement.line);
-        let first_visible_bottom = u32::from(app.scroll) + u32::from(app.content_area.height);
+        let first_rows = app
+            .active()
+            .images
+            .pending_rows_for(&placement.src, placement.line);
+        let first_visible_bottom =
+            u32::from(app.active().scroll) + u32::from(app.content_area.height);
         assert!(
             first_rows
                 .iter()
@@ -3640,8 +3715,11 @@ mod tests {
 
         app.set_scroll(app.max_scroll());
         terminal.draw(|f| app.draw(f)).expect("redraw");
-        let rows = app.images.pending_rows_for(&placement.src, placement.line);
-        let scroll = u32::from(app.scroll);
+        let rows = app
+            .active()
+            .images
+            .pending_rows_for(&placement.src, placement.line);
+        let scroll = u32::from(app.active().scroll);
         let viewport = u32::from(app.content_area.height);
         let prefetch = viewport
             .saturating_mul(2)
@@ -3679,6 +3757,7 @@ mod tests {
         terminal.draw(|f| app.draw(f)).expect("draw");
 
         let placement = app
+            .active()
             .image_placements
             .iter()
             .find(|placement| placement.src.starts_with("\u{0}math:"))
@@ -3703,6 +3782,7 @@ mod tests {
         terminal.draw(|f| app.draw(f)).expect("draw");
 
         let collapsed = app
+            .active()
             .content
             .lines
             .iter()
@@ -3715,6 +3795,7 @@ mod tests {
         app.toggle_details_at_cursor();
         terminal.draw(|f| app.draw(f)).expect("redraw");
         let expanded = app
+            .active()
             .content
             .lines
             .iter()
@@ -3736,7 +3817,7 @@ mod tests {
             None,
             ReaderConfig::default(),
         );
-        app.scroll = 2;
+        app.active_mut().scroll = 2;
 
         app.reveal_raw_at_cursor();
 
@@ -3759,9 +3840,9 @@ mod tests {
         let backend = TestBackend::new(34, 12);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        let (start, height) = app.block_spans[1];
+        let (start, height) = app.active().block_spans[1];
         assert!(height > 1, "paragraph should wrap");
-        app.scroll = u16::try_from(start + 1).expect("scroll");
+        app.active_mut().scroll = u16::try_from(start + 1).expect("scroll");
 
         app.reveal_raw_at_cursor();
 
@@ -3793,7 +3874,8 @@ mod tests {
     }
 
     fn content_span<'a>(app: &'a App, needle: &str) -> &'a Span<'static> {
-        app.content
+        app.active()
+            .content
             .lines
             .iter()
             .flat_map(|line| &line.spans)
