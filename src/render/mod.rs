@@ -4,6 +4,7 @@ pub mod escape;
 pub mod frontmatter;
 pub mod html;
 pub mod image;
+pub mod input;
 pub mod linkcheck;
 pub mod markdown;
 pub mod mermaid;

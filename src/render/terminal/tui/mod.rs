@@ -39,6 +39,7 @@ use ratatui_image::picker::Picker;
 use unicode_width::UnicodeWidthChar;
 
 use crate::ThemeSource;
+use crate::render::input::markdown_body_for_path;
 use crate::render::origin::{DocumentOrigin, is_markdown_url, same_remote_origin};
 use crate::theme::ResolvedTheme;
 use crate::warnings::WarningCollector;
@@ -3021,20 +3022,6 @@ fn is_markdown_path(path: &Path) -> bool {
                 "md" | "markdown" | "mdown" | "mkd" | "mdwn" | "mkdn"
             )
         })
-}
-
-fn markdown_body_for_path(path: &Path, body: String) -> String {
-    if is_csv_path(path) {
-        format!("```csv\n{}\n```\n", body.trim_end())
-    } else {
-        body
-    }
-}
-
-fn is_csv_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
 }
 
 fn link_preview(target: &LinkTarget) -> String {
