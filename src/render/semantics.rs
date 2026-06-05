@@ -9,6 +9,12 @@ pub fn is_known_code_fence_language(lang: &str) -> bool {
     KNOWN_LANGUAGES.contains(&lower.as_str())
 }
 
+pub(crate) fn is_http_url(value: &str) -> bool {
+    uri_scheme(value).is_some_and(|scheme| {
+        scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    })
+}
+
 pub fn wikilink_target(target: &str) -> String {
     let (path, anchor) = target
         .split_once('#')
@@ -22,7 +28,7 @@ pub fn wikilink_target(target: &str) -> String {
     )
 }
 
-fn uri_scheme(value: &str) -> Option<&str> {
+pub(crate) fn uri_scheme(value: &str) -> Option<&str> {
     let (scheme, _rest) = value.split_once(':')?;
     let mut chars = scheme.chars();
     let first = chars.next()?;

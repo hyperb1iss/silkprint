@@ -6,6 +6,7 @@ use unicode_width::UnicodeWidthChar;
 use crate::render::terminal::model::LinkTarget;
 
 use super::text::truncate_plain;
+pub(super) use crate::render::semantics::uri_scheme;
 
 #[derive(Clone)]
 pub(super) struct LinkRegion {
@@ -198,13 +199,4 @@ pub(super) fn resolve_jailed(rel: &str, base: Option<&Path>) -> Option<PathBuf> 
     let canon_base = base?.canonicalize().ok()?;
     let target = canon_base.join(path).canonicalize().ok()?;
     target.starts_with(&canon_base).then_some(target)
-}
-
-pub(super) fn uri_scheme(value: &str) -> Option<&str> {
-    let (scheme, _rest) = value.split_once(':')?;
-    let mut chars = scheme.chars();
-    let first = chars.next()?;
-    (first.is_ascii_alphabetic()
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
-    .then_some(scheme)
 }

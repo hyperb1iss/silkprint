@@ -1,6 +1,7 @@
 use url::{Host, Url};
 
 use super::origin::DocumentOrigin;
+use super::semantics::is_http_url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteDocument {
@@ -29,8 +30,7 @@ pub fn parse_remote_input(value: &str) -> Result<Option<RemoteInput>, String> {
             .map(Some);
     }
 
-    let lower = value.to_ascii_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") {
+    if is_http_url(value) {
         let url = Url::parse(value).map_err(|err| format!("invalid URL: {err}"))?;
         return Ok(Some(RemoteInput::Url(url)));
     }

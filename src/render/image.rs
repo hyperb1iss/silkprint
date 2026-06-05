@@ -6,6 +6,8 @@ use scraper::{Html, Selector};
 
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
+use super::semantics::is_http_url;
+
 /// Virtual path prefix for downloaded remote images served through the Typst world.
 pub const REMOTE_IMAGE_VPATH_PREFIX: &str = "/__remote_image_";
 
@@ -210,7 +212,7 @@ pub fn resolve_image_path(image_src: &str, root_dir: &Path) -> Option<PathBuf> {
 }
 
 pub fn is_remote_image(src: &str) -> bool {
-    src.starts_with("http://") || src.starts_with("https://")
+    is_http_url(src)
 }
 
 fn collect_html_image_sources(html: &str) -> Vec<String> {

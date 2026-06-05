@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use comrak::nodes::{AstNode, NodeValue};
 
-use super::semantics::wikilink_target;
+use super::semantics::{is_http_url, wikilink_target};
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
 pub fn validate_links<'a>(
@@ -23,7 +23,7 @@ pub fn validate_links<'a>(
         if target.starts_with('#') || target.starts_with("mailto:") {
             continue;
         }
-        if target.starts_with("http://") || target.starts_with("https://") {
+        if is_http_url(&target) {
             validate_remote(&target, warnings);
         } else {
             validate_local(&target, base_dir, warnings);

@@ -319,7 +319,7 @@ fn emit_image(
 
     let typst_path = match images.resolve(src) {
         Some(PreparedImage::Available { typst_path }) => Some(typst_path.as_str()),
-        None if !(src.starts_with("http://") || src.starts_with("https://")) => Some(src),
+        None if !super::image::is_remote_image(src) => Some(src),
         _ => None,
     };
 
@@ -343,9 +343,7 @@ fn emit_image(
     } else {
         emit_image_placeholder(out, label, ctx);
 
-        if images.resolve(src).is_none()
-            && (src.starts_with("http://") || src.starts_with("https://"))
-        {
+        if images.resolve(src).is_none() && super::image::is_remote_image(src) {
             warnings.push(SilkprintWarning::RemoteImageSkipped {
                 url: src.to_string(),
             });

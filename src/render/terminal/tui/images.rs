@@ -351,7 +351,7 @@ impl ImageStore {
     fn load(&self, src: &str) -> Option<Loaded> {
         // Only load when a graphics protocol is available to draw it.
         self.picker.as_ref()?;
-        let bytes = if src.starts_with("http://") || src.starts_with("https://") {
+        let bytes = if crate::render::image::is_remote_image(src) {
             fetch_remote(src)?
         } else {
             let path = resolve(src, self.base_dir.as_deref())?;
