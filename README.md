@@ -42,7 +42,7 @@ both, so what you read in your terminal is exactly what lands on the page.
 ## ⚡ Quick Start
 
 ```bash
-# Install from source (requires Rust 1.96+)
+# Install from source (requires Rust 1.94+)
 cargo install --path .
 
 # Read a Markdown file in your terminal (scrollable reader)
@@ -279,7 +279,7 @@ cargo test                   # run all tests
 cargo run -- README.md       # read this file in the terminal
 ```
 
-Requires **Rust 1.96+** (edition 2024). The terminal reader lives behind the
+Requires **Rust 1.94+** (edition 2024). The terminal reader lives behind the
 default `terminal` feature; `--no-default-features` builds a PDF-only library.
 
 ---

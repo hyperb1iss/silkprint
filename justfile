@@ -39,11 +39,24 @@ run *ARGS:
 
 # ── WASM ──────────────────────────────────────────────────────
 
+wasm_bindgen_version := "0.2.122"
+
+# Install wasm-bindgen locally when the CLI is not already available.
+wasm-bindgen-tool:
+    @if ! command -v wasm-bindgen >/dev/null 2>&1 && [ ! -x target/tools/bin/wasm-bindgen ]; then \
+        cargo install wasm-bindgen-cli --version {{ wasm_bindgen_version }} --root target/tools --locked; \
+    fi
+
 # Build WASM module and install bindings into web/
-wasm:
+wasm: wasm-bindgen-tool
     cargo build --release --locked -p silkprint-wasm --target wasm32-unknown-unknown
     mkdir -p web/src/lib/wasm web/public/wasm web/public/fonts
-    wasm-bindgen --out-dir web/src/lib/wasm --target web \
+    if command -v wasm-bindgen >/dev/null 2>&1; then \
+        wasm_bindgen=wasm-bindgen; \
+    else \
+        wasm_bindgen=target/tools/bin/wasm-bindgen; \
+    fi; \
+    "$wasm_bindgen" --out-dir web/src/lib/wasm --target web \
         target/wasm32-unknown-unknown/release/silkprint_wasm.wasm
     # Patch import.meta.url reference so Turbopack doesn't try to resolve it statically
     sed -i "s|new URL('silkprint_wasm_bg.wasm', import.meta.url)|'/wasm/silkprint_wasm_bg.wasm'|" \

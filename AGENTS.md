@@ -53,7 +53,7 @@ The terminal reader is behind the default `terminal` feature;
 
 ## Conventions
 
-- Edition 2024, rust-version 1.96
+- Edition 2024, rust-version 1.94
 - `unsafe_code = "forbid"`, `unwrap_used = "deny"`
 - Pedantic clippy lints at warn level
 - thiserror for typed errors, miette for rich diagnostics

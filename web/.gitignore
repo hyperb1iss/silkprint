@@ -43,4 +43,5 @@ next-env.d.ts
 # Build artifacts (WASM binary, JS glue, fonts copied from fonts/core/)
 /public/wasm/
 /public/fonts/
-/src/lib/wasm/
+/src/lib/wasm/*
+!/src/lib/wasm/silkprint_wasm.d.ts

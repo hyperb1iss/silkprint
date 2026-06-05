@@ -5,7 +5,7 @@ members = ["silkprint-wasm"]
 name = "silkprint"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.94"
 authors = ["Stefanie Jane <stef@hyperbliss.tech>"]
 description = "Transform Markdown into stunning PDFs with electric elegance"
 readme = "README.md"
@@ -187,3 +187,7 @@ opt-level = 2
 lto = true
 codegen-units = 1
 strip = true
+
+[profile.release.package.silkprint-wasm]
+opt-level = "s"
+codegen-units = 1
