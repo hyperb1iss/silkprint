@@ -2,332 +2,23 @@
 
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
-use owo_colors::OwoColorize;
 use tracing::debug;
+
+mod cli_ui;
+mod theme_listing;
 
 use silkprint::cli::Cli;
 use silkprint::render::input::read_document_input;
 use silkprint::warnings::SilkprintWarning;
 use silkprint::{PaperSize, RenderOptions, ThemeSource};
 
-// ── Color control ──────────────────────────────────────────────
-
-/// Global flag for whether colored output is enabled.
-static USE_COLOR: AtomicBool = AtomicBool::new(true);
-
-fn color_enabled() -> bool {
-    USE_COLOR.load(Ordering::Relaxed)
-}
-
-/// Apply `SilkCircuit` Electric Purple (bold) to a string.
-fn purple(s: &str) -> String {
-    if color_enabled() {
-        format!("{}", s.truecolor(225, 53, 255).bold())
-    } else {
-        s.to_string()
-    }
-}
-
-/// Apply `SilkCircuit` Neon Cyan to a string.
-fn cyan(s: &str) -> String {
-    if color_enabled() {
-        format!("{}", s.truecolor(128, 255, 234))
-    } else {
-        s.to_string()
-    }
-}
-
-/// Apply `SilkCircuit` Coral to a string.
-fn coral(s: &str) -> String {
-    if color_enabled() {
-        format!("{}", s.truecolor(255, 106, 193))
-    } else {
-        s.to_string()
-    }
-}
-
-/// Apply `SilkCircuit` Electric Yellow to a string.
-fn yellow(s: &str) -> String {
-    if color_enabled() {
-        format!("{}", s.truecolor(241, 250, 140))
-    } else {
-        s.to_string()
-    }
-}
-
-/// Apply `SilkCircuit` Success Green to a string.
-fn green(s: &str) -> String {
-    if color_enabled() {
-        format!("{}", s.truecolor(80, 250, 123))
-    } else {
-        s.to_string()
-    }
-}
-
-/// Apply dim styling to a string.
-fn dim(s: &str) -> String {
-    if color_enabled() {
-        format!("{}", s.dimmed())
-    } else {
-        s.to_string()
-    }
-}
-
-// ── Setup ──────────────────────────────────────────────────────
-
-/// Configure the color mode based on `--color` flag value.
-fn setup_color(mode: &str) {
-    let enabled = match mode {
-        "always" => true,
-        "never" => false,
-        // "auto" -- color when stderr is a terminal
-        _ => io::stderr().is_terminal(),
-    };
-    USE_COLOR.store(enabled, Ordering::Relaxed);
-}
-
-/// Install `miette` as the global error report handler with fancy output.
-fn setup_miette() {
-    miette::set_hook(Box::new(|_| {
-        Box::new(
-            miette::MietteHandlerOpts::new()
-                .terminal_links(true)
-                .unicode(true)
-                .context_lines(2)
-                .tab_width(4)
-                .build(),
-        )
-    }))
-    .ok(); // Ignore if already set (e.g. in tests)
-}
-
-/// Initialize tracing-subscriber based on verbosity level.
-///
-/// - quiet: no tracing
-/// - v=0: warn
-/// - v=1: info
-/// - v=2: debug
-/// - v=3+: trace
-fn setup_tracing(verbose: u8, quiet: bool) {
-    use tracing_subscriber::EnvFilter;
-
-    if quiet {
-        return;
-    }
-
-    let filter = match verbose {
-        0 => "silkprint=warn",
-        1 => "silkprint=info",
-        2 => "silkprint=debug",
-        _ => "silkprint=trace",
-    };
-
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter)),
-        )
-        .with_writer(io::stderr)
-        .without_time()
-        .init();
-}
-
-// ── Separator constant ─────────────────────────────────────────
-
-const SEPARATOR: &str = "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}";
-
-// ── Mode handlers ──────────────────────────────────────────────
-
-/// Handle `--list-themes`: display all built-in themes and exit.
-fn handle_list_themes() {
-    let mut themes = silkprint::theme::builtin::list_themes();
-    // Print-safe first, then the rest — alphabetical within each group
-    themes.sort_by(|a, b| b.print_safe.cmp(&a.print_safe).then(a.name.cmp(b.name)));
-
-    // Column widths (plain text, before colorization)
-    let name_w = 22;
-    let variant_w = 6;
-    let table_w = 4 + 2 + name_w + 2 + variant_w + 3 + 45; // swatch + gaps + desc
-    let wide_sep = dim(&"\u{2500}".repeat(table_w));
-    let thin_sep = dim(&"\u{2508}".repeat(table_w));
-
-    // Header
-    println!();
-    println!(
-        "  {} {}{}",
-        purple("\u{1f48e}"),
-        purple("SilkPrint Themes"),
-        dim(&format!(
-            "{:>width$}",
-            format!("{} themes", themes.len()),
-            width = table_w - 17
-        )),
-    );
-    println!("  {wide_sep}");
-
-    // Column headers — pad plain text, then colorize
-    println!(
-        "  {}  {}  {}     {}",
-        purple("    "),
-        purple(&format!("{:<name_w$}", "Theme")),
-        purple(&format!("{:<variant_w$}", "Variant")),
-        purple("Description"),
-    );
-    println!("  {wide_sep}");
-
-    let mut prev_print_safe = true;
-    for t in &themes {
-        // Section divider between print-safe and non-print-safe
-        if prev_print_safe && !t.print_safe {
-            println!("  {thin_sep}");
-        }
-        prev_print_safe = t.print_safe;
-        let swatch = theme_swatch(t.name);
-        let is_default = t.name == "silkcircuit-dawn";
-
-        // Pad the plain name first, then colorize
-        let name_plain = if is_default {
-            format!("{} \u{2605}", t.name)
-        } else {
-            t.name.to_string()
-        };
-        let name_padded = format!("{name_plain:<name_w$}");
-        let name = if is_default {
-            coral(&name_padded)
-        } else {
-            cyan(&name_padded)
-        };
-
-        let variant_padded = format!("{:<variant_w$}", t.variant);
-        let variant = dim(&variant_padded);
-
-        let badge = if t.print_safe {
-            green("\u{25cf}")
-        } else {
-            " ".to_string()
-        };
-
-        println!(
-            "  {swatch}  {name}  {variant}  {badge}  {}",
-            dim(t.description)
-        );
-    }
-
-    println!("  {wide_sep}");
-    println!(
-        "  {} = print-safe   {} = default",
-        green("\u{25cf}"),
-        coral("\u{2605}"),
-    );
-    println!();
-}
-
-/// Render a 4-char color swatch `████` from a theme's key colors.
-///
-/// Extracts background, heading, text, and link colors from the theme TOML
-/// and renders each as a truecolor `█` block.
-fn theme_swatch(name: &str) -> String {
-    let [bg, heading, text, link] = extract_swatch_colors(name);
-
-    if !color_enabled() {
-        return "\u{2588}\u{2588}\u{2588}\u{2588}".to_string();
-    }
-
-    let render_block = |hex: &str| -> String {
-        let (r, g, b) = hex_to_rgb(hex);
-        format!("\x1b[38;2;{r};{g};{b}m\u{2588}\x1b[0m")
-    };
-
-    format!(
-        "{}{}{}{}",
-        render_block(&bg),
-        render_block(&heading),
-        render_block(&text),
-        render_block(&link),
-    )
-}
-
-/// Extract 4 key swatch colors from a theme's embedded TOML.
-///
-/// Returns `[background, heading_color, text_color, link_color]` as hex strings.
-fn extract_swatch_colors(name: &str) -> [String; 4] {
-    let fallback = || {
-        [
-            "#888888".to_string(),
-            "#888888".to_string(),
-            "#888888".to_string(),
-            "#888888".to_string(),
-        ]
-    };
-
-    let Some(toml_str) = silkprint::theme::builtin::get_builtin_theme(name) else {
-        return fallback();
-    };
-
-    let Ok(table) = toml_str.parse::<toml::Table>() else {
-        return fallback();
-    };
-
-    let colors = table
-        .get("colors")
-        .and_then(|v| v.as_table())
-        .cloned()
-        .unwrap_or_default();
-
-    let resolve_field = |section: &str, field: &str, default: &str| -> String {
-        let val = table
-            .get(section)
-            .and_then(|v| v.as_table())
-            .and_then(|t| t.get(field))
-            .and_then(|v| v.as_str())
-            .unwrap_or(default);
-        resolve_color_ref(val, &colors)
-    };
-
-    [
-        resolve_field("page", "background", "#ffffff"),
-        resolve_field("headings", "color", "#333333"),
-        resolve_field("text", "color", "#1a1a1a"),
-        resolve_field("links", "color", "#4a5dbd"),
-    ]
-}
-
-/// Resolve a color value through the `[colors]` table (up to 2 levels).
-fn resolve_color_ref(value: &str, colors: &toml::Table) -> String {
-    if value.starts_with('#') {
-        return value.to_string();
-    }
-    if let Some(resolved) = colors.get(value).and_then(|v| v.as_str()) {
-        if resolved.starts_with('#') {
-            resolved.to_string()
-        } else {
-            // Two-level resolution
-            colors
-                .get(resolved)
-                .and_then(|v| v.as_str())
-                .unwrap_or("#888888")
-                .to_string()
-        }
-    } else {
-        "#888888".to_string()
-    }
-}
-
-/// Parse a `#RRGGBB` hex string to `(r, g, b)`.
-fn hex_to_rgb(hex: &str) -> (u8, u8, u8) {
-    let hex = hex.trim_start_matches('#');
-    if hex.len() < 6 {
-        return (136, 136, 136);
-    }
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(136);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(136);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(136);
-    (r, g, b)
-}
+use crate::cli_ui::{
+    SEPARATOR, coral, cyan, dim, display_warnings, estimate_page_count, green, make_spinner,
+    purple, setup_color, setup_miette, setup_tracing,
+};
 
 /// Handle `--check`: parse + validate only, no render.
 fn handle_check(
@@ -437,29 +128,6 @@ fn handle_dump_html(cli: &Cli, input_path: &std::path::Path) -> miette::Result<(
     }
 
     Ok(())
-}
-
-/// Create a spinner with `SilkCircuit` styling.
-fn make_spinner(message: &str) -> ProgressBar {
-    let pb = ProgressBar::new_spinner();
-    let style = if color_enabled() {
-        ProgressStyle::default_spinner()
-            .tick_strings(&[
-                "\u{2801}", "\u{2809}", "\u{2819}", "\u{281b}", "\u{2813}", "\u{2816}", "\u{2826}",
-                "\u{2834}", "\u{2830}", "\u{2820}", "\u{2800}", "\u{2801}",
-            ])
-            .template("  \x1b[38;2;225;53;255m{spinner}\x1b[0m {msg}")
-    } else {
-        ProgressStyle::default_spinner()
-            .tick_strings(&["|", "/", "-", "\\", "|"])
-            .template("  {spinner} {msg}")
-    };
-    if let Ok(s) = style {
-        pb.set_style(s);
-    }
-    pb.set_message(message.to_string());
-    pb.enable_steady_tick(std::time::Duration::from_millis(80));
-    pb
 }
 
 /// Handle normal render mode: Markdown -> PDF.
@@ -619,45 +287,6 @@ fn append_link_warnings(
     let mut collector = silkprint::warnings::WarningCollector::new();
     silkprint::render::linkcheck::validate_links(root, input_path, &mut collector);
     warnings.extend(collector.into_warnings());
-}
-
-/// Display warnings to stderr with `SilkCircuit` styling.
-///
-/// Warning text can echo attacker-controlled markdown (a fence language,
-/// footnote name, or HTML tag from an untrusted file), so control characters
-/// are stripped before printing to neutralize terminal escape injection.
-fn display_warnings(warnings: &[SilkprintWarning]) {
-    for w in warnings {
-        eprintln!("  {} {}", yellow("\u{26a0}"), strip_control(&w.to_string()));
-    }
-}
-
-/// Remove terminal control characters (keeping tab) from untrusted text.
-fn strip_control(s: &str) -> String {
-    s.chars()
-        .filter(|c| !c.is_control() || *c == '\t')
-        .collect()
-}
-
-/// Estimate page count from PDF bytes by counting page object markers.
-///
-/// This is a quick heuristic -- the Typst compiler knows the real count,
-/// but until we plumb that through, this gets us close.
-fn estimate_page_count(pdf_bytes: &[u8]) -> usize {
-    // Look for /Type /Page entries (not /Pages)
-    let needle = b"/Type /Page";
-    let anti = b"/Type /Pages";
-    let mut count = 0;
-    let mut pos = 0;
-    while pos + anti.len() <= pdf_bytes.len() {
-        if pdf_bytes[pos..].starts_with(needle) && !pdf_bytes[pos..].starts_with(anti) {
-            count += 1;
-            pos += needle.len();
-        } else {
-            pos += 1;
-        }
-    }
-    count.max(1) // At least 1 page
 }
 
 /// Resolve the `ThemeSource` from the CLI `--theme` argument.
@@ -1024,7 +653,7 @@ fn main() -> miette::Result<()> {
 
     // --list-themes: standalone mode, no input required
     if cli.list_themes {
-        handle_list_themes();
+        theme_listing::handle_list_themes();
         return Ok(());
     }
 
