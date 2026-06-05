@@ -1,7 +1,10 @@
 import type { InitOutput } from './wasm/silkprint_wasm';
 
 let wasmModule: InitOutput | null = null;
-let initPromise: Promise<InitOutput> | null = null;
+let wasmInitPromise: Promise<InitOutput> | null = null;
+let fontInitPromise: Promise<void> | null = null;
+let fontsRegistered = false;
+let themeDetailsPromise: Promise<ThemeInfo[]> | null = null;
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
@@ -58,6 +61,34 @@ const fontFetchPromises: Promise<ArrayBuffer | null>[] =
       })
     : [];
 
+async function loadWasmBindings() {
+  return import('./wasm/silkprint_wasm');
+}
+
+async function ensureWasm(): Promise<InitOutput> {
+  if (wasmModule) return wasmModule;
+
+  if (!wasmInitPromise) {
+    wasmInitPromise = (async () => {
+      try {
+        const wasm = await loadWasmBindings();
+        const source =
+          wasmFetchPromise ?? fetchRequired(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`);
+        const output = await wasm.default({ module_or_path: await source });
+
+        wasmModule = output;
+        return output;
+      } catch (error) {
+        wasmInitPromise = null;
+        wasmModule = null;
+        throw error;
+      }
+    })();
+  }
+
+  return wasmInitPromise;
+}
+
 /**
  * Lazily initialize the SilkPrint WASM module and register fonts.
  *
@@ -65,39 +96,42 @@ const fontFetchPromises: Promise<ArrayBuffer | null>[] =
  * downloads race in parallel from first import.
  */
 async function ensureInit(): Promise<InitOutput> {
-  if (wasmModule) return wasmModule;
+  const output = await ensureWasm();
 
-  if (!initPromise) {
-    initPromise = (async () => {
-      try {
-        const [wasm, fontBuffers] = await Promise.all([
-          import('./wasm/silkprint_wasm'),
-          Promise.all(fontFetchPromises),
-        ]);
+  if (!fontsRegistered) {
+    if (!fontInitPromise) {
+      fontInitPromise = (async () => {
+        try {
+          const [wasm, fontBuffers] = await Promise.all([
+            loadWasmBindings(),
+            Promise.all(fontFetchPromises),
+          ]);
 
-        const source =
-          wasmFetchPromise ?? fetchRequired(`${BASE_PATH}/wasm/silkprint_wasm_bg.wasm`);
-        const output = await wasm.default({ module_or_path: await source });
+          // Reset first so retries or hot reloads don't accumulate duplicate blobs.
+          wasm.reset_fonts();
 
-        // Reset first so retries or hot reloads don't accumulate duplicate blobs.
-        wasm.reset_fonts();
+          for (const buf of fontBuffers) {
+            if (!buf) continue;
+            wasm.register_font(new Uint8Array(buf));
+          }
 
-        for (const buf of fontBuffers) {
-          if (!buf) continue;
-          wasm.register_font(new Uint8Array(buf));
+          fontsRegistered = true;
+        } catch (error) {
+          fontInitPromise = null;
+          fontsRegistered = false;
+          throw error;
         }
+      })();
+    }
 
-        wasmModule = output;
-        return output;
-      } catch (error) {
-        initPromise = null;
-        wasmModule = null;
-        throw error;
-      }
-    })();
+    await fontInitPromise;
   }
 
-  return initPromise;
+  return output;
+}
+
+export async function preloadEngine(): Promise<void> {
+  await ensureInit();
 }
 
 /**
@@ -133,26 +167,35 @@ export async function renderToTypst(markdown: string, theme: string): Promise<st
 
 export interface ThemeInfo {
   name: string;
-  variant: string;
+  variant: 'light' | 'dark';
   description: string;
   family: string;
   printSafe: boolean;
+  colors: { bg: string; fg: string; accent: string };
 }
 
 /**
  * Get all available theme names.
  */
 export async function listThemes(): Promise<string[]> {
-  await ensureInit();
-  const wasm = await import('./wasm/silkprint_wasm');
-  return wasm.list_themes() as string[];
+  const themes = await listThemesDetailed();
+  return themes.map(theme => theme.name);
 }
 
 /**
  * Get detailed theme metadata.
  */
 export async function listThemesDetailed(): Promise<ThemeInfo[]> {
-  await ensureInit();
-  const wasm = await import('./wasm/silkprint_wasm');
-  return wasm.list_themes_structured() as ThemeInfo[];
+  if (!themeDetailsPromise) {
+    themeDetailsPromise = (async () => {
+      await ensureWasm();
+      const wasm = await loadWasmBindings();
+      return wasm.list_themes_structured() as ThemeInfo[];
+    })().catch(error => {
+      themeDetailsPromise = null;
+      throw error;
+    });
+  }
+
+  return themeDetailsPromise;
 }

@@ -2,364 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-// ── Static theme metadata ────────────────────────────────────────
-// All 40 built-in themes with visual colors extracted from TOML sources.
-// This data is static so the selector works before WASM loads.
-
-interface ThemeMeta {
-  id: string;
-  name: string;
-  family: string;
-  variant: 'light' | 'dark';
-  printSafe: boolean;
-  colors: { bg: string; fg: string; accent: string };
-}
-
-const FAMILIES = [
-  { id: 'silkcircuit', label: 'SilkCircuit' },
-  { id: 'signature', label: 'Signature' },
-  { id: 'developer', label: 'Developer' },
-  { id: 'classic', label: 'Classic' },
-  { id: 'nature', label: 'Nature' },
-  { id: 'futuristic', label: 'Futuristic' },
-  { id: 'artistic', label: 'Artistic' },
-  { id: 'greyscale', label: 'Greyscale' },
-] as const;
-
-const THEMES: ThemeMeta[] = [
-  // SilkCircuit — Dawn first (default theme)
-  {
-    id: 'silkcircuit-dawn',
-    name: 'SilkCircuit Dawn',
-    family: 'silkcircuit',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#faf8ff', fg: '#2b2540', accent: '#1565c0' },
-  },
-  {
-    id: 'silkcircuit-neon',
-    name: 'SilkCircuit Neon',
-    family: 'silkcircuit',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#12101a', fg: '#f8f8f2', accent: '#80ffea' },
-  },
-  {
-    id: 'silkcircuit-vibrant',
-    name: 'SilkCircuit Vibrant',
-    family: 'silkcircuit',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0f0c1a', fg: '#f8f8f2', accent: '#00ffcc' },
-  },
-  {
-    id: 'silkcircuit-soft',
-    name: 'SilkCircuit Soft',
-    family: 'silkcircuit',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#1a1626', fg: '#f8f8f2', accent: '#99ffee' },
-  },
-  {
-    id: 'silkcircuit-glow',
-    name: 'SilkCircuit Glow',
-    family: 'silkcircuit',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0a0816', fg: '#ffffff', accent: '#00ffff' },
-  },
-  // Signature
-  {
-    id: 'silk-light',
-    name: 'Silk Light',
-    family: 'signature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#ffffff', fg: '#1a1a2e', accent: '#4a5dbd' },
-  },
-  {
-    id: 'silk-dark',
-    name: 'Silk Dark',
-    family: 'signature',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#12121e', fg: '#e0e0f0', accent: '#7b93db' },
-  },
-  {
-    id: 'manuscript',
-    name: 'Manuscript',
-    family: 'signature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F5EDE4', fg: '#2C2419', accent: '#4A3728' },
-  },
-  {
-    id: 'monochrome',
-    name: 'Monochrome',
-    family: 'signature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FFFFFF', fg: '#000000', accent: '#000000' },
-  },
-  // Developer
-  {
-    id: 'nord',
-    name: 'Nord',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#2E3440', fg: '#D8DEE9', accent: '#88C0D0' },
-  },
-  {
-    id: 'dracula',
-    name: 'Dracula',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#282A36', fg: '#F8F8F2', accent: '#BD93F9' },
-  },
-  {
-    id: 'solarized-light',
-    name: 'Solarized Light',
-    family: 'developer',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FDF6E3', fg: '#5B6F77', accent: '#073642' },
-  },
-  {
-    id: 'solarized-dark',
-    name: 'Solarized Dark',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#002B36', fg: '#839496', accent: '#93A1A1' },
-  },
-  {
-    id: 'catppuccin-latte',
-    name: 'Catppuccin Latte',
-    family: 'developer',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#EFF1F5', fg: '#4C4F69', accent: '#8839EF' },
-  },
-  {
-    id: 'catppuccin-mocha',
-    name: 'Catppuccin Mocha',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#1E1E2E', fg: '#CDD6F4', accent: '#CBA6F7' },
-  },
-  {
-    id: 'gruvbox-light',
-    name: 'Gruvbox Light',
-    family: 'developer',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FBF1C7', fg: '#3C3836', accent: '#B57614' },
-  },
-  {
-    id: 'gruvbox-dark',
-    name: 'Gruvbox Dark',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#282828', fg: '#EBDBB2', accent: '#FABD2F' },
-  },
-  {
-    id: 'tokyo-night',
-    name: 'Tokyo Night',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#1A1B26', fg: '#A9B1D6', accent: '#7AA2F7' },
-  },
-  {
-    id: 'rose-pine',
-    name: 'Rose Pine',
-    family: 'developer',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#191724', fg: '#E0DEF4', accent: '#C4A7E7' },
-  },
-  // Classic
-  {
-    id: 'academic',
-    name: 'Academic',
-    family: 'classic',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FAFAF7', fg: '#1A1A24', accent: '#2B4D8C' },
-  },
-  {
-    id: 'typewriter',
-    name: 'Typewriter',
-    family: 'classic',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F2EDE4', fg: '#1C1915', accent: '#6B4F3A' },
-  },
-  {
-    id: 'newspaper',
-    name: 'Newspaper',
-    family: 'classic',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F0EDE5', fg: '#1A1A1A', accent: '#8C1A1A' },
-  },
-  {
-    id: 'parchment',
-    name: 'Parchment',
-    family: 'classic',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F1E8D0', fg: '#3B2F20', accent: '#7B4A2B' },
-  },
-  // Futuristic
-  {
-    id: 'cyberpunk',
-    name: 'Cyberpunk',
-    family: 'futuristic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0A0A12', fg: '#D0D0E0', accent: '#FF2E8B' },
-  },
-  {
-    id: 'terminal',
-    name: 'Terminal',
-    family: 'futuristic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0C0C0C', fg: '#33FF33', accent: '#66FF66' },
-  },
-  {
-    id: 'hologram',
-    name: 'Hologram',
-    family: 'futuristic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0B1628', fg: '#C8DBF0', accent: '#58A6FF' },
-  },
-  {
-    id: 'synthwave',
-    name: 'Synthwave',
-    family: 'futuristic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#1A0A2E', fg: '#E8D0F0', accent: '#FF6EC7' },
-  },
-  {
-    id: 'matrix',
-    name: 'Matrix',
-    family: 'futuristic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#000000', fg: '#00B300', accent: '#00FF41' },
-  },
-  // Nature
-  {
-    id: 'forest',
-    name: 'Forest',
-    family: 'nature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F4F2ED', fg: '#1E2B1E', accent: '#2D4A2D' },
-  },
-  {
-    id: 'ocean',
-    name: 'Ocean',
-    family: 'nature',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0D1B2A', fg: '#C5DBE8', accent: '#7EC8C8' },
-  },
-  {
-    id: 'sunset',
-    name: 'Sunset',
-    family: 'nature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FFF8F0', fg: '#3A2218', accent: '#C44B2B' },
-  },
-  {
-    id: 'arctic',
-    name: 'Arctic',
-    family: 'nature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F0F4F8', fg: '#1C2A38', accent: '#2E5080' },
-  },
-  {
-    id: 'sakura',
-    name: 'Sakura',
-    family: 'nature',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FDF8F5', fg: '#3A2B30', accent: '#C45C78' },
-  },
-  // Artistic
-  {
-    id: 'noir',
-    name: 'Noir',
-    family: 'artistic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#0F0F0F', fg: '#D8D8D8', accent: '#F43030' },
-  },
-  {
-    id: 'candy',
-    name: 'Candy',
-    family: 'artistic',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FFF5FA', fg: '#3C2845', accent: '#E04080' },
-  },
-  {
-    id: 'blueprint',
-    name: 'Blueprint',
-    family: 'artistic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#1B3A5C', fg: '#D0E0F0', accent: '#FFFFFF' },
-  },
-  {
-    id: 'witch',
-    name: 'Witch',
-    family: 'artistic',
-    variant: 'dark',
-    printSafe: false,
-    colors: { bg: '#110E18', fg: '#C8B8D8', accent: '#B040E0' },
-  },
-  // Greyscale
-  {
-    id: 'greyscale-warm',
-    name: 'Greyscale Warm',
-    family: 'greyscale',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#F5F0E8', fg: '#3D3632', accent: '#706252' },
-  },
-  {
-    id: 'greyscale-cool',
-    name: 'Greyscale Cool',
-    family: 'greyscale',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#EBEEF2', fg: '#2B3038', accent: '#5A6A7A' },
-  },
-  {
-    id: 'high-contrast',
-    name: 'High Contrast',
-    family: 'greyscale',
-    variant: 'light',
-    printSafe: true,
-    colors: { bg: '#FFFFFF', fg: '#000000', accent: '#000000' },
-  },
-];
-
-const THEME_MAP = new Map(THEMES.map(t => [t.id, t]));
-
-// ── Mini Document Preview ────────────────────────────────────────
+import type { ThemeInfo } from '@/lib/silkprint';
+import { FALLBACK_THEME, familyOptionsFor, normalizeThemes, type ThemeMeta } from '@/lib/themes';
 
 function MiniPagePreview({ colors }: { colors: ThemeMeta['colors'] }) {
   return (
@@ -367,12 +11,10 @@ function MiniPagePreview({ colors }: { colors: ThemeMeta['colors'] }) {
       className="relative h-12 w-9 shrink-0 overflow-hidden rounded-sm shadow-sm"
       style={{ backgroundColor: colors.bg }}
     >
-      {/* "Heading" bar */}
       <div
         className="mx-1.5 mt-1.5 h-[3px] w-3 rounded-full"
         style={{ backgroundColor: colors.accent }}
       />
-      {/* "Text" lines */}
       <div
         className="mx-1.5 mt-1 h-[2px] w-5 rounded-full opacity-50"
         style={{ backgroundColor: colors.fg }}
@@ -385,7 +27,6 @@ function MiniPagePreview({ colors }: { colors: ThemeMeta['colors'] }) {
         className="mx-1.5 mt-0.5 h-[2px] w-[18px] rounded-full opacity-35"
         style={{ backgroundColor: colors.fg }}
       />
-      {/* "Code block" */}
       <div
         className="mx-1 mt-1 h-[6px] rounded-[1px] opacity-15"
         style={{ backgroundColor: colors.fg }}
@@ -393,8 +34,6 @@ function MiniPagePreview({ colors }: { colors: ThemeMeta['colors'] }) {
     </div>
   );
 }
-
-// ── Theme Card ───────────────────────────────────────────────────
 
 function ThemeCard({
   theme,
@@ -424,7 +63,7 @@ function ThemeCard({
               isActive ? 'text-sc-purple' : 'text-sc-fg group-hover:text-white'
             }`}
           >
-            {theme.name}
+            {theme.label}
           </span>
           {isActive && (
             <svg
@@ -473,7 +112,6 @@ function ThemeCard({
         </div>
       </div>
 
-      {/* Accent color dot */}
       <div
         className="h-3 w-3 shrink-0 rounded-full ring-1 ring-white/10"
         style={{ backgroundColor: theme.colors.accent }}
@@ -482,36 +120,38 @@ function ThemeCard({
   );
 }
 
-// ── Main Selector Component ──────────────────────────────────────
-
 interface ThemeSelectorProps {
   activeTheme: string;
   onSelect: (themeId: string) => void;
+  themes: ThemeInfo[];
   disabled?: boolean;
 }
 
-export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelectorProps) {
+export function ThemeSelector({ activeTheme, onSelect, themes, disabled }: ThemeSelectorProps) {
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState('');
   const [activeFamily, setActiveFamily] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const currentTheme = THEME_MAP.get(activeTheme);
+  const themeList = useMemo(() => normalizeThemes(themes), [themes]);
+  const themeMap = useMemo(() => new Map(themeList.map(theme => [theme.id, theme])), [themeList]);
+  const currentTheme = themeMap.get(activeTheme) ?? FALLBACK_THEME;
 
-  // Focus search when expanding
+  const familyOptions = useMemo(() => {
+    return familyOptionsFor(themeList);
+  }, [themeList]);
+
   useEffect(() => {
     if (expanded) {
-      // Small delay to allow animation to start
       const t = setTimeout(() => searchRef.current?.focus(), 100);
       return () => clearTimeout(t);
     }
-    // Reset filters on close
+
     setSearch('');
     setActiveFamily(null);
   }, [expanded]);
 
-  // Close on Escape
   useEffect(() => {
     if (!expanded) return;
     const handler = (e: KeyboardEvent) => {
@@ -521,7 +161,6 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
     return () => window.removeEventListener('keydown', handler);
   }, [expanded]);
 
-  // Close on click outside
   useEffect(() => {
     if (!expanded) return;
     const handler = (e: MouseEvent) => {
@@ -529,7 +168,6 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
         setExpanded(false);
       }
     };
-    // Use setTimeout so the opening click doesn't immediately close it
     const t = setTimeout(() => window.addEventListener('mousedown', handler), 0);
     return () => {
       clearTimeout(t);
@@ -537,9 +175,8 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
     };
   }, [expanded]);
 
-  // Filter themes
   const filteredThemes = useMemo(() => {
-    let result = THEMES;
+    let result = themeList;
 
     if (activeFamily) {
       result = result.filter(t => t.family === activeFamily);
@@ -549,7 +186,7 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
       const q = search.toLowerCase().trim();
       result = result.filter(
         t =>
-          t.name.toLowerCase().includes(q) ||
+          t.label.toLowerCase().includes(q) ||
           t.id.toLowerCase().includes(q) ||
           t.family.toLowerCase().includes(q) ||
           t.variant.toLowerCase().includes(q)
@@ -557,18 +194,17 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
     }
 
     return result;
-  }, [search, activeFamily]);
+  }, [themeList, search, activeFamily]);
 
-  // Group by family for display
   const groupedThemes = useMemo(() => {
-    if (activeFamily || search.trim()) return null; // flat list when filtered
-    const groups: { family: (typeof FAMILIES)[number]; themes: ThemeMeta[] }[] = [];
-    for (const fam of FAMILIES) {
-      const themes = filteredThemes.filter(t => t.family === fam.id);
-      if (themes.length > 0) groups.push({ family: fam, themes });
+    if (activeFamily || search.trim()) return null;
+    const groups: { family: { id: string; label: string }; themes: ThemeMeta[] }[] = [];
+    for (const family of familyOptions) {
+      const familyThemes = filteredThemes.filter(t => t.family === family.id);
+      if (familyThemes.length > 0) groups.push({ family, themes: familyThemes });
     }
     return groups;
-  }, [filteredThemes, activeFamily, search]);
+  }, [filteredThemes, familyOptions, activeFamily, search]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -578,37 +214,34 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
     [onSelect]
   );
 
+  const isDisabled = disabled || themeList.length === 0;
+
   return (
     <div className="relative mb-6">
-      {/* ── Trigger Row ─────────────────────────────────────── */}
       <div className="flex items-center justify-center gap-2 sm:gap-3">
-        {/* Current theme pill */}
-        {currentTheme && (
-          <div className="flex items-center gap-2 rounded-xl bg-sc-bg-dark/80 px-2.5 py-1.5 ring-1 ring-white/[0.06] sm:gap-2.5 sm:px-3 sm:py-2">
-            <MiniPagePreview colors={currentTheme.colors} />
-            <div>
-              <div className="text-xs font-semibold text-sc-fg sm:text-sm">{currentTheme.name}</div>
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`text-[10px] font-semibold uppercase tracking-wider ${
-                    currentTheme.variant === 'light' ? 'text-amber-300' : 'text-indigo-300'
-                  }`}
-                >
-                  {currentTheme.variant}
-                </span>
-                {currentTheme.printSafe && (
-                  <span className="hidden text-[10px] text-sc-fg-dim sm:inline">/ print-safe</span>
-                )}
-              </div>
+        <div className="flex items-center gap-2 rounded-xl bg-sc-bg-dark/80 px-2.5 py-1.5 ring-1 ring-white/[0.06] sm:gap-2.5 sm:px-3 sm:py-2">
+          <MiniPagePreview colors={currentTheme.colors} />
+          <div>
+            <div className="text-xs font-semibold text-sc-fg sm:text-sm">{currentTheme.label}</div>
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  currentTheme.variant === 'light' ? 'text-amber-300' : 'text-indigo-300'
+                }`}
+              >
+                {currentTheme.variant}
+              </span>
+              {currentTheme.printSafe && (
+                <span className="hidden text-[10px] text-sc-fg-dim sm:inline">/ print-safe</span>
+              )}
             </div>
           </div>
-        )}
+        </div>
 
-        {/* Toggle button */}
         <button
           type="button"
           onClick={() => setExpanded(v => !v)}
-          disabled={disabled}
+          disabled={isDisabled}
           className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm ${
             expanded
               ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
@@ -626,20 +259,18 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
           <span className="hidden sm:inline">
-            {expanded ? 'Close' : `Browse all ${THEMES.length} themes`}
+            {expanded ? 'Close' : `Browse all ${themeList.length || 40} themes`}
           </span>
           <span className="sm:hidden">{expanded ? 'Close' : 'Themes'}</span>
         </button>
       </div>
 
-      {/* ── Floating Overlay Panel ────────────────────────── */}
       {expanded && (
         <div
           ref={panelRef}
           className="absolute left-0 right-0 top-full z-40 pt-2 animate-drop-in sm:pt-3"
         >
           <div className="rounded-xl bg-sc-bg-dark/95 p-3 shadow-[0_16px_48px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.08] backdrop-blur-xl sm:rounded-2xl sm:p-4">
-            {/* Search */}
             <div className="relative mb-3">
               <svg
                 aria-hidden="true"
@@ -683,7 +314,6 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
               )}
             </div>
 
-            {/* Family filter pills */}
             <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-x-visible sm:pb-0">
               <button
                 type="button"
@@ -694,28 +324,27 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
                     : 'text-sc-fg-dim hover:bg-sc-bg-highlight hover:text-sc-fg'
                 }`}
               >
-                All ({THEMES.length})
+                All ({themeList.length})
               </button>
-              {FAMILIES.map(fam => {
-                const count = THEMES.filter(t => t.family === fam.id).length;
+              {familyOptions.map(family => {
+                const count = themeList.filter(t => t.family === family.id).length;
                 return (
                   <button
                     type="button"
-                    key={fam.id}
-                    onClick={() => setActiveFamily(f => (f === fam.id ? null : fam.id))}
+                    key={family.id}
+                    onClick={() => setActiveFamily(f => (f === family.id ? null : family.id))}
                     className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                      activeFamily === fam.id
+                      activeFamily === family.id
                         ? 'bg-sc-purple/15 text-sc-purple ring-1 ring-sc-purple/30'
                         : 'text-sc-fg-dim hover:bg-sc-bg-highlight hover:text-sc-fg'
                     }`}
                   >
-                    {fam.label} ({count})
+                    {family.label} ({count})
                   </button>
                 );
               })}
             </div>
 
-            {/* Theme grid */}
             <div className="editor-scrollbar max-h-[50vh] overflow-y-auto pr-1 sm:max-h-[360px]">
               {filteredThemes.length === 0 && (
                 <div className="py-8 text-center text-sm text-sc-fg-dim">
@@ -723,7 +352,6 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
                 </div>
               )}
 
-              {/* Grouped view (when no filter active) */}
               {groupedThemes?.map(({ family, themes }) => (
                 <div key={family.id} className="mb-4 last:mb-0">
                   <div className="mb-2 flex items-center gap-2 px-1">
@@ -745,7 +373,6 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
                 </div>
               ))}
 
-              {/* Flat view (when searching or family selected) */}
               {!groupedThemes && (
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                   {filteredThemes.map(theme => (
@@ -760,10 +387,9 @@ export function ThemeSelector({ activeTheme, onSelect, disabled }: ThemeSelector
               )}
             </div>
 
-            {/* Footer count */}
             {(search || activeFamily) && filteredThemes.length > 0 && (
               <div className="mt-2 text-center text-xs text-sc-fg-dim">
-                {filteredThemes.length} of {THEMES.length} themes
+                {filteredThemes.length} of {themeList.length} themes
               </div>
             )}
           </div>

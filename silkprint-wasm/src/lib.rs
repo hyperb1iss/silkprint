@@ -1,7 +1,16 @@
 use serde::Serialize;
+use silkprint::ThemeSource;
 use silkprint::error::SilkprintError;
 use silkprint::fonts::{add_external_font, clear_external_fonts};
+use silkprint::warnings::WarningCollector;
 use wasm_bindgen::prelude::*;
+
+#[derive(Debug, Serialize)]
+struct WasmThemeColors {
+    bg: String,
+    fg: String,
+    accent: String,
+}
 
 #[derive(Debug, Serialize)]
 struct WasmThemeInfo<'a> {
@@ -11,6 +20,7 @@ struct WasmThemeInfo<'a> {
     family: &'a str,
     #[serde(rename = "printSafe")]
     print_safe: bool,
+    colors: WasmThemeColors,
 }
 
 /// Register a font file for use by the renderer.
@@ -70,8 +80,80 @@ fn detailed_themes() -> Vec<WasmThemeInfo<'static>> {
             description: theme.description,
             family: theme.family,
             print_safe: theme.print_safe,
+            colors: theme_colors(theme.name, theme.variant),
         })
         .collect()
+}
+
+fn theme_colors(name: &str, variant: &str) -> WasmThemeColors {
+    let mut warnings = WarningCollector::new();
+    let source = ThemeSource::BuiltIn(name.to_string());
+    let Ok(theme) = silkprint::theme::load_theme(&source, &mut warnings) else {
+        return fallback_theme_colors(variant);
+    };
+    let tokens = &theme.tokens;
+
+    WasmThemeColors {
+        bg: theme_color(&tokens.page.background, fallback_bg(variant)),
+        fg: theme_color(&tokens.text.color, fallback_fg(variant)),
+        accent: theme_color(
+            first_non_empty(&[
+                tokens.headings.h1.color.as_str(),
+                tokens.headings.color.as_str(),
+                tokens.links.color.as_str(),
+                tokens.code_block.left_accent_color.as_str(),
+            ]),
+            fallback_accent(variant),
+        ),
+    }
+}
+
+fn fallback_theme_colors(variant: &str) -> WasmThemeColors {
+    WasmThemeColors {
+        bg: fallback_bg(variant).to_string(),
+        fg: fallback_fg(variant).to_string(),
+        accent: fallback_accent(variant).to_string(),
+    }
+}
+
+fn theme_color(color: &str, fallback: &str) -> String {
+    if color.is_empty() {
+        fallback.to_string()
+    } else {
+        color.to_string()
+    }
+}
+
+fn first_non_empty<'a>(colors: &[&'a str]) -> &'a str {
+    colors
+        .iter()
+        .copied()
+        .find(|color| !color.is_empty())
+        .unwrap_or("")
+}
+
+fn fallback_bg(variant: &str) -> &'static str {
+    if variant == "light" {
+        "#ffffff"
+    } else {
+        "#1a1a2e"
+    }
+}
+
+fn fallback_fg(variant: &str) -> &'static str {
+    if variant == "light" {
+        "#111827"
+    } else {
+        "#f8f8f2"
+    }
+}
+
+fn fallback_accent(variant: &str) -> &'static str {
+    if variant == "light" {
+        "#6366f1"
+    } else {
+        "#80ffea"
+    }
 }
 
 /// Render markdown to PDF bytes using a built-in theme.
@@ -155,10 +237,33 @@ pub fn list_themes_json() -> String {
 
 /// Get detailed theme metadata as JSON.
 ///
-/// Returns an array of `{name, variant, description, print_safe}` objects.
+/// Returns an array of theme metadata objects with resolved preview colors.
 #[wasm_bindgen]
 pub fn list_themes_detailed() -> String {
     serde_json::to_string(&detailed_themes())
         .ok()
         .unwrap_or_else(|| "[]".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::detailed_themes;
+
+    #[test]
+    fn detailed_theme_metadata_includes_preview_colors() {
+        let themes = detailed_themes();
+        let builtin_count = silkprint::theme::builtin::list_themes().len();
+
+        assert_eq!(themes.len(), builtin_count);
+
+        let Some(dawn) = themes.iter().find(|theme| theme.name == "silkcircuit-dawn") else {
+            panic!("missing default theme metadata");
+        };
+
+        assert_eq!(dawn.family, "silkcircuit");
+        assert_eq!(dawn.variant, "light");
+        assert!(dawn.colors.bg.starts_with('#'));
+        assert!(dawn.colors.fg.starts_with('#'));
+        assert!(dawn.colors.accent.starts_with('#'));
+    }
 }

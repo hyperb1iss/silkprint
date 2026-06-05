@@ -9,7 +9,7 @@ export function list_themes(): any;
 /**
  * Get detailed theme metadata as JSON.
  *
- * Returns an array of `{name, variant, description, print_safe}` objects.
+ * Returns an array of theme metadata objects with resolved preview colors.
  */
 export function list_themes_detailed(): string;
 

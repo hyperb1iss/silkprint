@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-
+import type { ThemeInfo } from '@/lib/silkprint';
 import { PdfPreview } from './pdf-preview';
 import { ThemeSelector } from './theme-selector';
 
@@ -59,6 +59,7 @@ export function Editor() {
   const [renderError, setRenderError] = useState<string | null>(null);
   const [engineReady, setEngineReady] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [themes, setThemes] = useState<ThemeInfo[]>([]);
 
   const silkprintRef = useRef<typeof import('@/lib/silkprint') | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,10 +88,16 @@ export function Editor() {
         const silkprint = await import('@/lib/silkprint');
 
         if (cancelled) return;
+        setEngineState({ status: 'loading', progress: 'Loading theme catalog...' });
+
+        const themes = await silkprint.listThemesDetailed();
+        if (cancelled) return;
+        setThemes(themes);
+
         setEngineState({ status: 'loading', progress: 'Initializing Typst compiler...' });
 
-        // Triggers WASM init (uses the module-level preloaded fetch)
-        await silkprint.listThemes();
+        // Triggers font registration for the renderer.
+        await silkprint.preloadEngine();
         if (cancelled) return;
 
         silkprintRef.current = silkprint;
@@ -188,7 +195,12 @@ export function Editor() {
       </div>
 
       {/* Theme selector */}
-      <ThemeSelector activeTheme={activeTheme} onSelect={setActiveTheme} />
+      <ThemeSelector
+        activeTheme={activeTheme}
+        disabled={!engineReady || themes.length === 0}
+        onSelect={setActiveTheme}
+        themes={themes}
+      />
 
       {/* Editor / Preview split */}
       <div className="glow-border grid grid-cols-1 overflow-hidden rounded-xl bg-sc-bg-dark sm:rounded-2xl lg:grid-cols-2">
