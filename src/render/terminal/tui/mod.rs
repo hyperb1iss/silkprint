@@ -10,12 +10,12 @@ mod browser;
 mod chrome;
 mod diagrams;
 mod images;
+mod links;
 mod math;
 mod text;
 
 use std::collections::BTreeMap;
 use std::env;
-use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::Write as _;
@@ -39,7 +39,6 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block as WBlock, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui_image::StatefulImage;
 use ratatui_image::picker::Picker;
-use unicode_width::UnicodeWidthChar;
 
 use crate::ThemeSource;
 use crate::render::input::markdown_body_for_path;
@@ -54,6 +53,10 @@ use self::browser::{
 };
 use self::chrome::Chrome;
 use self::images::{ImageStore, Placement};
+use self::links::{
+    LinkRegion, link_preview, link_regions_from_osc, open_target, resolve_jailed, shift_line,
+    uri_scheme,
+};
 use self::text::truncate_plain;
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
@@ -90,14 +93,6 @@ enum BandSpec {
     Image(String),
     Mermaid { source: String, bg: Rgb },
     Math { source: String, bg: Rgb },
-}
-
-#[derive(Clone)]
-struct LinkRegion {
-    line: usize,
-    start: u16,
-    end: u16,
-    target: LinkTarget,
 }
 
 /// A visited document in the back/forward history and the scroll offset at the
@@ -186,11 +181,6 @@ impl TabState {
             pending_anchor: None,
         }
     }
-}
-
-enum Osc8Target {
-    Open(LinkTarget),
-    Close,
 }
 
 #[derive(Clone)]
@@ -2799,205 +2789,12 @@ fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
-fn link_preview(target: &LinkTarget) -> String {
-    let label = match target {
-        LinkTarget::Url(url) => super::layout::sanitize(url).into_owned(),
-        LinkTarget::Anchor(anchor) => format!("#{anchor}"),
-    };
-    format!("link: {}", truncate_plain(&label, 72))
-}
-
 fn code_lines_source(lines: &[Vec<super::model::Span>]) -> String {
     lines
         .iter()
         .map(|spans| spans.iter().map(|s| s.text.as_str()).collect::<String>())
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn link_regions_from_osc(ansi: &str) -> Vec<LinkRegion> {
-    let mut chars = ansi.chars().peekable();
-    let mut regions = Vec::new();
-    let mut target: Option<LinkTarget> = None;
-    let mut active: Option<(usize, usize, LinkTarget)> = None;
-    let mut line = 0usize;
-    let mut col = 0usize;
-
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' {
-            match chars.next() {
-                Some(']') => {
-                    flush_link_region(&mut active, line, col, &mut regions);
-                    match osc8_target(&read_osc(&mut chars)) {
-                        Some(Osc8Target::Open(next)) => target = Some(next),
-                        Some(Osc8Target::Close) => target = None,
-                        None => {}
-                    }
-                }
-                Some('[') => skip_csi(&mut chars),
-                _ => {}
-            }
-            continue;
-        }
-        if ch == '\n' {
-            flush_link_region(&mut active, line, col, &mut regions);
-            line = line.saturating_add(1);
-            col = 0;
-            continue;
-        }
-        let width = char_width(ch);
-        if let Some(link) = target.as_ref().filter(|_| !ch.is_whitespace() && width > 0) {
-            active.get_or_insert_with(|| (line, col, link.clone()));
-        } else {
-            flush_link_region(&mut active, line, col, &mut regions);
-        }
-        col = col.saturating_add(width);
-    }
-    flush_link_region(&mut active, line, col, &mut regions);
-    regions
-}
-
-fn read_osc(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
-    let mut payload = String::new();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{7}' {
-            break;
-        }
-        if ch == '\u{1b}' && matches!(chars.peek(), Some('\\')) {
-            chars.next();
-            break;
-        }
-        payload.push(ch);
-    }
-    payload
-}
-
-fn skip_csi(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
-    for ch in chars.by_ref() {
-        if ('\u{40}'..='\u{7e}').contains(&ch) {
-            break;
-        }
-    }
-}
-
-fn osc8_target(payload: &str) -> Option<Osc8Target> {
-    let value = payload.strip_prefix("8;;")?;
-    if value.is_empty() {
-        return Some(Osc8Target::Close);
-    }
-    Some(Osc8Target::Open(
-        if let Some(anchor) = value.strip_prefix('#') {
-            LinkTarget::Anchor(anchor.to_string())
-        } else {
-            LinkTarget::Url(value.to_string())
-        },
-    ))
-}
-
-fn flush_link_region(
-    active: &mut Option<(usize, usize, LinkTarget)>,
-    line: usize,
-    end: usize,
-    regions: &mut Vec<LinkRegion>,
-) {
-    let Some((start_line, start, target)) = active.take() else {
-        return;
-    };
-    if start_line != line || start >= end {
-        return;
-    }
-    regions.push(LinkRegion {
-        line,
-        start: u16::try_from(start).unwrap_or(u16::MAX),
-        end: u16::try_from(end).unwrap_or(u16::MAX),
-        target,
-    });
-}
-
-fn shift_line(line: usize, shift: isize) -> usize {
-    if shift >= 0 {
-        line.saturating_add(shift.unsigned_abs())
-    } else {
-        line.saturating_sub(shift.unsigned_abs())
-    }
-}
-
-fn char_width(ch: char) -> usize {
-    ch.width().unwrap_or(0)
-}
-
-fn open_target(url: &str, base_dir: Option<&std::path::Path>) -> Result<OsString, &'static str> {
-    if let Some(scheme) = uri_scheme(url) {
-        return if matches!(
-            scheme.to_ascii_lowercase().as_str(),
-            "http" | "https" | "mailto"
-        ) {
-            Ok(OsString::from(url))
-        } else {
-            Err("unsupported scheme")
-        };
-    }
-    let path = std::path::Path::new(url);
-    if path.is_absolute() {
-        return Err("absolute path");
-    }
-    if path.components().any(|component| {
-        matches!(
-            component,
-            std::path::Component::ParentDir
-                | std::path::Component::RootDir
-                | std::path::Component::Prefix(_)
-        )
-    }) {
-        return Err("path escapes document");
-    }
-    let Some(base) = base_dir else {
-        return Ok(OsString::from(url));
-    };
-    let canon_base = base
-        .canonicalize()
-        .map_err(|_| "document directory unavailable")?;
-    let target = canon_base
-        .join(path)
-        .canonicalize()
-        .map_err(|_| "local link missing")?;
-    if !target.starts_with(&canon_base) {
-        return Err("path escapes document");
-    }
-    Ok(target.into_os_string())
-}
-
-/// Resolve a relative link path against the document directory, returning the
-/// canonicalized target only when it stays inside the (canonicalized) base.
-/// Absolute paths and any `..`/root escape are rejected, mirroring the jail in
-/// [`open_target`] — the reader must not read files outside the document tree.
-fn resolve_jailed(rel: &str, base: Option<&std::path::Path>) -> Option<PathBuf> {
-    let path = std::path::Path::new(rel);
-    if path.is_absolute() {
-        return None;
-    }
-    if path.components().any(|component| {
-        matches!(
-            component,
-            std::path::Component::ParentDir
-                | std::path::Component::RootDir
-                | std::path::Component::Prefix(_)
-        )
-    }) {
-        return None;
-    }
-    let canon_base = base?.canonicalize().ok()?;
-    let target = canon_base.join(path).canonicalize().ok()?;
-    target.starts_with(&canon_base).then_some(target)
-}
-
-fn uri_scheme(value: &str) -> Option<&str> {
-    let (scheme, _rest) = value.split_once(':')?;
-    let mut chars = scheme.chars();
-    let first = chars.next()?;
-    (first.is_ascii_alphabetic()
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
-    .then_some(scheme)
 }
 
 fn rgb_to_color(rgb: Rgb) -> Color {
