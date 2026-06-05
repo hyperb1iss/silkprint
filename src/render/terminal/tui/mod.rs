@@ -10,6 +10,7 @@ mod chrome;
 mod diagrams;
 mod images;
 mod math;
+mod text;
 
 use std::collections::BTreeMap;
 use std::env;
@@ -48,6 +49,7 @@ use crate::warnings::WarningCollector;
 use self::actions::{Action, KeyBindings};
 use self::chrome::Chrome;
 use self::images::{ImageStore, Placement};
+use self::text::truncate_plain;
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
 use super::model::{Block, LinkTarget, RenderedDoc, Rgb};
@@ -3269,15 +3271,6 @@ fn load_theme_or_default(name: &str) -> ResolvedTheme {
             tmtheme_xml: String::new(),
         })
     })
-}
-
-fn truncate_plain(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
-    out.push('\u{2026}');
-    out
 }
 
 fn visible_band_rows(placement: &Placement, scroll: u32, viewport: u32) -> Option<(u32, u32)> {
