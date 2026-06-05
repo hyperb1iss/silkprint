@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use comrak::nodes::{AstNode, ListType, NodeValue, TableAlignment};
 
 use crate::render::origin::DocumentOrigin;
+use crate::render::semantics::{code_fence_language, wikilink_target};
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
 use super::highlight::highlight_block;
@@ -102,7 +103,7 @@ impl<'a> Walker<'a, '_> {
             NodeValue::ThematicBreak => out.push(Block::Rule),
 
             NodeValue::CodeBlock(cb) => {
-                let lang_token = cb.info.split([' ', ',', '\t']).next().unwrap_or("");
+                let lang_token = code_fence_language(&cb.info);
                 if lang_token == "math" {
                     out.push(Block::Math {
                         source: cb.literal.trim().to_string(),
@@ -629,31 +630,6 @@ fn csv_table_block(rows: Vec<Vec<String>>) -> Block {
 fn pad_row(mut row: Vec<String>, columns: usize) -> Vec<String> {
     row.resize(columns, String::new());
     row
-}
-
-fn wikilink_target(target: &str) -> String {
-    let (path, anchor) = target
-        .split_once('#')
-        .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
-    if path.is_empty()
-        || uri_scheme(path).is_some()
-        || std::path::Path::new(path).extension().is_some()
-    {
-        return target.to_string();
-    }
-    anchor.map_or_else(
-        || format!("{path}.md"),
-        |anchor| format!("{path}.md#{anchor}"),
-    )
-}
-
-fn uri_scheme(value: &str) -> Option<&str> {
-    let (scheme, _rest) = value.split_once(':')?;
-    let mut chars = scheme.chars();
-    let first = chars.next()?;
-    (first.is_ascii_alphabetic()
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
-    .then_some(scheme)
 }
 
 fn alert_kind(t: comrak::nodes::AlertType) -> AlertKind {

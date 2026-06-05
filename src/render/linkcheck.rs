@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use comrak::nodes::{AstNode, NodeValue};
 
+use super::semantics::wikilink_target;
 use crate::warnings::{SilkprintWarning, WarningCollector};
 
 pub fn validate_links<'a>(
@@ -58,28 +59,6 @@ fn local_target_path(target: &str, base_dir: Option<&Path>) -> PathBuf {
     } else {
         base_dir.unwrap_or_else(|| Path::new(".")).join(path)
     }
-}
-
-fn wikilink_target(target: &str) -> String {
-    let (path, anchor) = target
-        .split_once('#')
-        .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
-    if path.is_empty() || uri_scheme(path).is_some() || Path::new(path).extension().is_some() {
-        return target.to_string();
-    }
-    anchor.map_or_else(
-        || format!("{path}.md"),
-        |anchor| format!("{path}.md#{anchor}"),
-    )
-}
-
-fn uri_scheme(value: &str) -> Option<&str> {
-    let (scheme, _rest) = value.split_once(':')?;
-    let mut chars = scheme.chars();
-    let first = chars.next()?;
-    (first.is_ascii_alphabetic()
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
-    .then_some(scheme)
 }
 
 #[cfg(test)]

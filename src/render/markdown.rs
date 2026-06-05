@@ -9,6 +9,7 @@ use crate::warnings::{SilkprintWarning, WarningCollector};
 
 use super::escape::{escape_typst_content, escape_typst_string};
 use super::image::{PreparedImage, PreparedImages};
+use super::semantics::{code_fence_language, is_known_code_fence_language, wikilink_target};
 
 /// Configure comrak with all extensions enabled per SPEC Section 8.2.
 pub fn comrak_options() -> Options<'static> {
@@ -612,7 +613,7 @@ fn emit_node<'a>(node: &'a AstNode<'a>, ctx: &mut EmitContext<'_>) {
 
         // ─── Code block ──────────────────────────────────────────
         ExtractedNode::CodeBlock { info, literal } => {
-            let lang = info.split([' ', ',', '\t']).next().unwrap_or("");
+            let lang = code_fence_language(&info);
 
             if lang == "math" {
                 ctx.newline();
@@ -1306,31 +1307,6 @@ fn emit_csv_table(ctx: &mut EmitContext<'_>, rows: &[Vec<String>]) {
     ctx.push(")\n");
 }
 
-fn wikilink_target(target: &str) -> String {
-    let (path, anchor) = target
-        .split_once('#')
-        .map_or((target, None), |(path, anchor)| (path, Some(anchor)));
-    if path.is_empty()
-        || uri_scheme(path).is_some()
-        || std::path::Path::new(path).extension().is_some()
-    {
-        return target.to_string();
-    }
-    anchor.map_or_else(
-        || format!("{path}.md"),
-        |anchor| format!("{path}.md#{anchor}"),
-    )
-}
-
-fn uri_scheme(value: &str) -> Option<&str> {
-    let (scheme, _rest) = value.split_once(':')?;
-    let mut chars = scheme.chars();
-    let first = chars.next()?;
-    (first.is_ascii_alphabetic()
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
-    .then_some(scheme)
-}
-
 fn is_standalone_image(node: &AstNode<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return false;
@@ -1427,91 +1403,14 @@ pub fn check_content<'a>(root: &'a AstNode<'a>, warnings: &mut WarningCollector)
     warnings.warnings().len() == initial_count
 }
 
-/// Well-known code fence language identifiers that `syntect`/Typst can highlight.
-const KNOWN_LANGUAGES: &[&str] = &[
-    "bash",
-    "c",
-    "clojure",
-    "cpp",
-    "c++",
-    "csharp",
-    "c#",
-    "cs",
-    "csv",
-    "css",
-    "dart",
-    "diff",
-    "dockerfile",
-    "elixir",
-    "elm",
-    "erlang",
-    "go",
-    "graphql",
-    "haskell",
-    "html",
-    "java",
-    "javascript",
-    "js",
-    "json",
-    "jsonc",
-    "jsx",
-    "julia",
-    "kotlin",
-    "latex",
-    "tex",
-    "lua",
-    "makefile",
-    "markdown",
-    "md",
-    "nix",
-    "objc",
-    "objective-c",
-    "ocaml",
-    "perl",
-    "php",
-    "plain",
-    "text",
-    "txt",
-    "powershell",
-    "python",
-    "py",
-    "r",
-    "ruby",
-    "rb",
-    "rust",
-    "rs",
-    "scala",
-    "scss",
-    "sh",
-    "shell",
-    "sql",
-    "swift",
-    "toml",
-    "ts",
-    "tsx",
-    "typescript",
-    "typst",
-    "vim",
-    "xml",
-    "yaml",
-    "yml",
-    "zig",
-    "zsh",
-    // Diagram languages (handled specially, not syntax-highlighted)
-    "mermaid",
-    // Math fences lower to display equations, not highlighted code blocks.
-    "math",
-];
-
 /// Warn if a code block specifies an unrecognized language identifier.
 fn check_code_block_language(info: &str, warnings: &mut WarningCollector) {
-    let lang = info.split([' ', ',', '\t']).next().unwrap_or("");
+    let lang = code_fence_language(info);
     if lang.is_empty() {
         return;
     }
 
-    let lower = lang.to_lowercase();
-    if !KNOWN_LANGUAGES.contains(&lower.as_str()) {
+    if !is_known_code_fence_language(lang) {
         warnings.push(SilkprintWarning::UnknownLanguage {
             lang: lang.to_string(),
         });

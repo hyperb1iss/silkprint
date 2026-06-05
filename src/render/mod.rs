@@ -11,6 +11,7 @@ pub mod mermaid;
 pub mod origin;
 pub mod preamble;
 pub mod remote;
+mod semantics;
 #[cfg(feature = "terminal")]
 pub mod terminal;
 pub mod typst;
