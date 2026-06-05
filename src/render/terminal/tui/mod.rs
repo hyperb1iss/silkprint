@@ -6,6 +6,7 @@
 //! outline, popups); the document content keeps the silkprint theme.
 
 mod actions;
+mod bands;
 mod browser;
 mod chrome;
 mod diagrams;
@@ -16,7 +17,6 @@ mod text;
 
 use std::collections::BTreeMap;
 use std::env;
-use std::hash::{Hash, Hasher};
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
@@ -46,6 +46,10 @@ use crate::theme::ResolvedTheme;
 use crate::warnings::WarningCollector;
 
 use self::actions::{Action, KeyBindings};
+use self::bands::{
+    BandSpec, band_specs, font_dirs_fingerprint, generated_key, rgb_to_color, theme_fingerprint,
+    visible_band_rows,
+};
 use self::browser::{
     Bookmark, BrowserEntry, BrowserEntryKind, bookmarks_from_config, browser_entries,
     global_search_entries, is_markdown_path,
@@ -59,12 +63,12 @@ use self::links::{
 #[cfg(test)]
 use self::text::base64_encode;
 use self::text::{
-    code_lines_source, copy_osc52, highlight_line, search_highlight_style, selected_text,
-    source_line_for_block, truncate_plain,
+    copy_osc52, highlight_line, search_highlight_style, selected_text, source_line_for_block,
+    truncate_plain,
 };
 use super::caps::{Capabilities, ColorTier, GlyphTier, GraphicsProtocol};
 use super::glyphs::Glyphs;
-use super::model::{Block, LinkTarget, RenderedDoc, Rgb};
+use super::model::{Block, LinkTarget, RenderedDoc};
 use super::style::ContentStyleResolver;
 
 const OUTLINE_WIDTH: u16 = 30;
@@ -90,13 +94,6 @@ enum Mode {
     Normal,
     Search,
     GlobalSearch,
-}
-
-/// A content region that renders as an image: inline image, diagram, or math.
-enum BandSpec {
-    Image(String),
-    Mermaid { source: String, bg: Rgb },
-    Math { source: String, bg: Rgb },
 }
 
 /// A visited document in the back/forward history and the scroll offset at the
@@ -998,7 +995,7 @@ impl App {
     /// than covering) the source means the mermaid text / image alt never peeks
     /// out below an image that is shorter than its source block.
     fn reserve_bands(&mut self, content_width: u16) {
-        let bands = self.band_specs();
+        let bands = band_specs(&self.doc, &self.theme);
         let theme = self.theme.clone();
         let theme_key = theme_fingerprint(&theme);
         let font_key = font_dirs_fingerprint(&self.font_dirs);
@@ -1071,40 +1068,6 @@ impl App {
                 rows: img_rows,
             });
         }
-    }
-
-    fn band_specs(&self) -> Vec<(usize, BandSpec)> {
-        let resolver = ContentStyleResolver::new(&self.theme);
-        let bg = resolver.page_background().unwrap_or(Rgb(0, 0, 0));
-        self.doc
-            .blocks
-            .iter()
-            .enumerate()
-            .filter_map(|(i, block)| match block {
-                Block::Image { src, .. } => Some((i, BandSpec::Image(src.clone()))),
-                Block::CodeBlock {
-                    lang: Some(lang),
-                    lines,
-                } if lang == "mermaid" => Some((
-                    i,
-                    BandSpec::Mermaid {
-                        source: code_lines_source(lines),
-                        bg,
-                    },
-                )),
-                Block::Math {
-                    source,
-                    display: true,
-                } => Some((
-                    i,
-                    BandSpec::Math {
-                        source: source.clone(),
-                        bg,
-                    },
-                )),
-                _ => None,
-            })
-            .collect()
     }
 
     fn content_len(&self) -> u16 {
@@ -2648,35 +2611,6 @@ fn run_editor(program: &str, args: &[String], path: &Path) -> io::Result<ExitSta
     status
 }
 
-fn rgb_to_color(rgb: Rgb) -> Color {
-    Color::Rgb(rgb.0, rgb.1, rgb.2)
-}
-
-fn generated_key(kind: &str, source: &str, theme: u64, bg: Rgb, fonts: u64) -> String {
-    let source = hash_value(source);
-    format!(
-        "\u{0}{kind}:{source:016x}:{theme:016x}:{fonts:016x}:{:02x}{:02x}{:02x}",
-        bg.0, bg.1, bg.2
-    )
-}
-
-fn theme_fingerprint(theme: &ResolvedTheme) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    format!("{:?}", theme.tokens).hash(&mut hasher);
-    theme.tmtheme_xml.hash(&mut hasher);
-    hasher.finish()
-}
-
-fn font_dirs_fingerprint(font_dirs: &[PathBuf]) -> u64 {
-    hash_value(font_dirs)
-}
-
-fn hash_value<T: Hash + ?Sized>(value: &T) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    value.hash(&mut hasher);
-    hasher.finish()
-}
-
 fn load_theme_or_default(name: &str) -> ResolvedTheme {
     let mut warnings = WarningCollector::new();
     let source = ThemeSource::BuiltIn(name.to_string());
@@ -2688,14 +2622,6 @@ fn load_theme_or_default(name: &str) -> ResolvedTheme {
             tmtheme_xml: String::new(),
         })
     })
-}
-
-fn visible_band_rows(placement: &Placement, scroll: u32, viewport: u32) -> Option<(u32, u32)> {
-    let band_top = u32::from(placement.line);
-    let band_bottom = band_top + u32::from(placement.rows);
-    let vis_top = band_top.max(scroll);
-    let vis_bottom = band_bottom.min(scroll + viewport);
-    (vis_top < vis_bottom).then_some((vis_top, vis_bottom))
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
